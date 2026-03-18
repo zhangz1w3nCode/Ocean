@@ -28,10 +28,7 @@
       "target": [
         {
           "target": "dmg",
-          "arch": [
-            "arm64",
-            "x64"
-          ]
+          "arch": ["arm64"]
         }
       ]
     },
@@ -46,6 +43,14 @@
           "y": 220,
           "type": "link",
           "path": "/Applications"
+        }
+      ]
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
         }
       ]
     }

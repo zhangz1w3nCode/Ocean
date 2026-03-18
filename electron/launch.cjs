@@ -142,13 +142,22 @@ function createWindow() {
     },
   })
 
-  // 加载Vite开发服务器
-  const devServerURL = process.env.VITE_DEV_SERVER_URL || 'http://localhost:5173'
-  console.log('Loading:', devServerURL)
-  mainWindow.loadURL(devServerURL)
+  // 判断是开发环境还是生产环境
+  const devServerURL = process.env.VITE_DEV_SERVER_URL
 
-  // 自动打开开发者工具
-  mainWindow.webContents.openDevTools()
+  if (devServerURL) {
+    // 开发环境：加载 Vite 开发服务器
+    console.log('Loading from dev server:', devServerURL)
+    mainWindow.loadURL(devServerURL)
+
+    // 开发环境自动打开开发者工具
+    mainWindow.webContents.openDevTools()
+  } else {
+    // 生产环境：加载打包后的 index.html
+    const indexPath = path.join(__dirname, '..', 'dist', 'index.html')
+    console.log('Loading from production build:', indexPath)
+    mainWindow.loadFile(indexPath)
+  }
 
   mainWindow.on('closed', () => {
     mainWindow = null
