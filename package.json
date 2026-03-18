@@ -2,7 +2,7 @@
   "name": "ocean",
   "version": "1.0.0",
   "description": "AI Agent工作流与知识库可视化管理平台",
-  "main": "dist-electron/main.js",
+  "main": "electron/launch.cjs",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -10,7 +10,7 @@
     "electron:preview": "cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron electron/launch.cjs",
     "build": "tsc && vite build",
     "build:electron": "tsc -p electron/tsconfig.json",
-    "electron:build": "npm run build && npm run build:electron && electron-builder",
+    "electron:build": "npm run build && electron-builder",
     "preview": "vite preview"
   },
   "build": {
@@ -21,7 +21,7 @@
     },
     "files": [
       "dist/**/*",
-      "dist-electron/**/*"
+      "electron/**/*"
     ],
     "mac": {
       "category": "public.app-category.productivity",
