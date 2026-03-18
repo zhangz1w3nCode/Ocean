@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error>
+  <Code>NoSuchKey</Code>
+  <Message>The specified key does not exist.</Message>
+  <RequestId>699EF02EB207B83234108775</RequestId>
+  <HostId>npmmirror.oss-cn-shanghai.aliyuncs.com</HostId>
+  <Key>binaries/fonts-googlefonts/ubuntu/files/ubuntu-latin-500-normal.woff2</Key>
+  <EC>0026-00000001</EC>
+  <RecommendDoc>https://api.aliyun.com/troubleshoot?q=0026-00000001</RecommendDoc>
+</Error>

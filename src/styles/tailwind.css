@@ -1,0 +1,265 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* macOS风格滚动条 */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 4px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.25);
+}
+
+/* 全局基础样式 */
+@layer base {
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    background: #F5F5F7;
+    color: #1D1D1F;
+    /* 始终为滚动条保留空间，防止弹窗打开时布局抖动 */
+    scrollbar-gutter: stable;
+  }
+
+  /* 选中文字样式 */
+  ::selection {
+    background: rgba(0, 122, 255, 0.2);
+  }
+}
+
+@layer utilities {
+  /* 禁用拖拽 */
+  .no-drag {
+    -webkit-app-region: no-drag;
+  }
+
+  /* 可拖拽区域 */
+  .drag-region {
+    -webkit-app-region: drag;
+  }
+}
+
+/* 连接线动态虚线动画 */
+@keyframes dash {
+  to {
+    stroke-dashoffset: -10;
+  }
+}
+
+/* React Flow 连接线样式 - 拖拽连线时 */
+.react-flow__connection-path {
+  animation: dash 0.5s linear infinite;
+}
+
+/* React Flow 选中的边 - 动态虚线 */
+.react-flow__edge.selected .react-flow__edge-path {
+  animation: dash 0.5s linear infinite;
+}
+
+/* Markdown 行内代码样式 - 灰色块背景 */
+/* 只针对行内代码（排除代码块中的 code） */
+.prose :where(code):not(pre > code),
+.prose-code-custom :where(code):not(pre > code),
+.prose > code,
+.prose-code-custom > p > code {
+  background-color: #F3F4F6 !important;
+  padding: 2px 6px !important;
+  border-radius: 4px !important;
+  font-weight: 400 !important;
+  border: 1px solid #E5E7EB !important;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
+  font-size: 0.875em !important;
+  color: #1D1D1F !important;
+}
+
+/* 移除 code 元素前后的反引号伪元素 - 只针对行内代码 */
+.prose :where(code):not(pre > code)::before,
+.prose :where(code):not(pre > code)::after,
+.prose-code-custom :where(code):not(pre > code)::before,
+.prose-code-custom :where(code):not(pre > code)::after {
+  content: '' !important;
+  display: none !important;
+}
+
+/* 代码块语法高亮样式 - highlight.js 优化 */
+.prose pre {
+  background-color: #F6F8FA !important;
+  border: 1px solid #E1E4E8 !important;
+  border-radius: 8px !important;
+  padding: 16px !important;
+  overflow-x: auto !important;
+}
+
+.prose pre code {
+  background-color: transparent !important;
+  padding: 0 !important;
+  border: none !important;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
+  font-size: 13px !important;
+  line-height: 1.6 !important;
+}
+
+/* highlight.js 语法高亮颜色优化 */
+.prose .hljs-comment,
+.prose .hljs-quote {
+  color: #6A737D !important;
+}
+
+.prose .hljs-keyword,
+.prose .hljs-selector-tag,
+.prose .hljs-addition {
+  color: #D73A49 !important;
+}
+
+.prose .hljs-string,
+.prose .hljs-meta .hljs-meta-string,
+.prose .hljs-addition {
+  color: #032F62 !important;
+}
+
+.prose .hljs-number,
+.prose .hljs-literal,
+.prose .hljs-type,
+.prose .hljs-variable,
+.prose .hljs-template-variable,
+.prose .hljs-tag .hljs-attr {
+  color: #005CC5 !important;
+}
+
+.prose .hljs-title,
+.prose .hljs-section,
+.prose .hljs-selector-id {
+  color: #6F42C1 !important;
+}
+
+.prose .hljs-attr,
+.prose .hljs-attribute {
+  color: #005CC5 !important;
+}
+
+.prose .hljs-built_in,
+.prose .hljs-class {
+  color: #6F42C1 !important;
+}
+
+.prose .hljs-function {
+  color: #6F42C1 !important;
+}
+
+.prose .hljs-name,
+.prose .hljs-tag {
+  color: #22863A !important;
+}
+
+.prose .hljs-deletion {
+  color: #B31D28 !important;
+}
+
+/* Mermaid 图表样式 */
+.mermaid-container {
+  overflow-x: auto !important;
+  margin: 1em 0 !important;
+}
+
+.mermaid-container.mermaid-svg {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.mermaid-container.mermaid-svg svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Mermaid 加载状态 */
+.mermaid-container.mermaid-loading {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 60px;
+}
+
+.mermaid-loading-text {
+  color: #6E6E73;
+  font-size: 14px;
+}
+
+/* Mermaid 错误状态 */
+.mermaid-container.mermaid-error {
+  background-color: #FEF2F2 !important;
+  border: 1px solid #FECACA !important;
+  border-radius: 8px !important;
+  padding: 12px !important;
+}
+
+.mermaid-error-title {
+  color: #DC2626;
+  font-weight: 600;
+  font-size: 14px;
+  margin-bottom: 8px;
+}
+
+.mermaid-error-message {
+  color: #991B1B;
+  font-size: 12px;
+  background: #FEE2E2;
+  padding: 8px;
+  border-radius: 4px;
+  margin-bottom: 8px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.mermaid-error-code {
+  color: #6B7280;
+  font-size: 12px;
+  background: #F3F4F6;
+  padding: 8px;
+  border-radius: 4px;
+  overflow-x: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+/* WikiLink 样式 - 知识引用链接 */
+.wiki-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  vertical-align: middle;
+  margin: 0 2px;
+}
+
+.wiki-link:hover {
+  opacity: 0.85;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* WikiLink 在 prose 中的适配 */
+.prose .wiki-link {
+  text-decoration: none;
+}
+
+.prose .wiki-link:hover {
+  text-decoration: none;
+}
