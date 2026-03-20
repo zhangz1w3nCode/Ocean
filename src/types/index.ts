@@ -201,7 +201,7 @@ export interface KnowledgeFile {
 }
 
 // 引用分类类型
-export type ReferenceCategory = 'agents' | 'nodes' | 'workflows' | 'resources' | 'commands' | 'abilities' | 'knowledges'
+export type ReferenceCategory = 'agents' | 'nodes' | 'workflows' | 'resources' | 'commands' | 'abilities' | 'knowledges' | 'skills'
 
 // 引用项定义
 export interface ReferenceItem {
@@ -380,4 +380,41 @@ export interface AgentLoopConfig {
   timeout: number            // 超时时间（秒）
   projectPath: string        // 项目路径
   task: string               // 用户任务
+}
+
+// ========== 技能模块类型定义 ==========
+
+// 技能文件类型
+export type SkillFileType = 'skill'
+
+// 技能资源文件
+export interface SkillResource {
+  name: string          // 文件名
+  path: string          // 相对路径
+  type: 'scripts' | 'references' | 'examples'
+  content?: string      // 文件内容（编辑时使用）
+}
+
+// 技能文件定义
+export interface SkillFile {
+  id: string
+  name: string              // 从 frontmatter 的 name 字段读取
+  type: SkillFileType       // 固定为 'skill'
+  description: string       // 从 frontmatter 的 description 字段读取
+  content: string           // SKILL.md frontmatter 后的内容
+  scripts: string[]         // scripts 目录下的文件列表
+  references: string[]      // references 目录下的文件列表
+  examples: string[]        // examples 目录下的文件列表
+  createdAt: string
+  updatedAt: string         // 从文件系统获取
+}
+
+// 创建技能时的输入数据
+export interface CreateSkillInput {
+  name: string
+  description?: string
+  content: string
+  scripts?: { name: string; content: string }[]
+  references?: { name: string; content: string }[]
+  examples?: { name: string; content: string }[]
 }

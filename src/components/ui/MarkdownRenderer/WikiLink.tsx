@@ -21,7 +21,20 @@ interface WikiLinkProps {
 export function extractDisplayName(path: string): string {
   // 清理可能存在的反引号
   const cleanedPath = path.replace(/^`+|`+$/g, '')
-  // 提取文件名（去除路径前缀和扩展名）
+
+  // 特殊处理：技能路径 .claude/skills/{name}/SKILL.md
+  if (cleanedPath.includes('/skills/')) {
+    const match = cleanedPath.match(/\/skills\/([^/]+)\/SKILL\.md$/i)
+    if (match) return match[1]
+  }
+
+  // 特殊处理：工作流路径 .claude/workflows/{name}/WORKFLOW.md
+  if (cleanedPath.includes('/workflows/')) {
+    const match = cleanedPath.match(/\/workflows\/([^/]+)\/WORKFLOW\.md$/i)
+    if (match) return match[1]
+  }
+
+  // 默认处理：提取文件名（去除路径前缀和扩展名）
   const fileName = cleanedPath.split('/').pop() || cleanedPath
   return fileName.replace(/\.(md|mdx)$/, '')
 }
@@ -47,6 +60,9 @@ export function getReferenceType(path: string): { icon: string; color: string; b
   }
   if (path.includes('/abilities/')) {
     return { icon: '能力', color: '#D97706', bgColor: '#FEF3C7' } // 黄色
+  }
+  if (path.includes('/skills/')) {
+    return { icon: '技能', color: '#7C3AED', bgColor: '#EDE9FE' } // 紫罗兰色
   }
   if (path.includes('/knowledges/')) {
     return { icon: '知识', color: '#2563EB', bgColor: '#DBEAFE' } // 蓝色

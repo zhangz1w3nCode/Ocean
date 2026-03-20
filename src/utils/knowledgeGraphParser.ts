@@ -122,6 +122,8 @@ export function parseKnowledgeLinks(content: string): KnowledgeLink[] {
         relation = '引用资源'
       } else if (rawPath.includes('/abilities/')) {
         relation = '引用能力'
+      } else if (rawPath.includes('/skills/')) {
+        relation = '引用技能'
       } else if (rawPath.includes('/knowledges/')) {
         relation = '引用知识'
       }

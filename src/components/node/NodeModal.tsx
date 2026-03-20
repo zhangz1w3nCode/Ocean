@@ -288,7 +288,7 @@ export const NodeModal: FC<NodeModalProps> = ({
             {/* 编辑模式 */}
             {viewMode === 'edit' && (
               <MarkdownEditor
-                placeholder="在此输入节点内容，支持 Markdown 格式...&#10;&#10;例如：&#10;# 节点说明&#10;- 这个节点的核心功能是...&#10;&#10;提示：输入@可引用其他业务内容"
+                placeholder="在此输入节点内容，支持 Markdown 格式...&#10;&#10;例如：&#10;# 节点说明&#10;- 这个节点的核心功能是...&#10;&#10;提示：输入@和%可引用其他业务内容"
                 value={content}
                 onChange={(e) => {
                   setContent(e.target.value)

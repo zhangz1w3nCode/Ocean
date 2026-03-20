@@ -241,7 +241,7 @@ export const CommandModal: FC<CommandModalProps> = ({
             {/* 编辑模式 */}
             {viewMode === 'edit' && (
               <MarkdownEditor
-                placeholder="在此输入命令内容，支持 Markdown 格式...&#10;&#10;例如：&#10;# 命令说明&#10;- 执行 git commit 操作...&#10;&#10;提示：输入@可引用其他业务内容"
+                placeholder="在此输入命令内容，支持 Markdown 格式...&#10;&#10;例如：&#10;# 命令说明&#10;- 执行 git commit 操作...&#10;&#10;提示：输入@和%可引用其他业务内容"
                 value={content}
                 onChange={(e) => {
                   setContent(e.target.value)

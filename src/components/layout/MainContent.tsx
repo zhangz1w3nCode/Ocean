@@ -8,6 +8,7 @@ import { ResourcesPage } from '../../pages/ResourcesPage'
 import { CommandsPage } from '../../pages/CommandsPage'
 import { AbilitiesPage } from '../../pages/AbilitiesPage'
 import { KnowledgesPage } from '../../pages/KnowledgesPage'
+import { SkillsPage } from '../../pages/SkillsPage'
 import { SettingsPage } from '../../pages/SettingsPage'
 import { WorkflowEditorModal } from '../workflow'
 
@@ -23,6 +24,7 @@ const pageComponents: Record<PageType, FC> = {
   commands: CommandsPage,
   abilities: AbilitiesPage,
   knowledges: KnowledgesPage,
+  skills: SkillsPage,
   settings: SettingsPage,
 }
 

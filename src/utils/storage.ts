@@ -60,6 +60,17 @@ declare global {
       loadKnowledgeFile: (name: string) => Promise<{ success: boolean; content: string | null; mtime: string | null; error?: string }>
       deleteKnowledgeFile: (name: string) => Promise<{ success: boolean; error?: string }>
       loadAllKnowledgeFiles: () => Promise<{ success: boolean; files?: string[]; error?: string }>
+      // 技能文件相关（目录结构，存储在 skills 目录）
+      createSkillDirectory: (name: string, input: any) => Promise<{ success: boolean; error?: string }>
+      saveSkillFile: (name: string, content: string) => Promise<{ success: boolean; error?: string }>
+      loadSkillFile: (name: string) => Promise<{ success: boolean; content: string | null; mtime: string | null; error?: string }>
+      deleteSkillDirectory: (name: string) => Promise<{ success: boolean; error?: string }>
+      loadAllSkillDirectories: () => Promise<{ success: boolean; directories?: string[]; error?: string }>
+      // 技能资源文件操作
+      saveSkillResource: (skillName: string, resourceType: string, fileName: string, content: string) => Promise<{ success: boolean; error?: string }>
+      loadSkillResource: (skillName: string, resourceType: string, fileName: string) => Promise<{ success: boolean; content: string | null; error?: string }>
+      deleteSkillResource: (skillName: string, resourceType: string, fileName: string) => Promise<{ success: boolean; error?: string }>
+      listSkillResources: (skillName: string, resourceType: string) => Promise<{ success: boolean; files?: string[]; error?: string }>
       // 项目相关 API
       openFolderDialog: () => Promise<{ success: boolean; path: string | null; error?: string }>
       loadAppConfig: () => Promise<{ success: boolean; config: AppConfig; error?: string }>
@@ -3484,5 +3495,326 @@ export const getDefaultAgenticConfig = (): AgenticConfig => {
     maxIterations: 10,
     timeout: 60,
     updatedAt: new Date().toISOString()
+  }
+}
+
+// ===== 技能文件存储方法 =====
+const SKILL_FILES_KEY = 'flow-editor-skill-files'
+
+// 解析技能 frontmatter（包含 name, description）
+const parseSkillFrontmatter = (content: string): { metadata: Record<string, any>; body: string } => {
+  const frontmatterRegex = /^---\n([\s\S]*?)\n---\n([\s\S]*)$/
+  const match = content.match(frontmatterRegex)
+
+  if (match) {
+    const frontmatterLines = match[1].split('\n')
+    const metadata: Record<string, any> = {}
+
+    for (const line of frontmatterLines) {
+      const colonIndex = line.indexOf(':')
+      if (colonIndex > 0) {
+        const key = line.slice(0, colonIndex).trim()
+        const value = line.slice(colonIndex + 1).trim()
+        metadata[key] = value
+      }
+    }
+
+    return { metadata, body: match[2] }
+  }
+
+  return { metadata: {}, body: content }
+}
+
+// 生成技能格式的 Markdown
+const generateSkillMarkdown = (
+  metadata: { name: string; description: string },
+  content: string
+): string => {
+  return `---
+name: ${metadata.name}
+description: ${metadata.description}
+---
+${content}`
+}
+
+// 创建技能目录结构
+export const createSkillDirectory = async (input: {
+  name: string
+  description?: string
+  content: string
+  scripts?: { name: string; content: string }[]
+  references?: { name: string; content: string }[]
+  examples?: { name: string; content: string }[]
+}): Promise<any | null> => {
+  if (!isElectron()) {
+    // 浏览器环境：模拟创建
+    const skill = {
+      id: `skill-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      name: input.name,
+      type: 'skill' as const,
+      description: input.description || '',
+      content: input.content,
+      scripts: input.scripts?.map(s => s.name) || [],
+      references: input.references?.map(r => r.name) || [],
+      examples: input.examples?.map(e => e.name) || [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }
+    return skill
+  }
+
+  // Electron 环境
+  try {
+    const result = await window.electronAPI!.createSkillDirectory(input.name, input)
+    if (result.success) {
+      // 重新加载并返回新创建的技能
+      const skills = await loadSkillFilesFromLocal()
+      return skills.find(s => s.name === input.name) || null
+    }
+    return null
+  } catch (error) {
+    console.error('创建技能目录失败:', error)
+    return null
+  }
+}
+
+// 保存技能文件列表
+export const saveSkillFilesToLocal = async (skills: any[]): Promise<boolean> => {
+  if (!isElectron()) {
+    // 浏览器环境：使用 localStorage 存储
+    try {
+      localStorage.setItem(SKILL_FILES_KEY, JSON.stringify(skills))
+      return true
+    } catch (error) {
+      console.error('保存技能文件到 localStorage 失败:', error)
+      return false
+    }
+  }
+
+  // Electron 环境：保存 SKILL.md 文件
+  try {
+    // 获取现有目录列表，用于删除不再需要的目录
+    const existingResult = await window.electronAPI!.loadAllSkillDirectories()
+    const existingDirs = existingResult.success ? existingResult.directories || [] : []
+    const currentNames = skills.map(s => s.name)
+
+    // 删除不再需要的目录
+    for (const dirName of existingDirs) {
+      if (!currentNames.includes(dirName)) {
+        await window.electronAPI!.deleteSkillDirectory(dirName)
+      }
+    }
+
+    // 保存每个技能的 SKILL.md 文件
+    for (const skill of skills) {
+      const metadata = {
+        name: skill.name,
+        description: skill.description || '',
+      }
+      const mdContent = generateSkillMarkdown(metadata, skill.content || '')
+
+      const saveResult = await window.electronAPI!.saveSkillFile(skill.name, mdContent)
+      if (!saveResult.success) {
+        console.error(`保存技能文件 ${skill.name} 失败:`, saveResult.error)
+      }
+    }
+
+    return true
+  } catch (error) {
+    console.error('保存技能文件失败:', error)
+    return false
+  }
+}
+
+// 加载技能文件列表
+export const loadSkillFilesFromLocal = async (): Promise<any[]> => {
+  if (!isElectron()) {
+    // 浏览器环境
+    try {
+      const data = localStorage.getItem(SKILL_FILES_KEY)
+      if (!data) return []
+      return JSON.parse(data)
+    } catch (error) {
+      console.error('从 localStorage 加载技能文件失败:', error)
+      return []
+    }
+  }
+
+  // Electron环境：从 skills 目录加载
+  try {
+    const result = await window.electronAPI!.loadAllSkillDirectories()
+
+    if (result.success && result.directories) {
+      const skills: any[] = []
+
+      for (const dirName of result.directories) {
+        // 加载 SKILL.md
+        const contentResult = await window.electronAPI!.loadSkillFile(dirName)
+        if (contentResult.success && contentResult.content) {
+          const { metadata, body } = parseSkillFrontmatter(contentResult.content)
+
+          // 加载资源文件列表
+          const scripts = await loadResourceList(dirName, 'scripts')
+          const references = await loadResourceList(dirName, 'references')
+          const examples = await loadResourceList(dirName, 'examples')
+
+          skills.push({
+            id: `skill-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+            name: metadata.name || dirName,
+            type: 'skill',
+            description: metadata.description || '',
+            content: body,
+            scripts,
+            references,
+            examples,
+            createdAt: contentResult.mtime || new Date().toISOString(),
+            updatedAt: contentResult.mtime || new Date().toISOString(),
+          })
+        }
+      }
+
+      return skills
+    }
+    return []
+  } catch (error) {
+    console.error('加载技能文件失败:', error)
+    return []
+  }
+}
+
+// 辅助函数：加载资源文件列表
+const loadResourceList = async (skillName: string, resourceType: string): Promise<string[]> => {
+  try {
+    const result = await window.electronAPI!.listSkillResources(skillName, resourceType)
+    return result.success ? result.files || [] : []
+  } catch {
+    return []
+  }
+}
+
+// 删除单个技能目录
+export const deleteSkillFromLocal = async (name: string): Promise<boolean> => {
+  if (!isElectron()) {
+    // 浏览器环境：由 store 处理
+    return true
+  }
+
+  // Electron 环境
+  try {
+    const result = await window.electronAPI!.deleteSkillDirectory(name)
+    return result.success
+  } catch (error) {
+    console.error('删除技能目录失败:', error)
+    return false
+  }
+}
+
+// 加载技能资源文件
+export const loadSkillResources = async (
+  skillName: string,
+  resourceType: 'scripts' | 'references' | 'examples'
+): Promise<any[]> => {
+  if (!isElectron()) {
+    // 浏览器环境：从 localStorage 读取
+    try {
+      const data = localStorage.getItem(`skill-${skillName}-${resourceType}`)
+      if (!data) return []
+      return JSON.parse(data)
+    } catch (error) {
+      console.error('加载技能资源文件失败:', error)
+      return []
+    }
+  }
+
+  // Electron 环境
+  try {
+    const listResult = await window.electronAPI!.listSkillResources(skillName, resourceType)
+    if (!listResult.success || !listResult.files) return []
+
+    const resources: any[] = []
+    for (const fileName of listResult.files) {
+      const contentResult = await window.electronAPI!.loadSkillResource(skillName, resourceType, fileName)
+      if (contentResult.success && contentResult.content) {
+        resources.push({
+          name: fileName,
+          path: `${resourceType}/${fileName}`,
+          type: resourceType,
+          content: contentResult.content,
+        })
+      }
+    }
+    return resources
+  } catch (error) {
+    console.error('加载技能资源文件失败:', error)
+    return []
+  }
+}
+
+// 保存技能资源文件
+export const saveSkillResource = async (
+  skillName: string,
+  resourceType: 'scripts' | 'references' | 'examples',
+  fileName: string,
+  content: string
+): Promise<boolean> => {
+  if (!isElectron()) {
+    // 浏览器环境：保存到 localStorage
+    try {
+      const key = `skill-${skillName}-${resourceType}`
+      const data = localStorage.getItem(key)
+      const resources = data ? JSON.parse(data) : []
+      const existingIndex = resources.findIndex((r: any) => r.name === fileName)
+      if (existingIndex >= 0) {
+        resources[existingIndex].content = content
+      } else {
+        resources.push({ name: fileName, path: `${resourceType}/${fileName}`, type: resourceType, content })
+      }
+      localStorage.setItem(key, JSON.stringify(resources))
+      return true
+    } catch (error) {
+      console.error('保存技能资源文件失败:', error)
+      return false
+    }
+  }
+
+  // Electron 环境
+  try {
+    const result = await window.electronAPI!.saveSkillResource(skillName, resourceType, fileName, content)
+    return result.success
+  } catch (error) {
+    console.error('保存技能资源文件失败:', error)
+    return false
+  }
+}
+
+// 删除技能资源文件
+export const deleteSkillResource = async (
+  skillName: string,
+  resourceType: 'scripts' | 'references' | 'examples',
+  fileName: string
+): Promise<boolean> => {
+  if (!isElectron()) {
+    // 浏览器环境：从 localStorage 删除
+    try {
+      const key = `skill-${skillName}-${resourceType}`
+      const data = localStorage.getItem(key)
+      if (!data) return true
+      const resources = JSON.parse(data)
+      const filtered = resources.filter((r: any) => r.name !== fileName)
+      localStorage.setItem(key, JSON.stringify(filtered))
+      return true
+    } catch (error) {
+      console.error('删除技能资源文件失败:', error)
+      return false
+    }
+  }
+
+  // Electron 环境
+  try {
+    const result = await window.electronAPI!.deleteSkillResource(skillName, resourceType, fileName)
+    return result.success
+  } catch (error) {
+    console.error('删除技能资源文件失败:', error)
+    return false
   }
 }

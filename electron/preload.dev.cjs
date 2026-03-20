@@ -63,6 +63,22 @@ const electronAPI = {
   deleteKnowledgeFile: (name) => ipcRenderer.invoke('delete-knowledge-file', name),
   loadAllKnowledgeFiles: () => ipcRenderer.invoke('load-all-knowledge-files'),
 
+  // 技能文件数据持久化（目录结构，存储在 skills 目录）
+  createSkillDirectory: (name, input) => ipcRenderer.invoke('create-skill-directory', name, input),
+  saveSkillFile: (name, content) => ipcRenderer.invoke('save-skill-file', name, content),
+  loadSkillFile: (name) => ipcRenderer.invoke('load-skill-file', name),
+  deleteSkillDirectory: (name) => ipcRenderer.invoke('delete-skill-directory', name),
+  loadAllSkillDirectories: () => ipcRenderer.invoke('load-all-skill-directories'),
+  // 技能资源文件操作
+  saveSkillResource: (skillName, resourceType, fileName, content) =>
+    ipcRenderer.invoke('save-skill-resource', skillName, resourceType, fileName, content),
+  loadSkillResource: (skillName, resourceType, fileName) =>
+    ipcRenderer.invoke('load-skill-resource', skillName, resourceType, fileName),
+  deleteSkillResource: (skillName, resourceType, fileName) =>
+    ipcRenderer.invoke('delete-skill-resource', skillName, resourceType, fileName),
+  listSkillResources: (skillName, resourceType) =>
+    ipcRenderer.invoke('list-skill-resources', skillName, resourceType),
+
   // 项目相关 API
   openFolderDialog: () => ipcRenderer.invoke('open-folder-dialog'),
   loadAppConfig: () => ipcRenderer.invoke('load-app-config'),

@@ -1,37 +1,20 @@
 import type { FC } from 'react'
 import { useState, useEffect, useRef } from 'react'
-import { Type, Bot, Cpu, Palette, Eye, Edit3, MessageSquare } from 'lucide-react'
+import { Type, Wand2, Eye, Edit3, MessageSquare } from 'lucide-react'
 import { Modal, Input, Textarea, Button, ConfirmModal, MarkdownEditor, MarkdownRenderer } from '../ui'
 import { useToastStore } from '../../stores/toastStore'
-import type { AgentFile } from '../../types'
+import type { SkillFile } from '../../types'
 
-interface AgentModalProps {
+interface SkillModalProps {
   isOpen: boolean
   onClose: () => void
-  onConfirm: (agent: Omit<AgentFile, 'id' | 'createdAt' | 'updatedAt' | 'type'>) => void
+  onConfirm: (skill: Omit<SkillFile, 'id' | 'createdAt' | 'updatedAt' | 'type' | 'scripts' | 'references' | 'examples'>) => void
   mode: 'create' | 'edit'
-  initialData?: AgentFile
+  initialData?: SkillFile
   existingNames?: string[]
 }
 
-// model 选项
-const modelOptions: { id: string; label: string; color: string; bgColor: string }[] = [
-  { id: 'haiku', label: 'Haiku', color: '#34C759', bgColor: '#E8F5E9' },
-  { id: 'sonnet', label: 'Sonnet', color: '#FF9500', bgColor: '#FFF3E0' },
-  { id: 'opus', label: 'Opus', color: '#FF3B30', bgColor: '#FFEBEE' },
-]
-
-// 颜色选项
-const colorOptions: { id: string; label: string; color: string; bgColor: string }[] = [
-  { id: 'blue', label: '蓝色', color: '#007AFF', bgColor: '#E3F2FD' },
-  { id: 'green', label: '绿色', color: '#34C759', bgColor: '#E8F5E9' },
-  { id: 'purple', label: '紫色', color: '#5856D6', bgColor: '#EDE7F6' },
-  { id: 'yellow', label: '黄色', color: '#FF9500', bgColor: '#FFF3E0' },
-  { id: 'red', label: '红色', color: '#FF3B30', bgColor: '#FFEBEE' },
-  { id: 'orange', label: '橙色', color: '#FF9500', bgColor: '#FFF3E0' },
-]
-
-export const AgentModal: FC<AgentModalProps> = ({
+export const SkillModal: FC<SkillModalProps> = ({
   isOpen,
   onClose,
   onConfirm,
@@ -42,9 +25,10 @@ export const AgentModal: FC<AgentModalProps> = ({
   const { addToast } = useToastStore()
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
-  const [model, setModel] = useState<string>('haiku')
-  const [color, setColor] = useState<string>('blue')
   const [content, setContent] = useState('')
+
+  // 计算排除路径（编辑模式下排除当前技能）
+  const excludePath = mode === 'edit' && initialData ? `.claude/skills/${initialData.name}/SKILL.md` : undefined
 
   // 编辑/预览模式
   const [viewMode, setViewMode] = useState<'edit' | 'preview'>('edit')
@@ -63,8 +47,6 @@ export const AgentModal: FC<AgentModalProps> = ({
     return JSON.stringify({
       name,
       description,
-      model,
-      color,
       content,
     })
   }
@@ -80,15 +62,11 @@ export const AgentModal: FC<AgentModalProps> = ({
       if (mode === 'edit' && initialData) {
         setName(initialData.name)
         setDescription(initialData.description || '')
-        setModel(initialData.model || 'haiku')
-        setColor(initialData.color || 'blue')
         setContent(initialData.content || '')
       } else {
         // 创建模式：重置为默认值
         setName('')
         setDescription('')
-        setModel('haiku')
-        setColor('blue')
         setContent('')
       }
       setInvalidFields(new Set())
@@ -101,24 +79,33 @@ export const AgentModal: FC<AgentModalProps> = ({
   }, [isOpen, mode, initialData])
 
   const handleSubmit = () => {
-    // 验证智能体名称
+    // 验证技能名称
     if (!name.trim()) {
       setInvalidFields(new Set(['name']))
-      addToast('请输入智能体名称', 'warning')
+      addToast('请输入技能名称', 'warning')
+      setTimeout(() => setInvalidFields(new Set()), 3000)
+      return
+    }
+
+    // 验证名称格式（只允许字母、数字、中划线、下划线）
+    const nameRegex = /^[a-zA-Z0-9_-]+$/
+    if (!nameRegex.test(name.trim())) {
+      setInvalidFields(new Set(['name']))
+      addToast('技能名称只能包含字母、数字、中划线和下划线', 'warning')
       setTimeout(() => setInvalidFields(new Set()), 3000)
       return
     }
 
     // 创建模式下检查名称唯一性
     if (mode === 'create' && existingNames.includes(name.trim())) {
-      addToast('智能体名称已存在，请使用其他名称', 'warning')
+      addToast('技能名称已存在，请使用其他名称', 'warning')
       return
     }
 
     // 验证内容
     if (!content.trim()) {
       setInvalidFields(new Set(['content']))
-      addToast('请输入智能体内容', 'warning')
+      addToast('请输入技能内容', 'warning')
       setTimeout(() => setInvalidFields(new Set()), 3000)
       return
     }
@@ -130,13 +117,11 @@ export const AgentModal: FC<AgentModalProps> = ({
     onConfirm({
       name: name.trim(),
       description: description.trim(),
-      model: model,
-      color: color,
       content: content.trim(),
     })
 
     // 显示成功提示
-    addToast(mode === 'create' ? '智能体创建成功' : '智能体更新成功', 'success')
+    addToast(mode === 'create' ? '技能创建成功' : '技能更新成功', 'success')
 
     handleClose(true)
   }
@@ -150,8 +135,6 @@ export const AgentModal: FC<AgentModalProps> = ({
 
     setName('')
     setDescription('')
-    setModel('haiku')
-    setColor('blue')
     setContent('')
     setInvalidFields(new Set())
     onClose()
@@ -173,7 +156,7 @@ export const AgentModal: FC<AgentModalProps> = ({
       <Modal
         isOpen={isOpen}
         onClose={() => handleClose()}
-        title={mode === 'create' ? '创建新智能体' : '编辑智能体'}
+        title={mode === 'create' ? '创建新技能' : '编辑技能'}
         size="xl"
         footer={
           <div className="flex justify-end gap-3">
@@ -192,14 +175,14 @@ export const AgentModal: FC<AgentModalProps> = ({
         }
       >
         <div className="space-y-5 max-h-[60vh] overflow-y-auto pr-2">
-          {/* 智能体名称 */}
+          {/* 技能名称 */}
           <div>
             <label className="flex items-center gap-2 text-sm font-medium text-macos-text mb-1.5">
               <Type size={16} className="text-macos-text-secondary" />
-              智能体名称 *
+              技能名称 *
             </label>
             <Input
-              placeholder="例如：ant-doc-agent"
+              placeholder="例如：code-analyzer"
               value={name}
               onChange={(e) => {
                 setName(e.target.value)
@@ -210,98 +193,33 @@ export const AgentModal: FC<AgentModalProps> = ({
               invalid={invalidFields.has('name')}
             />
             {mode === 'edit' && (
-              <p className="mt-1 text-xs text-macos-text-tertiary">编辑模式下智能体名称不可修改</p>
+              <p className="mt-1 text-xs text-macos-text-tertiary">编辑模式下技能名称不可修改</p>
+            )}
+            {mode === 'create' && (
+              <p className="mt-1 text-xs text-macos-text-tertiary">只能包含字母、数字、中划线和下划线</p>
             )}
           </div>
 
-          {/* 智能体描述 */}
+          {/* 技能描述 */}
           <div>
             <label className="flex items-center gap-2 text-sm font-medium text-macos-text mb-1.5">
               <MessageSquare size={16} className="text-macos-text-secondary" />
-              智能体描述
+              技能描述
             </label>
             <Textarea
-              placeholder="简要描述这个智能体的用途..."
+              placeholder="简要描述这个技能的用途..."
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               rows={2}
             />
           </div>
 
-          {/* 模型选择 */}
-          <div>
-            <label className="flex items-center gap-2 text-sm font-medium text-macos-text mb-2">
-              <Cpu size={16} className="text-macos-text-secondary" />
-              模型选择
-            </label>
-            <div className="flex items-center gap-2">
-              {modelOptions.map((opt) => {
-                const isSelected = model === opt.id
-                return (
-                  <button
-                    key={opt.id}
-                    type="button"
-                    onClick={() => setModel(opt.id)}
-                    className={`
-                      flex items-center gap-1.5 px-3 py-2 rounded-lg border text-sm transition-all
-                      ${
-                        isSelected
-                          ? 'border-gray-400 bg-gray-100 text-gray-800'
-                          : 'border-macos-border hover:border-gray-300 hover:bg-gray-50 text-macos-text-secondary'
-                      }
-                    `}
-                  >
-                    <span
-                      className="w-2 h-2 rounded-full"
-                      style={{ backgroundColor: opt.color }}
-                    />
-                    {opt.label}
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-
-          {/* 颜色选择 */}
-          <div>
-            <label className="flex items-center gap-2 text-sm font-medium text-macos-text mb-2">
-              <Palette size={16} className="text-macos-text-secondary" />
-              图标颜色
-            </label>
-            <div className="flex items-center gap-2">
-              {colorOptions.map((opt) => {
-                const isSelected = color === opt.id
-                return (
-                  <button
-                    key={opt.id}
-                    type="button"
-                    onClick={() => setColor(opt.id)}
-                    className={`
-                      flex items-center gap-1.5 px-3 py-2 rounded-lg border text-sm transition-all
-                      ${
-                        isSelected
-                          ? 'border-gray-400 bg-gray-100 text-gray-800'
-                          : 'border-macos-border hover:border-gray-300 hover:bg-gray-50 text-macos-text-secondary'
-                      }
-                    `}
-                  >
-                    <span
-                      className="w-3 h-3 rounded-full"
-                      style={{ backgroundColor: opt.color }}
-                    />
-                    {opt.label}
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-
-          {/* 智能体内容 */}
+          {/* 技能内容 */}
           <div>
             <div className="flex items-center justify-between mb-1.5">
               <label className="flex items-center gap-2 text-sm font-medium text-macos-text">
-                <Bot size={16} className="text-macos-text-secondary" />
-                角色指令内容 *
+                <Wand2 size={16} className="text-violet-500" />
+                技能内容 *
               </label>
               {/* 编辑/预览切换 */}
               <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
@@ -335,7 +253,7 @@ export const AgentModal: FC<AgentModalProps> = ({
             {/* 编辑模式 */}
             {viewMode === 'edit' && (
               <MarkdownEditor
-                placeholder="在此输入智能体的角色指令内容，支持 Markdown 格式...&#10;&#10;例如：&#10;# 角色&#10;- 你是一个充分理解人类自然语言的助手...&#10;&#10;提示：输入@和%可引用其他业务内容"
+                placeholder="在此输入技能内容，支持 Markdown 格式...&#10;&#10;例如：&#10;# 技能说明&#10;这是一个代码分析技能...&#10;&#10;提示：输入@和%可引用其他业务内容 "
                 value={content}
                 onChange={(e) => {
                   setContent(e.target.value)
@@ -344,7 +262,7 @@ export const AgentModal: FC<AgentModalProps> = ({
                 rows={12}
                 invalid={invalidFields.has('content')}
                 className="font-mono text-sm"
-                excludePath={mode === 'edit' && initialData ? `.claude/agents/${initialData.name}.md` : undefined}
+                excludePath={excludePath}
               />
             )}
 
@@ -365,6 +283,14 @@ export const AgentModal: FC<AgentModalProps> = ({
               </div>
             )}
           </div>
+
+          {/* 资源文件说明 */}
+          {mode === 'create' && (
+            <div className="text-xs text-macos-text-tertiary bg-violet-50 rounded-lg p-3">
+              <p className="font-medium text-violet-700 mb-1">关于资源文件</p>
+              <p>创建技能后，可以在技能详情页面管理 scripts、references、examples 等资源文件。</p>
+            </div>
+          )}
         </div>
       </Modal>
 

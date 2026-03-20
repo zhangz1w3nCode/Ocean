@@ -7,6 +7,7 @@ import { useResourceStore } from '../stores/resourceStore'
 import { useCommandStore } from '../stores/commandStore'
 import { useAbilityStore } from '../stores/abilityStore'
 import { useKnowledgeStore } from '../stores/knowledgeStore'
+import { useSkillStore } from '../stores/skillStore'
 
 interface UseReferenceItemsOptions {
   excludePath?: string  // 排除特定路径（如 ".claude/agents/xxx.md"）
@@ -20,6 +21,7 @@ const libraryConfig: { category: ReferenceCategory; name: string; path: string }
   { category: 'resources', name: '资源文件库', path: '.claude/resources/' },
   { category: 'commands', name: '命令库', path: '.claude/commands/' },
   { category: 'abilities', name: '能力库', path: '.claude/abilities/' },
+  { category: 'skills', name: '技能库', path: '.claude/skills/' },
   { category: 'knowledges', name: '知识库', path: '.claude/knowledges/' },
 ]
 
@@ -32,6 +34,7 @@ export function useReferenceItems(options: UseReferenceItemsOptions = {}): Refer
   const resourceFiles = useResourceStore((state) => state.resourceFiles)
   const commandFiles = useCommandStore((state) => state.commandFiles)
   const abilityFiles = useAbilityStore((state) => state.abilityFiles)
+  const skillFiles = useSkillStore((state) => state.skillFiles)
   const knowledgeFiles = useKnowledgeStore((state) => state.knowledgeFiles)
 
   return useMemo(() => {
@@ -183,6 +186,32 @@ export function useReferenceItems(options: UseReferenceItemsOptions = {}): Refer
       }
     })
 
+    // 技能 - 先添加库引用，再添加具体文件
+    // 注意：技能使用文件夹结构，路径为 .claude/skills/{name}/SKILL.md
+    const skillLibrary = libraryConfig.find(c => c.category === 'skills')!
+    if (skillLibrary.path !== excludePath) {
+      items.push({
+        id: 'library-skills',
+        name: skillLibrary.name,
+        category: 'skills',
+        path: skillLibrary.path,
+        isLibrary: true,
+      })
+    }
+    skillFiles.forEach((skill) => {
+      // 技能使用文件夹结构，路径为 .claude/skills/{name}/SKILL.md
+      const path = `.claude/skills/${skill.name}/SKILL.md`
+      if (path !== excludePath) {
+        items.push({
+          id: skill.id,
+          name: skill.name,
+          category: 'skills',
+          path,
+          description: skill.description,
+        })
+      }
+    })
+
     // 知识库 - 先添加库引用，再添加具体文件
     const knowledgeLibrary = libraryConfig.find(c => c.category === 'knowledges')!
     if (knowledgeLibrary.path !== excludePath) {
@@ -208,5 +237,5 @@ export function useReferenceItems(options: UseReferenceItemsOptions = {}): Refer
     })
 
     return items
-  }, [excludePath, agentFiles, nodeDefinitions, workflows, resourceFiles, commandFiles, abilityFiles, knowledgeFiles])
+  }, [excludePath, agentFiles, nodeDefinitions, workflows, resourceFiles, commandFiles, abilityFiles, skillFiles, knowledgeFiles])
 }

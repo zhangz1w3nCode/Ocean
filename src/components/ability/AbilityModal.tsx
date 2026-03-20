@@ -660,7 +660,7 @@ export const AbilityModal: FC<AbilityModalProps> = ({
         {/* 编辑模式 */}
         {viewMode === 'edit' && (
           <MarkdownEditor
-            placeholder="在此输入能力内容，支持 Markdown 格式...&#10;&#10;例如：&#10;# 能力说明&#10;- 这是一个最小能力单元...&#10;&#10;提示：输入@可引用其他业务内容"
+            placeholder="在此输入能力内容，支持 Markdown 格式...&#10;&#10;例如：&#10;# 能力说明&#10;- 这是一个最小能力单元...&#10;&#10;提示：输入@和%可引用其他业务内容"
             value={content}
             onChange={(e) => {
               setContent(e.target.value)

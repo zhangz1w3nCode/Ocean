@@ -112,6 +112,25 @@ const getKnowledgesDir = () => {
   return dataDir
 }
 
+// 技能文件存储目录（skills）
+const getSkillsDir = () => {
+  const dataDir = path.join(getProjectRoot(), '.claude', 'skills')
+  if (!fs.existsSync(dataDir)) {
+    fs.mkdirSync(dataDir, { recursive: true })
+  }
+  return dataDir
+}
+
+// 获取技能子目录路径
+const getSkillSubDir = (skillName, subDir) => {
+  const skillDir = path.join(getSkillsDir(), skillName)
+  const subDirPath = path.join(skillDir, subDir)
+  if (!fs.existsSync(subDirPath)) {
+    fs.mkdirSync(subDirPath, { recursive: true })
+  }
+  return subDirPath
+}
+
 // 获取工作流文件路径（详情）
 const getWorkflowFilePath = (id) => {
   return path.join(getWorkflowsDir(), `${id}.json`)
@@ -2156,5 +2175,186 @@ ipcMain.handle('load-ability-template-file', async (_, templateType) => {
   } catch (error) {
     console.error('加载能力模板文件失败:', error)
     return { success: false, error: error.message, content: null }
+  }
+})
+
+// ===== 技能文件相关 IPC =====
+
+// 创建技能目录结构
+ipcMain.handle('create-skill-directory', (_, name, input) => {
+  try {
+    const skillsDir = getSkillsDir()
+    const skillDir = path.join(skillsDir, name)
+
+    if (fs.existsSync(skillDir)) {
+      return { success: false, error: '技能目录已存在' }
+    }
+
+    // 创建目录结构
+    fs.mkdirSync(skillDir, { recursive: true })
+
+    // 创建子目录
+    const subDirs = ['scripts', 'references', 'examples']
+    for (const subDir of subDirs) {
+      fs.mkdirSync(path.join(skillDir, subDir), { recursive: true })
+    }
+
+    // 创建 SKILL.md 文件
+    const skillMdContent = `---
+name: ${name}
+description: ${input.description || ''}
+---
+${input.content || ''}`
+    fs.writeFileSync(path.join(skillDir, 'SKILL.md'), skillMdContent, 'utf-8')
+
+    // 创建资源文件
+    if (input.scripts) {
+      for (const script of input.scripts) {
+        fs.writeFileSync(path.join(skillDir, 'scripts', script.name), script.content, 'utf-8')
+      }
+    }
+    if (input.references) {
+      for (const ref of input.references) {
+        fs.writeFileSync(path.join(skillDir, 'references', ref.name), ref.content, 'utf-8')
+      }
+    }
+    if (input.examples) {
+      for (const ex of input.examples) {
+        fs.writeFileSync(path.join(skillDir, 'examples', ex.name), ex.content, 'utf-8')
+      }
+    }
+
+    return { success: true }
+  } catch (error) {
+    console.error('创建技能目录失败:', error)
+    return { success: false, error: String(error) }
+  }
+})
+
+// 保存技能 SKILL.md 文件
+ipcMain.handle('save-skill-file', (_, name, content) => {
+  try {
+    const skillsDir = getSkillsDir()
+    const skillDir = path.join(skillsDir, name)
+    if (!fs.existsSync(skillDir)) {
+      fs.mkdirSync(skillDir, { recursive: true })
+    }
+    const filePath = path.join(skillDir, 'SKILL.md')
+    fs.writeFileSync(filePath, content, 'utf-8')
+    return { success: true }
+  } catch (error) {
+    console.error('保存技能文件失败:', error)
+    return { success: false, error: String(error) }
+  }
+})
+
+// 加载技能 SKILL.md 文件
+ipcMain.handle('load-skill-file', (_, name) => {
+  try {
+    const skillsDir = getSkillsDir()
+    const filePath = path.join(skillsDir, name, 'SKILL.md')
+    if (!fs.existsSync(filePath)) {
+      return { success: true, content: null, mtime: null }
+    }
+    const content = fs.readFileSync(filePath, 'utf-8')
+    const stats = fs.statSync(filePath)
+    return { success: true, content, mtime: stats.mtime.toISOString() }
+  } catch (error) {
+    console.error('加载技能文件失败:', error)
+    return { success: false, error: String(error), content: null, mtime: null }
+  }
+})
+
+// 删除技能目录
+ipcMain.handle('delete-skill-directory', (_, name) => {
+  try {
+    const skillsDir = getSkillsDir()
+    const skillDir = path.join(skillsDir, name)
+    if (fs.existsSync(skillDir)) {
+      fs.rmSync(skillDir, { recursive: true, force: true })
+    }
+    return { success: true }
+  } catch (error) {
+    console.error('删除技能目录失败:', error)
+    return { success: false, error: String(error) }
+  }
+})
+
+// 加载所有技能目录列表
+ipcMain.handle('load-all-skill-directories', () => {
+  try {
+    const skillsDir = getSkillsDir()
+    if (!fs.existsSync(skillsDir)) {
+      return { success: true, directories: [] }
+    }
+    const directories = fs.readdirSync(skillsDir)
+      .filter(file => {
+        const filePath = path.join(skillsDir, file)
+        return fs.statSync(filePath).isDirectory()
+      })
+    return { success: true, directories }
+  } catch (error) {
+    console.error('加载技能目录列表失败:', error)
+    return { success: false, error: String(error), directories: [] }
+  }
+})
+
+// 保存技能资源文件
+ipcMain.handle('save-skill-resource', (_, skillName, resourceType, fileName, content) => {
+  try {
+    const subDir = getSkillSubDir(skillName, resourceType)
+    const filePath = path.join(subDir, fileName)
+    fs.writeFileSync(filePath, content, 'utf-8')
+    return { success: true }
+  } catch (error) {
+    console.error('保存技能资源文件失败:', error)
+    return { success: false, error: String(error) }
+  }
+})
+
+// 加载技能资源文件
+ipcMain.handle('load-skill-resource', (_, skillName, resourceType, fileName) => {
+  try {
+    const skillsDir = getSkillsDir()
+    const filePath = path.join(skillsDir, skillName, resourceType, fileName)
+    if (!fs.existsSync(filePath)) {
+      return { success: true, content: null }
+    }
+    const content = fs.readFileSync(filePath, 'utf-8')
+    return { success: true, content }
+  } catch (error) {
+    console.error('加载技能资源文件失败:', error)
+    return { success: false, error: String(error), content: null }
+  }
+})
+
+// 删除技能资源文件
+ipcMain.handle('delete-skill-resource', (_, skillName, resourceType, fileName) => {
+  try {
+    const skillsDir = getSkillsDir()
+    const filePath = path.join(skillsDir, skillName, resourceType, fileName)
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath)
+    }
+    return { success: true }
+  } catch (error) {
+    console.error('删除技能资源文件失败:', error)
+    return { success: false, error: String(error) }
+  }
+})
+
+// 列出技能资源文件
+ipcMain.handle('list-skill-resources', (_, skillName, resourceType) => {
+  try {
+    const skillsDir = getSkillsDir()
+    const subDirPath = path.join(skillsDir, skillName, resourceType)
+    if (!fs.existsSync(subDirPath)) {
+      return { success: true, files: [] }
+    }
+    const files = fs.readdirSync(subDirPath)
+    return { success: true, files }
+  } catch (error) {
+    console.error('列出技能资源文件失败:', error)
+    return { success: false, error: String(error), files: [] }
   }
 })

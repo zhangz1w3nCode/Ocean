@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useCallback, type FC } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Search, Bot, Box, GitBranch, Folder, Terminal, FolderOpen, Zap, BookOpen } from 'lucide-react'
+import { Search, Bot, Box, GitBranch, Folder, Terminal, FolderOpen, Zap, BookOpen, Wand2 } from 'lucide-react'
 import type { ReferenceItem, ReferenceCategory } from '../../types'
 
 interface ReferenceSelectModalProps {
@@ -19,6 +19,7 @@ const categoryLabels: Record<ReferenceCategory, string> = {
   resources: '资源文件',
   commands: '命令',
   abilities: '能力',
+  skills: '技能',
   knowledges: '知识',
 }
 
@@ -30,6 +31,7 @@ const categoryIcons: Record<ReferenceCategory, FC<{ size?: number; className?: s
   resources: Folder,
   commands: Terminal,
   abilities: Zap,
+  skills: Wand2,
   knowledges: BookOpen,
 }
 
@@ -57,6 +59,7 @@ export const ReferenceSelectModal: FC<ReferenceSelectModalProps> = ({
       resources: [],
       commands: [],
       abilities: [],
+      skills: [],
       knowledges: [],
     }
     items.forEach((item) => {
