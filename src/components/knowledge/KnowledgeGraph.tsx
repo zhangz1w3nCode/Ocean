@@ -307,15 +307,15 @@ export const KnowledgeGraphModal: FC<KnowledgeGraphModalProps> = ({
     // 高亮：悬浮节点 或 没有活跃节点时的所有节点
     const isHighlighted = !activeNode || isHovered
 
-    // 计算基于入度的节点大小放大系数
-    // 公式：sizeMultiplier = 1 + Math.sqrt(inDegree) * 0.3
-    // 入度越大，节点越大，但增长趋于平缓（平方根函数）
+    // 计算基于出度的节点大小放大系数
+    // 公式：sizeMultiplier = 1 + Math.sqrt(outDegree) * 0.3
+    // 出度越大，节点越大，但增长趋于平缓（平方根函数）
     // 最大放大倍数为3倍，避免差异过大
-    const inDegreeSizeMultiplier = Math.min(1 + Math.sqrt(node.inDegree) * 0.3, 3)
+    const outDegreeSizeMultiplier = Math.min(1 + Math.sqrt(node.outDegree) * 0.3, 3)
 
     // 节点视觉大小：只在缩小时保持一致，放大时正常变大
     // globalScale < 1 时（缩小），绘制更大补偿；globalScale >= 1 时（放大），使用原始大小
-    const baseNodeSize = (isHovered ? config.nodeSize + 0.5 : config.nodeSize) * inDegreeSizeMultiplier
+    const baseNodeSize = (isHovered ? config.nodeSize + 0.5 : config.nodeSize) * outDegreeSizeMultiplier
     const visualSize = globalScale < 1 ? baseNodeSize / globalScale : baseNodeSize
 
     // 标签大小同样只在缩小时保持一致
@@ -747,8 +747,8 @@ export const KnowledgeGraphModal: FC<KnowledgeGraphModalProps> = ({
           if (!isFinite(node.x!) || !isFinite(node.y!)) continue
 
           // 计算节点的视觉半径（与 paintNode 一致）
-          const inDegreeSizeMultiplier = Math.min(1 + Math.sqrt(node.inDegree) * 0.3, 3)
-          const visualRadius = nodeSize * inDegreeSizeMultiplier
+          const outDegreeSizeMultiplier = Math.min(1 + Math.sqrt(node.outDegree) * 0.3, 3)
+          const visualRadius = nodeSize * outDegreeSizeMultiplier
 
           // 计算鼠标到节点中心的距离
           const dx = graphX - node.x!
