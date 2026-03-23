@@ -281,7 +281,7 @@ export interface CLIAgent {
 }
 
 // 设置分类
-export type SettingsCategory = 'llm' | 'agentic' | 'ability'
+export type SettingsCategory = 'llm' | 'agentic' | 'ability' | 'skill'
 
 // 设置项接口
 export interface SettingsItem {

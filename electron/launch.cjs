@@ -2178,6 +2178,68 @@ ipcMain.handle('load-ability-template-file', async (_, templateType) => {
   }
 })
 
+// ===== 技能模板文件相关 IPC =====
+
+/**
+ * 保存技能模板文件
+ * @param templateType 模板类型: 'llm-create' | 'agentic-create'
+ */
+ipcMain.handle('save-skill-template-file', async (_, templateType, content) => {
+  try {
+    const projectRoot = getProjectRoot()
+    const templateDir = path.join(projectRoot, '.ocean', 'template', 'skill')
+
+    // 确保目录存在
+    if (!fs.existsSync(templateDir)) {
+      fs.mkdirSync(templateDir, { recursive: true })
+    }
+
+    const fileName = `${templateType}.json`
+    const filePath = path.join(templateDir, fileName)
+
+    // 保存为 JSON 文件
+    const templateData = {
+      content,
+      updatedAt: new Date().toISOString()
+    }
+    fs.writeFileSync(filePath, JSON.stringify(templateData, null, 2), 'utf-8')
+
+    console.log('保存技能模板文件成功:', filePath)
+    return { success: true }
+  } catch (error) {
+    console.error('保存技能模板文件失败:', error)
+    return { success: false, error: error.message }
+  }
+})
+
+/**
+ * 加载技能模板文件
+ * @param templateType 模板类型: 'llm-create' | 'agentic-create'
+ */
+ipcMain.handle('load-skill-template-file', async (_, templateType) => {
+  try {
+    const projectRoot = getProjectRoot()
+    const fileName = `${templateType}.json`
+    const filePath = path.join(projectRoot, '.ocean', 'template', 'skill', fileName)
+
+    // 检查文件是否存在
+    if (!fs.existsSync(filePath)) {
+      console.log('技能模板文件不存在:', filePath)
+      return { success: false, content: null }
+    }
+
+    // 读取文件内容
+    const fileContent = fs.readFileSync(filePath, 'utf-8')
+    const templateData = JSON.parse(fileContent)
+
+    console.log('加载技能模板文件成功:', filePath)
+    return { success: true, content: templateData.content }
+  } catch (error) {
+    console.error('加载技能模板文件失败:', error)
+    return { success: false, error: error.message, content: null }
+  }
+})
+
 // ===== 技能文件相关 IPC =====
 
 // 创建技能目录结构

@@ -5,6 +5,7 @@ import { SettingsSidebar } from '../components/settings/SettingsSidebar'
 import { LLMSettings } from './LLMSettings'
 import { AgenticSettings } from '../components/settings/AgenticSettings'
 import { AbilitySettings } from '../components/settings/AbilitySettings'
+import { SkillSettings } from '../components/settings/SkillSettings'
 
 export const SettingsPage: FC = () => {
   const { currentCategory, loadLLMProviders, loadAgenticConfig, loadAbilityConfig } = useSettingsStore()
@@ -25,6 +26,8 @@ export const SettingsPage: FC = () => {
         return <AgenticSettings />
       case 'ability':
         return <AbilitySettings />
+      case 'skill':
+        return <SkillSettings />
       default:
         return <LLMSettings />
     }

@@ -4,13 +4,13 @@ import { Wand2, Loader2, Eye, Edit3, RotateCcw, GitCompare } from 'lucide-react'
 import { Modal, Textarea, Button, MarkdownRenderer, ContentDiffModal } from '../ui'
 import { useToastStore } from '../../stores/toastStore'
 import { optimizeAbilityWithLLM } from '../../services/llmService'
-import { getDefaultLLMProvider, loadAbilityTemplateFile } from '../../utils/storage'
+import { getDefaultLLMProvider, loadAbilityTemplateFile, loadSkillTemplateFile } from '../../utils/storage'
 
 /**
  * 优化弹窗组件 Props 接口
  *
  * 该组件是一个通用的内容优化弹窗,支持通过 LLM 对任意文本内容进行智能优化。
- * 可用于能力模块、命令模块、智能体模块等多个业务场景。
+ * 可用于能力模块、命令模块、智能体模块、技能模块等多个业务场景。
  */
 interface OptimizeModalProps {
   /** 弹窗是否打开 */
@@ -24,7 +24,7 @@ interface OptimizeModalProps {
   /** 弹窗标题,默认为"优化内容" */
   title?: string
   /** 模板类型，用于从本地文件加载对应的模板 */
-  templateType?: 'ability-optimize' | 'command-optimize' | 'agent-optimize'
+  templateType?: 'ability-optimize' | 'command-optimize' | 'agent-optimize' | 'skill-optimize'
   /** 提示词模板(可选,优先级高于 templateType),用于指导 LLM 如何优化内容 */
   promptTemplate?: string
   /** 占位符配置,用于替换提示词模板中的变量 */
@@ -134,9 +134,15 @@ export const OptimizeModal: FC<OptimizeModalProps> = ({
       // 加载模板：优先使用传入的模板，否则从本地文件加载
       let promptTemplate = providedPromptTemplate
       if (!promptTemplate) {
-        // 根据模板类型映射到文件名
-        const templateFileName = templateType === 'ability-optimize' ? 'llm-optimize' : templateType
-        promptTemplate = await loadAbilityTemplateFile(templateFileName as 'llm-create' | 'llm-optimize' | 'agentic-create' | 'agentic-optimize')
+        // 根据模板类型映射到文件名和加载函数
+        if (templateType === 'skill-optimize') {
+          // 技能模块使用 loadSkillTemplateFile
+          promptTemplate = await loadSkillTemplateFile('llm-optimize')
+        } else {
+          // 其他模块使用 loadAbilityTemplateFile
+          const templateFileName = templateType === 'ability-optimize' ? 'llm-optimize' : templateType
+          promptTemplate = await loadAbilityTemplateFile(templateFileName as 'llm-create' | 'llm-optimize' | 'agentic-create' | 'agentic-optimize')
+        }
       }
 
       // 始终基于原始内容进行优化

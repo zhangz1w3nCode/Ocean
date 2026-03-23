@@ -118,7 +118,13 @@ const electronAPI = {
   saveAbilityTemplateFile: (templateType, content) =>
     ipcRenderer.invoke('save-ability-template-file', templateType, content),
   loadAbilityTemplateFile: (templateType) =>
-    ipcRenderer.invoke('load-ability-template-file', templateType)
+    ipcRenderer.invoke('load-ability-template-file', templateType),
+
+  // 技能模块模板文件 API
+  saveSkillTemplateFile: (templateType, content) =>
+    ipcRenderer.invoke('save-skill-template-file', templateType, content),
+  loadSkillTemplateFile: (templateType) =>
+    ipcRenderer.invoke('load-skill-template-file', templateType)
 }
 
 // 通过 window 暴露

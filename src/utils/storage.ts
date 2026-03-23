@@ -130,6 +130,9 @@ declare global {
       // 能力模块模板文件 API
       saveAbilityTemplateFile: (templateType: 'llm-create' | 'llm-optimize' | 'agentic-create' | 'agentic-optimize', content: string) => Promise<{ success: boolean; error?: string }>
       loadAbilityTemplateFile: (templateType: 'llm-create' | 'llm-optimize' | 'agentic-create' | 'agentic-optimize') => Promise<{ success: boolean; content: string | null; error?: string }>
+      // 技能模块模板文件 API
+      saveSkillTemplateFile: (templateType: 'llm-create' | 'agentic-create' | 'llm-optimize', content: string) => Promise<{ success: boolean; error?: string }>
+      loadSkillTemplateFile: (templateType: 'llm-create' | 'agentic-create' | 'llm-optimize') => Promise<{ success: boolean; content: string | null; error?: string }>
     }
   }
 }
@@ -3285,6 +3288,161 @@ export const loadAbilityTemplateFile = async (templateType: 'llm-create' | 'llm-
     // 出错时返回默认模板
     return getDefaultTemplate(templateType)
   }
+}
+
+// ===== 技能模块模板存储方法 =====
+
+// 默认的技能 LLM 创建提示词模板
+const DEFAULT_SKILL_PROMPT_TEMPLATE = `## 角色
+你是一个专业的技能设计助手。请根据用户提供的描述，生成高质量的技能内容。
+
+## 工作流程
+1. 深入理解用户的需求描述
+2. 详细设计和构思技能内容
+3. 直接输出技能详情
+
+## 技能说明
+技能是一个可复用的能力包，可能包含脚本、参考文档、示例等资源。技能内容应清晰描述技能用途、执行步骤、注意事项等。
+
+## 注意事项
+- 输出的技能内容必须详细、具体，不可泛泛而谈
+- 内容结构要清晰，使用 Markdown 格式
+- 包含具体的使用场景和执行步骤
+- 如涉及脚本执行，应说明脚本的调用方式
+
+## 输出要求
+请直接输出技能的详细内容（Markdown格式），不需要包含名称和描述字段。输出内容应包括：
+- 技能说明
+- 使用场景
+- 执行步骤
+- 注意事项
+- 相关资源（如有）
+
+用户描述：{{userDescription}}`
+
+// 默认的技能 Agentic 创建提示词模板
+const DEFAULT_SKILL_AGENTIC_CREATE_PROMPT_TEMPLATE = `## 角色
+你是一个专业的技能设计助手，请根据用户需求生成高质量的技能内容。
+
+## 任务
+根据用户描述，生成详细的技能内容。
+
+## 注意事项
+- 内容结构要清晰，使用 Markdown 格式
+- 提供具体的使用场景和执行步骤
+- 如涉及脚本执行，应说明脚本的调用方式
+
+## 输出要求
+直接输出技能的详细内容（Markdown格式），不需要包含名称和描述。
+
+用户描述：{{userDescription}}`
+
+// 默认的技能优化提示词模板
+const DEFAULT_SKILL_OPTIMIZE_PROMPT_TEMPLATE = `你是一个专业的AI技能优化助手。请根据用户提供的优化目标，对现有的技能内容进行优化改进。
+
+## 现有技能内容
+{{currentContent}}
+
+## 优化目标
+{{optimizeTarget}}
+
+## 输出要求
+请直接输出优化后的技能内容（Markdown格式），不需要包含名称和描述字段。
+
+## 优化原则
+1. 保持原有核心功能和价值
+2. 根据优化目标有针对性地改进
+3. 结构清晰，表述准确
+4. 如有必要，可补充使用场景或注意事项
+5. 如涉及脚本执行，说明脚本的调用方式
+
+请直接输出优化后的Markdown内容，不要包含代码块标记。`
+
+/**
+ * 加载技能模板文件
+ * @param templateType 模板类型: 'llm-create' | 'agentic-create' | 'llm-optimize'
+ * @returns 模板内容，如果文件不存在则返回默认模板
+ */
+export const loadSkillTemplateFile = async (templateType: 'llm-create' | 'agentic-create' | 'llm-optimize'): Promise<string> => {
+  // 获取对应类型的默认模板
+  const getDefaultTemplate = (type: string): string => {
+    switch (type) {
+      case 'llm-create':
+        return DEFAULT_SKILL_PROMPT_TEMPLATE
+      case 'agentic-create':
+        return DEFAULT_SKILL_AGENTIC_CREATE_PROMPT_TEMPLATE
+      case 'llm-optimize':
+        return DEFAULT_SKILL_OPTIMIZE_PROMPT_TEMPLATE
+      default:
+        return DEFAULT_SKILL_PROMPT_TEMPLATE
+    }
+  }
+
+  if (!isElectron()) {
+    // 浏览器环境从 localStorage 读取
+    const key = `skill-template-${templateType}`
+    const stored = localStorage.getItem(key)
+    if (stored) {
+      return stored
+    }
+    // 返回默认模板
+    return getDefaultTemplate(templateType)
+  }
+
+  try {
+    const result = await window.electronAPI?.loadSkillTemplateFile?.(templateType)
+    if (result && result.success && result.content) {
+      return result.content
+    }
+    // 文件不存在，返回默认模板
+    return getDefaultTemplate(templateType)
+  } catch (error) {
+    console.error(`加载技能模板文件失败 (${templateType}):`, error)
+    // 出错时返回默认模板
+    return getDefaultTemplate(templateType)
+  }
+}
+
+/**
+ * 保存技能模板到本地文件
+ * @param templateType 模板类型: 'llm-create' | 'agentic-create' | 'llm-optimize'
+ * @param content 模板内容
+ */
+export const saveSkillTemplateFile = async (templateType: 'llm-create' | 'agentic-create' | 'llm-optimize', content: string): Promise<void> => {
+  if (!isElectron()) {
+    // 浏览器环境使用 localStorage
+    const key = `skill-template-${templateType}`
+    localStorage.setItem(key, content)
+    return
+  }
+
+  try {
+    await window.electronAPI?.saveSkillTemplateFile?.(templateType, content)
+  } catch (error) {
+    console.error(`保存技能模板文件失败 (${templateType}):`, error)
+    throw error
+  }
+}
+
+/**
+ * 获取默认技能创建提示词模板
+ */
+export const getDefaultSkillPromptTemplate = (): string => {
+  return DEFAULT_SKILL_PROMPT_TEMPLATE
+}
+
+/**
+ * 获取默认技能 Agentic 创建提示词模板
+ */
+export const getDefaultSkillAgenticCreatePromptTemplate = (): string => {
+  return DEFAULT_SKILL_AGENTIC_CREATE_PROMPT_TEMPLATE
+}
+
+/**
+ * 获取默认技能优化提示词模板
+ */
+export const getDefaultSkillOptimizePromptTemplate = (): string => {
+  return DEFAULT_SKILL_OPTIMIZE_PROMPT_TEMPLATE
 }
 
 // ===== LLM 配置文件存储方法 =====
