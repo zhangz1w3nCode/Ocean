@@ -1,6 +1,6 @@
 {
   "name": "ocean",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Ocean",
   "main": "electron/launch.cjs",
   "type": "module",
@@ -57,7 +57,7 @@
   },
   "keywords": [],
   "author": "",
-  "license": "ISC",
+  "license": "MIT",
   "packageManager": "pnpm@10.19.0",
   "dependencies": {
     "@codemirror/commands": "^6.10.2",
