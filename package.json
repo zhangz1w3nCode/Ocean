@@ -1,7 +1,7 @@
 {
   "name": "ocean",
-  "version": "1.0.0",
-  "description": "AI Agent工作流与知识库可视化管理平台",
+  "version": "1.0.1",
+  "description": "Ocean",
   "main": "electron/launch.cjs",
   "type": "module",
   "scripts": {

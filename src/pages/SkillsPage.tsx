@@ -7,8 +7,7 @@ import { useState, useEffect } from 'react'
 import type { SkillFile } from '../types'
 
 export const SkillsPage: FC = () => {
-  const { skillFiles, addSkillFile, updateSkillFile, deleteSkillFile, loadSkillFiles, createSkill } =
-    useSkillStore()
+  const { skillFiles, addSkillFile, updateSkillFile, deleteSkillFile, loadSkillFiles } = useSkillStore()
   const [searchQuery, setSearchQuery] = useState('')
 
   // 详情弹窗状态
@@ -118,21 +117,6 @@ export const SkillsPage: FC = () => {
     setDeletingSkillId(null)
   }
 
-  // 资源更新后重新加载技能数据
-  const handleSkillUpdate = async () => {
-    await loadSkillFiles()
-    // 延迟更新查看的技能对象，等待 store 更新完成
-    setTimeout(() => {
-      if (viewingSkill) {
-        const { skillFiles: latestFiles } = useSkillStore.getState()
-        const updatedSkill = latestFiles.find(s => s.id === viewingSkill.id)
-        if (updatedSkill) {
-          setViewingSkill(updatedSkill)
-        }
-      }
-    }, 100)
-  }
-
   // 过滤技能文件
   const filteredSkills = skillFiles.filter((skill) => {
     const matchesSearch =
@@ -237,7 +221,6 @@ export const SkillsPage: FC = () => {
         onClose={handleDetailClose}
         onEdit={handleEditFromDetail}
         skill={viewingSkill}
-        onSkillUpdate={handleSkillUpdate}
       />
     </div>
   )

@@ -10,6 +10,7 @@ interface ModalProps {
   children: ReactNode
   footer?: ReactNode
   size?: 'sm' | 'md' | 'lg' | 'xl'
+  headerLeft?: ReactNode
 }
 
 export const Modal: FC<ModalProps> = ({
@@ -19,6 +20,7 @@ export const Modal: FC<ModalProps> = ({
   children,
   footer,
   size = 'md',
+  headerLeft,
 }) => {
   // 监听 ESC 键关闭弹窗
   useEffect(() => {
@@ -84,7 +86,10 @@ export const Modal: FC<ModalProps> = ({
             >
               {/* 头部 */}
               <div className="px-6 py-4 flex items-center justify-between">
-                <h3 className="text-lg font-semibold text-macos-text">{title}</h3>
+                <div className="flex items-center gap-3">
+                  {headerLeft}
+                  <h3 className="text-lg font-semibold text-macos-text">{title}</h3>
+                </div>
                 <button
                   onClick={onClose}
                   className="p-1.5 rounded-lg hover:bg-gray-100 text-macos-text-secondary transition-colors"

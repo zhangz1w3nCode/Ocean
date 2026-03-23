@@ -138,7 +138,6 @@ export const KnowledgesPage: FC = () => {
           {/* 左侧：知识图谱按钮 */}
           <KnowledgeGraphButton
             onClick={() => setIsGraphOpen(true)}
-            count={knowledgeFiles.length}
           />
 
           {/* 右侧：搜索和新建 */}

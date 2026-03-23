@@ -1128,10 +1128,9 @@ export const KnowledgeGraphModal: FC<KnowledgeGraphModalProps> = ({
  */
 interface KnowledgeGraphButtonProps {
   onClick: () => void
-  count?: number
 }
 
-export const KnowledgeGraphButton: FC<KnowledgeGraphButtonProps> = ({ onClick, count = 0 }) => {
+export const KnowledgeGraphButton: FC<KnowledgeGraphButtonProps> = ({ onClick }) => {
   return (
     <button
       onClick={onClick}
@@ -1139,9 +1138,6 @@ export const KnowledgeGraphButton: FC<KnowledgeGraphButtonProps> = ({ onClick, c
     >
       <Network size={16} />
       <span>知识图谱</span>
-      {count > 0 && (
-        <span className="text-xs text-gray-400">({count})</span>
-      )}
     </button>
   )
 }
