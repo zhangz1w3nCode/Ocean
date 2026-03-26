@@ -133,6 +133,9 @@ declare global {
       // 技能模块模板文件 API
       saveSkillTemplateFile: (templateType: 'llm-create' | 'agentic-create' | 'llm-optimize', content: string) => Promise<{ success: boolean; error?: string }>
       loadSkillTemplateFile: (templateType: 'llm-create' | 'agentic-create' | 'llm-optimize') => Promise<{ success: boolean; content: string | null; error?: string }>
+      // 知识模块模板文件 API
+      saveKnowledgeTemplateFile: (templateType: 'agentic-create', content: string) => Promise<{ success: boolean; error?: string }>
+      loadKnowledgeTemplateFile: (templateType: 'agentic-create') => Promise<{ success: boolean; content: string | null; error?: string }>
     }
   }
 }
@@ -3975,4 +3978,93 @@ export const deleteSkillResource = async (
     console.error('删除技能资源文件失败:', error)
     return false
   }
+}
+
+// ===== 知识模块模板存储方法 =====
+
+// 默认的知识 Agentic 创建提示词模板
+const DEFAULT_KNOWLEDGE_AGENTIC_CREATE_PROMPT_TEMPLATE = `## 角色
+你是一个专业的知识库文档设计助手，请根据用户需求生成高质量的知识内容。
+
+## 任务
+根据用户描述，生成详细的知识文档内容。
+
+## 注意事项
+- 内容结构要清晰，使用 Markdown 格式
+- 知识文档应包含清晰的分类和标签
+- 提供具体的使用场景和相关参考资料
+- 可以使用 [[文件名.md|关系]] 格式建立与其他文档的关联
+
+## 输出要求
+直接输出知识的详细内容（Markdown格式），不需要包含名称和描述字段。
+
+用户描述：{{userDescription}}`
+
+/**
+ * 加载知识模板文件
+ * @param templateType 模板类型: 'agentic-create'
+ * @returns 模板内容，如果文件不存在则返回默认模板
+ */
+export const loadKnowledgeTemplateFile = async (templateType: 'agentic-create'): Promise<string> => {
+  // 获取对应类型的默认模板
+  const getDefaultTemplate = (type: string): string => {
+    switch (type) {
+      case 'agentic-create':
+        return DEFAULT_KNOWLEDGE_AGENTIC_CREATE_PROMPT_TEMPLATE
+      default:
+        return DEFAULT_KNOWLEDGE_AGENTIC_CREATE_PROMPT_TEMPLATE
+    }
+  }
+
+  if (!isElectron()) {
+    // 浏览器环境从 localStorage 读取
+    const key = `knowledge-template-${templateType}`
+    const stored = localStorage.getItem(key)
+    if (stored) {
+      return stored
+    }
+    // 返回默认模板
+    return getDefaultTemplate(templateType)
+  }
+
+  try {
+    const result = await window.electronAPI?.loadKnowledgeTemplateFile?.(templateType)
+    if (result && result.success && result.content) {
+      return result.content
+    }
+    // 文件不存在，返回默认模板
+    return getDefaultTemplate(templateType)
+  } catch (error) {
+    console.error(`加载知识模板文件失败 (${templateType}):`, error)
+    // 出错时返回默认模板
+    return getDefaultTemplate(templateType)
+  }
+}
+
+/**
+ * 保存知识模板到本地文件
+ * @param templateType 模板类型: 'agentic-create'
+ * @param content 模板内容
+ */
+export const saveKnowledgeTemplateFile = async (templateType: 'agentic-create', content: string): Promise<void> => {
+  if (!isElectron()) {
+    // 浏览器环境使用 localStorage
+    const key = `knowledge-template-${templateType}`
+    localStorage.setItem(key, content)
+    return
+  }
+
+  try {
+    await window.electronAPI?.saveKnowledgeTemplateFile?.(templateType, content)
+  } catch (error) {
+    console.error(`保存知识模板文件失败 (${templateType}):`, error)
+    throw error
+  }
+}
+
+/**
+ * 获取默认知识 Agentic 创建提示词模板
+ */
+export const getDefaultKnowledgeAgenticCreatePromptTemplate = (): string => {
+  return DEFAULT_KNOWLEDGE_AGENTIC_CREATE_PROMPT_TEMPLATE
 }

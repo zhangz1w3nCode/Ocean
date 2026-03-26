@@ -6,6 +6,7 @@ import { LLMSettings } from './LLMSettings'
 import { AgenticSettings } from '../components/settings/AgenticSettings'
 import { AbilitySettings } from '../components/settings/AbilitySettings'
 import { SkillSettings } from '../components/settings/SkillSettings'
+import { KnowledgeSettings } from '../components/settings/KnowledgeSettings'
 
 export const SettingsPage: FC = () => {
   const { currentCategory, loadLLMProviders, loadAgenticConfig, loadAbilityConfig } = useSettingsStore()
@@ -28,6 +29,8 @@ export const SettingsPage: FC = () => {
         return <AbilitySettings />
       case 'skill':
         return <SkillSettings />
+      case 'knowledge':
+        return <KnowledgeSettings />
       default:
         return <LLMSettings />
     }

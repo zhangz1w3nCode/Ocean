@@ -1,5 +1,5 @@
 import type { FC } from 'react'
-import { Cpu, Bot, Zap, Wand2, LucideIcon } from 'lucide-react'
+import { Cpu, Bot, Zap, Wand2, BookOpen, LucideIcon } from 'lucide-react'
 import { useSettingsStore } from '../../stores/settingsStore'
 import type { SettingsCategory } from '../../types'
 
@@ -61,6 +61,11 @@ export const SettingsSidebar: FC = () => {
       id: 'skill' as SettingsCategory,
       label: '技能',
       icon: Wand2,
+    },
+    {
+      id: 'knowledge' as SettingsCategory,
+      label: '知识',
+      icon: BookOpen,
     }
   ]
 

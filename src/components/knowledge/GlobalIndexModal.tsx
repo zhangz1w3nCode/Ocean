@@ -1,0 +1,118 @@
+import type { FC } from 'react'
+import { FileText, FileSearch, Edit3, Plus } from 'lucide-react'
+import { Modal, Button, MarkdownRenderer } from '../ui'
+
+interface GlobalIndexModalProps {
+  isOpen: boolean
+  onClose: () => void
+  content: string | null
+  exists: boolean
+  onEdit: () => void
+  onCreate: () => void
+}
+
+// 全局索引使用浅灰色主题，区别于普通知识的蓝色
+const colorConfig = {
+  color: '#6B7280',     // 灰色图标
+  bgColor: '#F3F4F6',   // 浅灰色背景
+}
+
+export const GlobalIndexModal: FC<GlobalIndexModalProps> = ({
+  isOpen,
+  onClose,
+  content,
+  exists,
+  onEdit,
+  onCreate,
+}) => {
+  return (
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title=""
+      size="xl"
+      footer={
+        <div className="flex justify-between">
+          <Button variant="ghost" size="sm" onClick={onClose}>
+            关闭
+          </Button>
+          {exists ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onEdit}
+              className="bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 hover:border-gray-400 rounded-lg"
+            >
+              <Edit3 size={14} className="mr-1.5" />
+              编辑
+            </Button>
+          ) : (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onCreate}
+              className="bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 hover:border-gray-400 rounded-lg"
+            >
+              <Plus size={14} className="mr-1.5" />
+              创建
+            </Button>
+          )}
+        </div>
+      }
+    >
+      {/* 头部信息 - 固定在顶部 */}
+      <div className="flex items-center gap-4 pb-4 mb-4 border-b border-gray-100">
+        {/* 全局索引图标 */}
+        <div
+          className="w-14 h-14 rounded-xl flex items-center justify-center flex-shrink-0"
+          style={{ backgroundColor: colorConfig.bgColor }}
+        >
+          <FileSearch size={28} style={{ color: colorConfig.color }} />
+        </div>
+
+        {/* 全局索引信息 */}
+        <div className="flex-1 min-w-0">
+          <h2 className="text-xl font-semibold text-macos-text mb-1">全局索引</h2>
+          <div className="flex items-center gap-3">
+            <span
+              className="inline-flex items-center px-2.5 py-1 rounded-lg text-sm font-medium"
+              style={{ backgroundColor: colorConfig.bgColor, color: colorConfig.color }}
+            >
+              INDEX.md
+            </span>
+            <span className="text-sm text-macos-text-tertiary">
+              {exists ? '知识库全局索引文件' : '索引文件不存在'}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* 内容区域 - 固定高度，超出滚动 */}
+      <div className="max-h-[400px] overflow-y-auto pr-2">
+        {exists && content ? (
+          <div>
+            <label className="flex items-center gap-2 text-sm font-medium text-macos-text mb-1.5">
+              <FileText size={16} />
+              索引内容
+            </label>
+            <div className="bg-gray-50 rounded-lg p-4">
+              <MarkdownRenderer content={content} />
+            </div>
+          </div>
+        ) : (
+          <div className="flex flex-col items-center justify-center py-12">
+            <div className="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center mb-4">
+              <FileSearch size={32} className="text-gray-400" />
+            </div>
+            <p className="text-sm text-macos-text-tertiary">
+              当前知识库中没有全局索引文件
+            </p>
+            <p className="text-xs text-macos-text-tertiary mt-1">
+              点击"创建"按钮新建全局索引文件
+            </p>
+          </div>
+        )}
+      </div>
+    </Modal>
+  )
+}

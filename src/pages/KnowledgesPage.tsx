@@ -1,9 +1,9 @@
 import type { FC } from 'react'
-import { Plus, Search, BookOpen } from 'lucide-react'
+import { Plus, Search, BookOpen, FileSearch } from 'lucide-react'
 import { Button, ConfirmModal } from '../components/ui'
-import { KnowledgeCard, KnowledgeModal, KnowledgeDetailModal, KnowledgeGraphModal, KnowledgeGraphButton } from '../components/knowledge'
+import { KnowledgeCard, KnowledgeModal, KnowledgeDetailModal, KnowledgeGraphModal, KnowledgeGraphButton, GlobalIndexModal } from '../components/knowledge'
 import { useKnowledgeStore } from '../stores/knowledgeStore'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import type { KnowledgeFile } from '../types'
 
 export const KnowledgesPage: FC = () => {
@@ -26,6 +26,34 @@ export const KnowledgesPage: FC = () => {
 
   // 知识图谱弹窗状态
   const [isGraphOpen, setIsGraphOpen] = useState(false)
+
+  // 全局索引弹窗状态
+  const [isGlobalIndexOpen, setIsGlobalIndexOpen] = useState(false)
+
+  // 是否正在编辑全局索引（用于锁定名称字段）
+  const [isEditingGlobalIndex, setIsEditingGlobalIndex] = useState(false)
+
+  // 获取全局索引文件（INDEX.md）
+  const globalIndexKnowledge = useMemo(() => {
+    return knowledgeFiles.find(
+      (k) => k.name.toLowerCase() === 'index'
+    )
+  }, [knowledgeFiles])
+
+  // 过滤知识文件（排除 INDEX.md，支持标签搜索）
+  const filteredKnowledges = useMemo(() => {
+    return knowledgeFiles
+      .filter((k) => k.name.toLowerCase() !== 'index') // 排除全局索引
+      .filter((knowledge) => {
+        const query = searchQuery.toLowerCase()
+        const matchesSearch =
+          knowledge.name.toLowerCase().includes(query) ||
+          knowledge.description?.toLowerCase().includes(query) ||
+          knowledge.content?.toLowerCase().includes(query) ||
+          knowledge.tags?.some(tag => tag.toLowerCase().includes(query))
+        return matchesSearch
+      })
+  }, [knowledgeFiles, searchQuery])
 
   // 首次加载时从本地读取知识库数据
   useEffect(() => {
@@ -72,6 +100,7 @@ export const KnowledgesPage: FC = () => {
   const handleModalClose = () => {
     setIsModalOpen(false)
     setEditingKnowledge(undefined)
+    setIsEditingGlobalIndex(false)
   }
 
   // 确认创建/编辑
@@ -118,16 +147,35 @@ export const KnowledgesPage: FC = () => {
     setDeletingKnowledgeId(null)
   }
 
-  // 过滤知识文件（支持标签搜索）
-  const filteredKnowledges = knowledgeFiles.filter((knowledge) => {
-    const query = searchQuery.toLowerCase()
-    const matchesSearch =
-      knowledge.name.toLowerCase().includes(query) ||
-      knowledge.description?.toLowerCase().includes(query) ||
-      knowledge.content?.toLowerCase().includes(query) ||
-      knowledge.tags?.some(tag => tag.toLowerCase().includes(query))
-    return matchesSearch
-  })
+  // 编辑全局索引
+  const handleEditGlobalIndex = () => {
+    if (globalIndexKnowledge) {
+      setIsGlobalIndexOpen(false)
+      setModalMode('edit')
+      setEditingKnowledge(globalIndexKnowledge)
+      setIsEditingGlobalIndex(true)
+      setIsModalOpen(true)
+    }
+  }
+
+  // 创建全局索引
+  const handleCreateGlobalIndex = () => {
+    setIsGlobalIndexOpen(false)
+    setModalMode('create')
+    // 预填充 INDEX 名称
+    setEditingKnowledge({
+      id: '',
+      name: 'INDEX',
+      type: 'knowledge',
+      description: '',
+      content: '',
+      tags: [],
+      createdAt: '',
+      updatedAt: '',
+    })
+    setIsEditingGlobalIndex(true)
+    setIsModalOpen(true)
+  }
 
   return (
     <div className="h-full pl-2 pr-4 pt-4 pb-4">
@@ -135,10 +183,20 @@ export const KnowledgesPage: FC = () => {
       <div className="h-full bg-white rounded-2xl shadow-sm flex flex-col overflow-hidden">
         {/* 页面头部 */}
         <div className="h-16 px-6 flex items-center justify-between">
-          {/* 左侧：知识图谱按钮 */}
-          <KnowledgeGraphButton
-            onClick={() => setIsGraphOpen(true)}
-          />
+          {/* 左侧：按钮组 */}
+          <div className="flex items-center gap-2">
+            <KnowledgeGraphButton
+              onClick={() => setIsGraphOpen(true)}
+            />
+            {/* 全局索引按钮 */}
+            <button
+              onClick={() => setIsGlobalIndexOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-2 text-sm text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+            >
+              <FileSearch size={16} />
+              <span>全局索引</span>
+            </button>
+          </div>
 
           {/* 右侧：搜索和新建 */}
           <div className="flex items-center gap-3">
@@ -209,6 +267,7 @@ export const KnowledgesPage: FC = () => {
         mode={modalMode}
         initialData={editingKnowledge}
         existingNames={knowledgeFiles.map((k) => k.name)}
+        isNameLocked={isEditingGlobalIndex}
       />
 
       {/* 删除确认弹窗 */}
@@ -235,6 +294,16 @@ export const KnowledgesPage: FC = () => {
         isOpen={isGraphOpen}
         onClose={() => setIsGraphOpen(false)}
         onNodeClick={handleCardClick}
+      />
+
+      {/* 全局索引弹窗 */}
+      <GlobalIndexModal
+        isOpen={isGlobalIndexOpen}
+        onClose={() => setIsGlobalIndexOpen(false)}
+        content={globalIndexKnowledge?.content || null}
+        exists={!!globalIndexKnowledge}
+        onEdit={handleEditGlobalIndex}
+        onCreate={handleCreateGlobalIndex}
       />
     </div>
   )
