@@ -297,16 +297,20 @@ export const MarkdownEditor: FC<MarkdownEditorProps> = ({
     })
   }, [findWikiLinkAtClick, findReferenceAtClick, referenceItems])
 
-  // 监听文本变化，检测 @ 和 > 输入
+  // 监听文本变化，检测 @ 和 % 输入（仅检测光标位置的输入，不扫描整个文本）
   const handleEditorChange = useCallback((value: string) => {
-    // 检测是否输入了 @（@ 引用）
-    if (atPosition === null) {
-      const lastAtIndex = value.lastIndexOf('@')
-      if (lastAtIndex !== -1) {
-        // 检查 @ 后面是否没有内容或有空格
-        const afterAt = value.slice(lastAtIndex + 1)
-        if (afterAt === '' || afterAt.match(/^\s/)) {
-          setAtPosition(lastAtIndex)
+    // 通过编辑器获取当前光标位置，只检测光标附近刚输入的字符
+    const view = editorRef.current
+    const cursorPos = view ? view.state.selection.main.head : -1
+
+    // 检测是否输入了 @（@ 引用）- 只检查光标前一个字符是否是 @
+    if (atPosition === null && cursorPos > 0) {
+      const charBeforeCursor = value[cursorPos - 1]
+      if (charBeforeCursor === '@') {
+        // 检查光标后面是否没有内容或有空白（说明是刚输入的 @）
+        const afterCursor = value.slice(cursorPos)
+        if (afterCursor === '' || afterCursor.match(/^\s/)) {
+          setAtPosition(cursorPos - 1)
           if (containerRef.current) {
             const rect = containerRef.current.getBoundingClientRect()
             setModalPosition({ x: rect.left, y: rect.bottom + 5 })
@@ -316,15 +320,15 @@ export const MarkdownEditor: FC<MarkdownEditorProps> = ({
       }
     }
 
-    // 检测是否输入了 %（WikiLink 引用，Shift + 5）
+    // 检测是否输入了 %（WikiLink 引用）- 只检查光标前一个字符是否是 %
     // 只有当 wikiLinkPosition 为 null、不在编辑状态、且不在关系输入状态时才检测
-    if (wikiLinkPosition === null && !showRelationInput && !editingWikiLink) {
-      const lastPercentIndex = value.lastIndexOf('%')
-      if (lastPercentIndex !== -1) {
-        // 检查 % 后面是否没有内容或有空格
-        const afterPercent = value.slice(lastPercentIndex + 1)
-        if (afterPercent === '' || afterPercent.match(/^\s/)) {
-          setWikiLinkPosition(lastPercentIndex)
+    if (wikiLinkPosition === null && !showRelationInput && !editingWikiLink && cursorPos > 0) {
+      const charBeforeCursor = value[cursorPos - 1]
+      if (charBeforeCursor === '%') {
+        // 检查光标后面是否没有内容或有空白（说明是刚输入的 %）
+        const afterCursor = value.slice(cursorPos)
+        if (afterCursor === '' || afterCursor.match(/^\s/)) {
+          setWikiLinkPosition(cursorPos - 1)
           if (containerRef.current) {
             const rect = containerRef.current.getBoundingClientRect()
             setModalPosition({ x: rect.left, y: rect.bottom + 5 })
@@ -341,7 +345,7 @@ export const MarkdownEditor: FC<MarkdownEditorProps> = ({
       } as React.ChangeEvent<HTMLTextAreaElement>
       onChange(syntheticEvent)
     }
-  }, [onChange, atPosition, wikiLinkPosition, showRelationInput])
+  }, [onChange, atPosition, wikiLinkPosition, showRelationInput, editingWikiLink])
 
   // 处理选择引用项
   const handleSelectReference = useCallback((item: ReferenceItem) => {
