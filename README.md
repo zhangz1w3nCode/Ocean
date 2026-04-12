@@ -2,480 +2,429 @@
 
 # Ocean
 
-**CLI Agent 资产和能力可视化管理平台**
+**CLI Agent Asset & Capability Visualization Management Platform**
 
-一款基于 Electron + React + TypeScript 构建的桌面应用，以 Markdown 文件为核心数据载体，为 CLI Agent（如 Claude Code）提供智能体、命令、能力、知识库、工作流等资产的统一管理与可视化编排能力。
+A desktop application built with Electron + React + TypeScript that uses Markdown files as the core data carrier, providing unified management and visual orchestration for CLI Agent (e.g., Claude Code) assets including agents, commands, abilities, knowledge bases, workflows, and more.
+
+[English](./README.md) | [中文](./README_CN.md)
 
 </div>
 
 ---
 
-## 核心特性
+## Features
 
-- **本地优先** - 所有数据以 Markdown 文件形式存储在本地 `.claude/` 目录，完全掌控数据
-- **可视化编辑** - 使用 `@xyflow/react` 提供专业的流程图编辑能力，支持拖拽、连线、撤销重做
-- **知识图谱** - 基于 WikiLink 引用关系构建知识图谱，支持力导向布局可视化
-- **多维引用** - 支持 `@引用` 和 `[[WikiLink]]` 两种引用语法，建立业务实体间的关联
-- **Markdown 优先** - 所有业务数据以 `.md` 文件存储，易于版本控制和人机协作
-- **双环境支持** - Electron 桌面应用 + 浏览器预览，灵活适配不同场景
-- **Mermaid 图表** - 支持在 Markdown 中渲染 Mermaid 流程图、时序图、类图等多种图表
-- **Agentic 创建** - 支持通过 AI Agent 自动生成能力文档，简化内容创建流程
-- **LLM 参数配置** - 供应商配置支持自定义模型参数（温度、最大 token 等）
-- **实时文件加载** - 工作流详情等内容实时从本地文件加载，修改即时生效
-
----
-
-## 业务模块
-
-Ocean 包含七大核心业务模块，每个模块的数据以 Markdown 文件形式独立存储：
-
-| 模块 | 存储目录 | 文件类型 | 描述 |
-|------|----------|----------|------|
-| **智能体** | `.claude/agents/` | `sub-agent`, `mcp` | AI 智能体配置与角色定义 |
-| **命令** | `.claude/commands/` | `command` | 可执行命令与斜杠指令 |
-| **能力** | `.claude/abilities/` | `ability` | AI 能力单元定义 |
-| **知识** | `.claude/knowledges/` | `knowledge` | 业务知识库管理 |
-| **工作流** | `.claude/workflows/` | `workflow` | 可视化流程定义与编排 |
-| **节点** | `.claude/nodes/` | `business`, `process`, `decision` | 工作流节点模板 |
-| **资源文件** | `.claude/resources/` | `rule`, `reference`, `tool` | 规则说明、参考文档、工具说明 |
-
-### 工作流节点类型
-
-流程编辑器支持五种节点类型：
-
-| 节点类型 | 图标颜色 | 功能描述 |
-|----------|----------|----------|
-| 开始节点 | 绿色 | 工作流入口点 |
-| 处理节点 | 蓝色 | 通用处理步骤，支持在线编辑任务 |
-| 判断节点 | 黄色 | 条件分支，支持自定义分支配置 |
-| 业务节点 | 紫色 | 引用节点模板，承载复杂业务逻辑 |
-| 结束节点 | 红色 | 工作流出口点 |
+- **Local-First** - All data is stored as Markdown files in the local `.claude/` directory, giving you full control over your data
+- **Visual Editing** - Professional flowchart editing powered by `@xyflow/react` with drag-and-drop, connection, undo/redo support
+- **Knowledge Graph** - Build knowledge graphs based on WikiLink reference relationships with force-directed layout visualization
+- **Multi-dimensional References** - Support both `@mention` and `[[WikiLink]]` syntax to establish associations between business entities
+- **Markdown-First** - All business data stored as `.md` files, easy for version control and human-AI collaboration
+- **Dual Environment** - Electron desktop app + browser preview for flexible adaptation
+- **Mermaid Diagrams** - Render Mermaid flowcharts, sequence diagrams, class diagrams, and more within Markdown
+- **Agentic Creation** - Auto-generate ability documents via AI Agent, simplifying content creation
+- **LLM Configuration** - Provider settings support custom model parameters (temperature, max tokens, etc.)
+- **Live File Loading** - Workflow details and other content loaded from local files in real-time
 
 ---
 
-## 技术栈
+## Modules
 
-| 层级 | 技术选型 | 版本 |
-|------|----------|------|
-| 前端框架 | React | 19.2.4 |
-| 构建工具 | Vite | 5.4.21 |
-| 语言 | TypeScript | 5.9.3 |
-| 状态管理 | Zustand | 5.0.11 |
-| 流程图引擎 | @xyflow/react | 12.10.0 |
-| 桌面框架 | Electron | 40.4.0 |
-| 样式 | Tailwind CSS | 3.4.19 |
-| 动画 | framer-motion | 12.34.0 |
-| 图标 | lucide-react | 0.563.0 |
-| Markdown 渲染 | react-markdown + remark-gfm | 10.1.0 |
-| 代码编辑器 | @uiw/react-codemirror | 4.25.4 |
-| 知识图谱 | react-force-graph-2d + d3-force | 1.29.1 |
-| 图表渲染 | mermaid | 11.12.3 |
-| Agentic 框架 | @mariozechner/pi-coding-agent | 0.57.1 |
+Ocean includes eight core business modules and one settings module, each with data stored independently as Markdown files:
+
+| Module | Directory | File Types | Description |
+|--------|-----------|------------|-------------|
+| **Agents** | `.claude/agents/` | `sub-agent`, `mcp` | AI agent configuration and role definitions |
+| **Commands** | `.claude/commands/` | `command` | Executable commands and slash instructions |
+| **Abilities** | `.claude/abilities/` | `ability` | AI capability unit definitions with LLM creation & optimization |
+| **Skills** | `.claude/skills/` | `skill` | Reusable skill definitions with scripts/references/examples resources |
+| **Knowledge** | `.claude/knowledges/` | `knowledge` | Business knowledge base management with Agentic auto-creation |
+| **Workflows** | `.claude/workflows/` | `workflow` | Visual process definition and orchestration with local node folders |
+| **Nodes** | `.claude/nodes/` | `business`, `process` | Workflow node template definitions |
+| **Resources** | `.claude/resources/` | `rule`, `reference`, `tool` | Rules, reference docs, and tool descriptions |
+| **Settings** | Config files | JSON | LLM providers, CLI Agent, Agentic mode, ability/skill/knowledge config |
+
+### Workflow Node Types
+
+The flow editor supports six node types:
+
+| Node Type | Color | Description |
+|-----------|-------|-------------|
+| Start Node | Green | Workflow entry point |
+| Process Node | Blue | General processing step with inline task editing |
+| Decision Node | Yellow | Conditional branching with custom branch configuration |
+| Business Node | Purple | References global node templates, carries complex business logic |
+| Local Node | Blue | Workflow-private node, content stored in workflow directory |
+| End Node | Red | Workflow exit point |
+
+### Settings Module
+
+The settings module provides global configuration management with five categories:
+
+| Category | Description |
+|----------|-------------|
+| **LLM Providers** | Manage multiple LLM API providers (OpenAI/Anthropic/Azure/Custom), with connection testing and model parameter configuration |
+| **Agentic Mode** | Configure AI Agent autonomous execution mode, supporting 7 tools (file read/write/edit/search/terminal), with iteration limit and timeout |
+| **Ability Config** | Configure prompt templates for ability LLM creation and optimization |
+| **Skill Config** | Configure global settings for skills |
+| **Knowledge Config** | Configure global settings for knowledge base Agentic creation |
 
 ---
 
-## 快速开始
+## Tech Stack
 
-### 环境要求
+| Layer | Technology |
+|-------|-----------|
+| Framework | React 19 |
+| Build Tool | Vite 5 |
+| Language | TypeScript 5 |
+| State Management | Zustand 5 |
+| Flow Engine | @xyflow/react 12 |
+| Desktop | Electron 40 |
+| Styling | Tailwind CSS 3 |
+| Animation | framer-motion 12 |
+| Icons | lucide-react |
+| Markdown Rendering | react-markdown + remark-gfm |
+| Code Editor | @uiw/react-codemirror |
+| Knowledge Graph | react-force-graph-2d + d3-force |
+| Diagrams | mermaid |
+
+---
+
+## Getting Started
+
+### Prerequisites
 
 - Node.js >= 18.0.0
 - pnpm >= 8.0.0
 
-### 安装依赖
+### Install
 
 ```bash
 pnpm install
 ```
 
-### 开发模式
+### Development
 
-#### 方式一：Electron 桌面端调试（推荐）
+#### Option 1: Electron Desktop (Recommended)
 
-同时启动 Vite 开发服务器和 Electron 应用，支持热更新：
+Start Vite dev server and Electron app together with hot reload:
 
 ```bash
 pnpm electron:dev
 ```
 
-该命令会：
-1. 启动 Vite 开发服务器（默认端口 5173）
-2. 等待 Vite 服务就绪后自动启动 Electron
-3. 自动打开 DevTools 调试工具
+This will:
+1. Start the Vite dev server (default port 5173)
+2. Wait for Vite to be ready, then launch Electron
+3. Auto-open DevTools
 
-#### 方式二：仅启动 Web 开发服务器
+#### Option 2: Web Dev Server Only
 
 ```bash
 pnpm dev
 ```
 
-然后在浏览器中访问 `http://localhost:5173`
+Then open `http://localhost:5173` in your browser.
 
-#### 方式三：预览已构建的 Electron 应用
+#### Option 3: Preview Built Electron App
 
 ```bash
-# 先构建前端
 pnpm build
-
-# 再启动 Electron 预览
 pnpm electron:preview
 ```
 
-### 构建打包
+### Build
 
 ```bash
-# 构建前端资源
+# Build frontend assets
 pnpm build
 
-# 构建 Electron 主进程
+# Build Electron main process
 pnpm build:electron
 
-# 打包桌面应用（输出到 release/ 目录）
+# Package desktop app (output to release/)
 pnpm electron:build
 ```
 
 ---
 
-## 项目结构
+## Project Structure
 
 ```
 ocean/
-├── electron/                   # Electron 主进程
-│   ├── main.ts                # 主进程入口（ESM）
-│   ├── launch.cjs             # 开发环境启动脚本（CommonJS）
-│   ├── preload.ts             # 生产环境 Preload 脚本
-│   └── preload.dev.cjs        # 开发环境 Preload 脚本
+├── electron/                   # Electron main process
+│   ├── launch.cjs             # Dev environment launcher (CJS)
+│   └── preload.dev.cjs        # Dev environment preload script
 ├── src/
 │   ├── components/
-│   │   ├── ability/           # 能力模块组件
-│   │   ├── agent/             # 智能体模块组件
-│   │   ├── command/           # 命令模块组件
-│   │   ├── flow/              # 流程编辑器组件
+│   │   ├── ability/           # Ability module
+│   │   ├── agent/             # Agent module
+│   │   ├── command/           # Command module
+│   │   ├── flow/              # Flow editor
 │   │   │   ├── FlowCanvas.tsx
 │   │   │   ├── FlowToolbar.tsx
 │   │   │   ├── NodePanel.tsx
 │   │   │   ├── PropertiesPanel.tsx
-│   │   │   └── nodes/         # 节点组件
-│   │   ├── knowledge/         # 知识模块组件
-│   │   │   ├── KnowledgeCard.tsx
-│   │   │   ├── KnowledgeDetailModal.tsx
-│   │   │   ├── KnowledgeGraph.tsx
-│   │   │   └── KnowledgeModal.tsx
-│   │   ├── layout/            # 布局组件
-│   │   │   ├── Sidebar.tsx    # 侧边栏（支持拖拽排序）
-│   │   │   └── MainContent.tsx
-│   │   ├── node/              # 节点管理组件
-│   │   ├── resource/          # 资源文件组件
-│   │   ├── ui/                # 通用 UI 组件
-│   │   │   ├── Button.tsx
-│   │   │   ├── Card.tsx
-│   │   │   ├── Modal.tsx
-│   │   │   ├── Toast.tsx
-│   │   │   ├── MarkdownEditor/    # Markdown 编辑器
-│   │   │   └── MarkdownRenderer/  # Markdown 渲染器
-│   │   │       ├── WikiLink.tsx
-│   │   │       └── MermaidBlock.tsx
-│   │   └── workflow/          # 工作流组件
-│   ├── pages/                 # 页面组件
-│   │   ├── ProjectSelectionPage.tsx
-│   │   ├── AgentsPage.tsx
-│   │   ├── CommandsPage.tsx
-│   │   ├── AbilitiesPage.tsx
-│   │   ├── KnowledgesPage.tsx
-│   │   ├── WorkflowsPage.tsx
-│   │   ├── NodesPage.tsx
-│   │   └── ResourcesPage.tsx
-│   ├── stores/                # Zustand 状态管理
-│   │   ├── appStore.ts
-│   │   ├── projectStore.ts
-│   │   ├── workflowStore.ts
-│   │   ├── flowEditorStore.ts
-│   │   ├── agentStore.ts
-│   │   ├── commandStore.ts
-│   │   ├── abilityStore.ts
-│   │   ├── knowledgeStore.ts
-│   │   ├── nodeStore.ts
-│   │   ├── resourceStore.ts
-│   │   └── toastStore.ts
-│   ├── types/                 # TypeScript 类型定义
-│   │   ├── index.ts
-│   │   └── flow.ts
-│   ├── utils/                 # 工具函数
-│   │   ├── storage.ts         # 存储层
-│   │   └── knowledgeGraphParser.ts
-│   └── hooks/                 # React Hooks
-│       ├── useKnowledgeGraph.ts
-│       └── useReferenceItems.ts
-├── dist/                      # Web 构建输出
-├── dist-electron/             # Electron 构建输出
-└── release/                   # 打包后的应用程序
+│   │   │   └── nodes/         # Node components
+│   │   ├── knowledge/         # Knowledge module
+│   │   ├── layout/            # Layout components
+│   │   ├── node/              # Node management
+│   │   ├── resource/          # Resource files
+│   │   ├── settings/          # Settings (LLM, Agentic, CLI Agent, etc.)
+│   │   ├── skill/             # Skill module
+│   │   ├── ui/                # Shared UI components
+│   │   │   ├── MarkdownEditor/
+│   │   │   └── MarkdownRenderer/
+│   │   └── workflow/          # Workflow module
+│   ├── pages/                 # Page components
+│   ├── stores/                # Zustand state stores
+│   ├── types/                 # TypeScript type definitions
+│   ├── utils/                 # Utility functions
+│   └── hooks/                 # React hooks
+├── dist/                      # Web build output
+├── dist-electron/             # Electron build output
+└── release/                   # Packaged applications
 ```
 
 ---
 
-## 数据存储
+## Data Storage
 
-### 存储目录
+### Storage Directory
 
-所有业务数据以 Markdown 文件形式存储在项目根目录的 `.claude/` 隐藏目录中：
+All business data is stored as Markdown files in the `.claude/` hidden directory at the project root:
 
 ```
-项目根目录/
+project-root/
 └── .claude/
-    ├── agents/        # 智能体文件 (*.md)
-    ├── commands/      # 命令文件 (*.md)
-    ├── abilities/     # 能力文件 (*.md)
-    ├── knowledges/    # 知识库文件 (*.md)
-    ├── workflows/     # 工作流文件 (*.md)
-    ├── nodes/         # 节点定义文件 (*.md)
-    └── resources/     # 资源文件 (*.md)
+    ├── agents/        # Agent files (*.md)
+    ├── commands/      # Command files (*.md)
+    ├── abilities/     # Ability files (*.md)
+    ├── knowledges/    # Knowledge files (*.md)
+    ├── workflows/     # Workflow files (*.md)
+    │   └── {workflow}/
+    │       └── nodes/ # Workflow local nodes (*.md)
+    ├── nodes/         # Global node definition files (*.md)
+    ├── resources/     # Resource files (*.md)
+    └── skills/        # Skill files (*.md)
+        └── {skill}/
+            ├── SKILL.md      # Skill main file
+            ├── scripts/      # Script files
+            ├── references/   # Reference files
+            └── examples/     # Example files
 ```
 
-### Markdown 格式规范
+### Markdown Format
 
-所有业务实体使用 YAML Frontmatter 存储元数据：
+All business entities use YAML Frontmatter for metadata:
 
 ```markdown
 ---
-name: 示例智能体
-description: 这是一个AI智能体
+name: Example Agent
+description: An AI agent
 model: haiku
 color: blue
 ---
 
-# 智能体内容
+# Agent Content
 
-这里是智能体的详细说明...
+Detailed description here...
 ```
 
-### 工作流 Markdown 输出示例
+### Workflow Markdown Example
 
 ```markdown
 ---
 type: workflow
-id: wf-xxx
-name: 示例工作流
-flowData: '{"nodes": [...], "edges": [...]}'
+name: Example Workflow
+description: This is an example workflow
 ---
 
-# 示例工作流
+# Example Workflow
 
-## 描述
-- 这是一个示例工作流
+## Description
+- This is an example workflow
 
-## 输入物料
-- 输入1
-- 输入2
+## Input Materials
+- Input 1
+- Input 2
 
-## 流程
+## Output Products
+- Output 1
 
-### 第一阶段：开始
-- 工作流开始执行
+## Process
 
-### 第二阶段：业务处理
-- 强制读取 `nodes/业务节点.md` 完成该阶段的任务
+```mermaid
+flowchart TD
 
-#### 情况一：条件成立
-- 执行 `nodes/处理节点.md` 完成该阶段的任务
+    %% Node Definitions
+    start_node(["Start"])
+    BusinessProcessing["Business Processing"]
+    ConditionCheck{"Condition Check<br/>Check: Is condition met"}
+    ProcessTask["Process Task"]
+    end_node(["End"])
 
-### 第三阶段：结束
-- 工作流执行完毕
+    %% Flow Connections
+    start_node --> BusinessProcessing
+    BusinessProcessing --> ConditionCheck
+    ConditionCheck -->|Yes| ProcessTask
+    ConditionCheck -->|No| end_node
+    ProcessTask --> end_node
+```
+
+## Nodes
+
+| Node Name | Execution Content |
+|-----------|-------------------|
+| Business Processing | `.claude/nodes/BusinessProcessing.md` |
+| Process Task | `Task description content` |
+
+## Mandatory Requirements
+- Must create a `TodoList` to track the entire `process`
+- Must strictly follow the `process` execution, skipping any stage is prohibited
+- If the `execution content` contains a file path, it represents the task that must be read and completed for this node
+- Must follow the `progressive node file loading principle` - first review and understand the overall `process` content, then check the specific `execution content` of the `node` only when executing that node
+- Mandatory node retry: if executing a node does not meet expectations, retry 2 times before proceeding to the next node
+
+## Prohibited Actions
+- Prohibited from directly reading `execution content` files
+- Prohibited from fabricating/assuming/forging/fictionalizing/guessing/lying about any information
+
+## Best Practices
+### Execution Process
+- 1. Review the WORKFLOW.md file
+- 2. Understand the overall `process` content without reviewing specific node files
+- 3. Create a `TodoList`
+- 4. Execute according to the nodes in the `process`
+- 5. View the `xxx` node name
+- 6. Map the node name in `nodes` to the specific execution content file or task description
+- 7. Read and execute the node's execution content
+- 8. If execution succeeds, update the `TodoList` task status and proceed to the next node; if execution fails, retry
+- 9. Proceed to the next node, looping through `Read Node` -> `View Node Task Details` -> `Execute Node` -> `Update Task Status` until reaching the end node to complete the process
 ```
 
 ---
 
-## 核心功能
+## Core Features
 
-### 引用功能
+### Reference System
 
-支持两种引用语法：
+Supports two reference syntaxes:
 
-#### @ 引用
+#### @ Mention
 
-在编辑器中输入 `@` 符号触发引用选择弹窗，支持引用各业务模块的实体：
+Type `@` in the editor to trigger the reference picker, supporting cross-module entity references:
 
 ```
-@智能体名 → `.claude/agents/智能体名.md`
-@节点名 → `.claude/nodes/节点名.md`
+@AgentName -> `.claude/agents/AgentName.md`
+@NodeName -> `.claude/nodes/NodeName.md`
 ```
 
 #### WikiLink
 
-支持 Obsidian 风格的 WikiLink 语法：
+Obsidian-style WikiLink syntax:
 
 ```
-[[xxx.md|关系]]     # 带关系名称的链接
-[[xxx.md]]          # 普通链接，默认关系为"关联"
+[[xxx.md|relation]]    # Link with relation name
+[[xxx.md]]             # Plain link, default relation is "associated"
 ```
 
-不同业务类型自动识别颜色：
-- `/agents/` - 紫色（智能体）
-- `/nodes/` - 蓝色（节点）
-- `/workflows/` - 红色（工作流）
-- `/commands/` - 紫色（命令）
-- `/resources/` - 绿色（资源）
-- `/abilities/` - 黄色（能力）
-- `/knowledges/` - 蓝色（知识）
+Auto-detected colors by business type:
+- `/agents/` - Purple (Agent)
+- `/nodes/` - Blue (Node)
+- `/workflows/` - Red (Workflow)
+- `/commands/` - Purple (Command)
+- `/resources/` - Green (Resource)
+- `/abilities/` - Yellow (Ability)
+- `/knowledges/` - Blue (Knowledge)
+- `/skills/` - Orange (Skill)
 
-### 知识图谱
+### Knowledge Graph
 
-基于 WikiLink 引用关系构建知识图谱，特性包括：
+Builds knowledge graphs from WikiLink references:
 
-- **力导向布局** - 节点互斥力、向心力、连线吸引力可调节
-- **双向引用合并** - 自动合并双向引用关系，避免标签重叠
-- **交互功能** - 悬浮高亮、拖拽节点、点击跳转详情
-- **可配置参数** - 节点大小、连线长度、标签大小等
+- **Force-directed layout** - Adjustable node repulsion, gravity, and link attraction
+- **Bidirectional merge** - Auto-merge bidirectional references to avoid label overlap
+- **Interactions** - Hover highlight, drag nodes, click to navigate details
+- **Configurable** - Node size, link length, label size, and more
 
-### Mermaid 图表渲染
+### Flow Editor Shortcuts
 
-支持在 Markdown 内容中渲染 Mermaid 图表：
-
-- **图表类型** - 流程图、时序图、类图、状态图、ER 图、甘特图、饼图、Git 图等
-- **静默失败** - 渲染失败时不显示错误，保持页面整洁
-- **懒加载初始化** - 避免重复初始化，提升性能
-- **工作流集成** - 保存工作流时自动生成 Mermaid 流程图
-
-### 流程编辑器快捷键
-
-| 快捷键 | 功能 |
-|--------|------|
-| Ctrl+Z | 撤销 |
-| Ctrl+Y / Ctrl+Shift+Z | 重做 |
-| Ctrl+C | 复制选中节点 |
-| Ctrl+V | 粘贴节点 |
-| Delete / Backspace | 删除选中项 |
-| Ctrl+点击 | 多选节点 |
-| Shift+拖拽 | 框选节点 |
-| 双指滑动 | 平移画布（Mac 触摸板）|
+| Shortcut | Action |
+|----------|--------|
+| Ctrl+Z | Undo |
+| Ctrl+Y / Ctrl+Shift+Z | Redo |
+| Ctrl+C | Copy selected nodes |
+| Ctrl+V | Paste nodes |
+| Delete / Backspace | Delete selected |
+| Ctrl+Click | Multi-select nodes |
+| Shift+Drag | Box select |
+| Two-finger scroll | Pan canvas (Mac trackpad) |
 
 ---
 
-## 开发指南
-
-### 架构分层
+## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                      前端层 (React)                       │
-│  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────────────┐ │
-│  │  页面   │ │ 组件库  │ │ 状态管理 │ │   流程编辑器     │ │
-│  │ Pages   │ │Components│ │ Stores  │ │  Flow Editor    │ │
-│  └─────────┘ └─────────┘ └─────────┘ └─────────────────┘ │
-├─────────────────────────────────────────────────────────┤
-│                      存储层 (Storage)                     │
-│         localStorage (浏览器) / Node FS (Electron)        │
-├─────────────────────────────────────────────────────────┤
-│                      IPC 通信层                           │
-│         window.electronAPI / Preload Script              │
-├─────────────────────────────────────────────────────────┤
-│                      Electron 主进程                      │
-│         文件系统操作 + 对话框 + 配置管理                   │
-└─────────────────────────────────────────────────────────┘
++-----------------------------------------------------------+
+|                    Frontend Layer (React)                  |
+|  +-----------+ +------------+ +---------+ +-------------+ |
+|  |   Pages   | | Components | | Stores  | | Flow Editor | |
+|  +-----------+ +------------+ +---------+ +-------------+ |
++-----------------------------------------------------------+
+|                    Storage Layer                           |
+|         localStorage (Browser) / Node FS (Electron)        |
++-----------------------------------------------------------+
+|                    IPC Layer                               |
+|         window.electronAPI / Preload Script                |
++-----------------------------------------------------------+
+|                    Electron Main Process                   |
+|         File System + Dialogs + Config Management          |
++-----------------------------------------------------------+
 ```
-
-### 状态管理
-
-使用 Zustand 进行状态管理，各 Store 职责：
-
-| Store | 用途 | 关键状态 |
-|-------|------|----------|
-| `appStore` | 应用路由 | `currentPage`, `sidebarNavOrder` |
-| `projectStore` | 项目管理 | `currentProject`, `recentProjects` |
-| `workflowStore` | 工作流列表 | `workflows`, CRUD 操作 |
-| `flowEditorStore` | 流程编辑器 | `nodes`, `edges`, `history` |
-| `agentStore` | 智能体 | `agents`, CRUD 操作 |
-| `commandStore` | 命令 | `commands`, CRUD 操作 |
-| `abilityStore` | 能力 | `abilities`, CRUD 操作 |
-| `knowledgeStore` | 知识库 | `knowledges`, CRUD 操作 |
-| `nodeStore` | 节点定义 | `nodeDefinitions`, CRUD 操作 |
-| `resourceStore` | 资源 | `resources`, CRUD 操作 |
-| `settingsStore` | 系统设置 | `llmProviders`, `agenticConfig` |
-
-### Electron IPC 通道
-
-主进程定义的 IPC API：
-
-**文件操作**
-
-| 通道 | 说明 |
-|------|------|
-| `save-workflow-file` / `load-workflow-file` | 工作流文件 |
-| `save-node-file` / `load-node-file` | 节点文件 |
-| `save-resource-file` / `load-resource-file` | 资源文件 |
-| `save-agent-file` / `load-agent-file` | 智能体文件 |
-| `save-command-file` / `load-command-file` | 命令文件 |
-| `save-ability-file` / `load-ability-file` | 能力文件 |
-| `save-knowledge-file` / `load-knowledge-file` | 知识库文件 |
-| `save-settings-file` / `load-settings-file` | 设置文件 |
-| `save-template-file` / `load-template-file` | 模板文件 |
-
-**LLM 调用**
-
-| 通道 | 说明 |
-|------|------|
-| `call-llm-api` | 调用 LLM API |
-| `get-llm-account-list` | 获取 LLM 账户列表 |
-
-**项目管理**
-
-| 通道 | 说明 |
-|------|------|
-| `open-folder-dialog` | 打开文件夹选择对话框 |
-| `init-project-dir` | 初始化项目目录结构 |
-| `set-project-path` | 切换项目 |
-| `load-app-config` / `save-app-config` | 应用配置管理 |
 
 ---
 
-## 常见问题
+## FAQ
 
-### Electron 安装失败
+### Electron Installation Failed
 
-如果 Electron 安装失败，可以使用国内镜像：
+If Electron installation fails, try using a mirror:
 
 ```bash
 export ELECTRON_MIRROR="https://npmmirror.com/mirrors/electron/"
 pnpm install
 ```
 
-### 端口被占用
+### Port Already in Use
 
-如果默认端口 5173 被占用，Vite 会自动尝试下一个可用端口。
+If the default port 5173 is occupied, Vite will automatically try the next available port.
 
-### DevTools 调试
+### DevTools
 
-在 Electron 应用中：
-- 快捷键：`Cmd + Option + I`（macOS）
-- 菜单：View → Toggle Developer Tools
+In the Electron app:
+- Shortcut: `Cmd + Option + I` (macOS)
+- Menu: View -> Toggle Developer Tools
 
-### Mermaid 图表渲染问题
+### Mermaid Rendering Issues
 
-如果 Mermaid 图表无法正常渲染，请确保：
-- 已执行 `pnpm install` 安装所有依赖
-- Vite 配置中已包含 `optimizeDeps: { include: ['mermaid'] }`
-- 图表语法正确，可参考 [Mermaid 官方文档](https://mermaid.js.org/)
-
----
-
-## 设计规范
-
-详细的设计规范文档位于项目根目录的 `business-design-doc/` 目录：
-
-- `agent-design.md` - 智能体模块设计
-- `command-design.md` - 命令模块设计
-- `ability-design.md` - 能力模块设计
-- `knowledge-design.md` - 知识模块设计
-- `workflow-design.md` - 工作流编辑器设计
-- `node-design.md` - 节点模块设计
-- `resources-design.md` - 资源文件模块设计
-- `project-selection-design.md` - 项目选择功能设计
-- `reference-feature-design.md` - 引用功能设计
-- `knowledge-graph-design.md` - 知识图谱设计
-- `ui-components-design.md` - UI 组件设计
-- `mermaid-render-design.md` - Mermaid 图表渲染设计
-- `agentic-design.md` - Agentic 创建功能设计
-- `llm-Integration-design.md` - LLM 集成设计
+If Mermaid diagrams don't render correctly:
+- Ensure all dependencies are installed with `pnpm install`
+- Verify Vite config includes `optimizeDeps: { include: ['mermaid'] }`
+- Check diagram syntax against the [Mermaid docs](https://mermaid.js.org/)
 
 ---
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add some amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
 
 ## License
-- ISC
+
+[MIT](./LICENSE)

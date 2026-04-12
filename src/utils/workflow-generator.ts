@@ -241,32 +241,31 @@ export const generateWorkflowMdContent = (workflow: any, nodes: any[], edges: an
     lines.push('')
   }
 
-  // 注意事项
-  lines.push('## 注意事项')
-  lines.push('- 强制先查看和理解`流程`整体内容然后根据`流程`进行规划后续')
-  lines.push('- 强制使用`TodoWrite`工具创建一个`TodoList`列表来跟踪整个`流程`')
+  // 强制事项
+  lines.push('## 强制事项')
+  lines.push('- 强制创建一个`TodoList`列表来跟踪整个`流程`')
   lines.push('- 强制严格按照`流程`执行 禁止跳过任何`流程`中的阶段')
-  lines.push('- 禁止编造/假设/伪造/杜撰/猜测/说谎一切信息')
-  lines.push('- 优先按照`流程`的进行 读取对应的`节点`的具体`执行内容`对应的文件详情')
   lines.push('- `执行内容`中如果有文件路径代表这是该节点需要执行的任务 必须强制读取和完成')
+  lines.push('- 强制遵循`渐进式加载节点文件详情原则` 先查看并且理解`流程`整体内容 等你执行到某个节点之后才去查看`节点`中对应的具体内容`执行内容`')
+  lines.push('- 强制节点重试：如果执行某个节点没有达到预期那么尝试重试2次再进行下一个节点')
 
-  // 强制同时必须要做的事
-  if (workflow.requiredActions && workflow.requiredActions.length > 0) {
-    lines.push('## 强制同时必须要做的事')
-    workflow.requiredActions.forEach((action: string) => {
-      lines.push(`- ${action}`)
-    })
-    lines.push('')
-  }
+  // 禁止事项
+  lines.push('## 禁止事项')
+  lines.push('- 禁止直接读取`执行内容`的文件')
+  lines.push('- 禁止编造/假设/伪造/杜撰/猜测/说谎一切信息')
 
-  // 禁止同时严禁不能做的事
-  if (workflow.forbiddenActions && workflow.forbiddenActions.length > 0) {
-    lines.push('## 禁止同时严禁不能做的事')
-    workflow.forbiddenActions.forEach((action: string) => {
-      lines.push(`- ${action}`)
-    })
-    lines.push('')
-  }
+  // 最佳实践
+  lines.push('## 最佳实践')
+  lines.push('### 执行流程')
+  lines.push('- 1.查看WORKFLOW.md文件')
+  lines.push('- 2.理解`流程`整体内容 不查看节点具体文件')
+  lines.push('- 3.创建`TodoList`')
+  lines.push('- 4.按照`流程`中的节点执行')
+  lines.push('- 5.查看到`xxx`节点名称')
+  lines.push('- 6.通过`节点`中的节点名称映射到具体执行内容文件或者任务描述')
+  lines.push('- 7.读取并且节点的执行内容')
+  lines.push('- 8.如果执行成功更新`TodoList`任务状态 执行下一个节点 如果执行不成功执行重试')
+  lines.push('- 9.执行下一个节点 循环`读取节点`->`查看节点任务详情`->`执行节点`-`更新任务状态`执行到结束节点结束流程')
 
   // 自定义字段（如验收标准等）
   if (workflow.customFields && workflow.customFields.length > 0) {
