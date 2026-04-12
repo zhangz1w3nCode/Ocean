@@ -1,14 +1,17 @@
 import type { FC } from 'react'
-import { Plus, Search, BookOpen, FileSearch } from 'lucide-react'
+import { Plus, Search, BookOpen, FileSearch, FolderOpen } from 'lucide-react'
 import { Button, ConfirmModal } from '../components/ui'
 import { KnowledgeCard, KnowledgeModal, KnowledgeDetailModal, KnowledgeGraphModal, KnowledgeGraphButton, GlobalIndexModal } from '../components/knowledge'
 import { useKnowledgeStore } from '../stores/knowledgeStore'
+import { useToastStore } from '../stores/toastStore'
 import { useState, useEffect, useMemo } from 'react'
 import type { KnowledgeFile } from '../types'
+import { generateIndexContent } from '../utils/storage'
 
 export const KnowledgesPage: FC = () => {
   const { knowledgeFiles, addKnowledgeFile, updateKnowledgeFile, deleteKnowledgeFile, loadKnowledgeFiles } =
     useKnowledgeStore()
+  const { addToast } = useToastStore()
   const [searchQuery, setSearchQuery] = useState('')
 
   // 详情弹窗状态
@@ -30,14 +33,19 @@ export const KnowledgesPage: FC = () => {
   // 全局索引弹窗状态
   const [isGlobalIndexOpen, setIsGlobalIndexOpen] = useState(false)
 
-  // 是否正在编辑全局索引（用于锁定名称字段）
-  const [isEditingGlobalIndex, setIsEditingGlobalIndex] = useState(false)
-
   // 获取全局索引文件（INDEX.md）
   const globalIndexKnowledge = useMemo(() => {
     return knowledgeFiles.find(
       (k) => k.name.toLowerCase() === 'index'
     )
+  }, [knowledgeFiles])
+
+  // 动态生成索引内容（当 INDEX.md 不存在时使用）
+  const generatedIndexContent = useMemo(() => {
+    // 使用排除 INDEX 后的知识文件列表来生成树形目录
+    const nonIndexFiles = knowledgeFiles.filter((k) => k.name.toLowerCase() !== 'index')
+    if (nonIndexFiles.length === 0) return null
+    return generateIndexContent(nonIndexFiles)
   }, [knowledgeFiles])
 
   // 过滤知识文件（排除 INDEX.md，支持标签搜索）
@@ -50,10 +58,30 @@ export const KnowledgesPage: FC = () => {
           knowledge.name.toLowerCase().includes(query) ||
           knowledge.description?.toLowerCase().includes(query) ||
           knowledge.content?.toLowerCase().includes(query) ||
+          knowledge.category?.toLowerCase().includes(query) ||
           knowledge.tags?.some(tag => tag.toLowerCase().includes(query))
         return matchesSearch
       })
   }, [knowledgeFiles, searchQuery])
+
+  // 按分类分组
+  const groupedKnowledges = useMemo(() => {
+    const groups = new Map<string, KnowledgeFile[]>()
+    for (const knowledge of filteredKnowledges) {
+      const category = knowledge.category || ''
+      if (!groups.has(category)) {
+        groups.set(category, [])
+      }
+      groups.get(category)!.push(knowledge)
+    }
+    // 排序：无分类在前，然后按分类名排序
+    const sortedEntries = Array.from(groups.entries()).sort(([a], [b]) => {
+      if (a === '' && b !== '') return -1
+      if (a !== '' && b === '') return 1
+      return a.localeCompare(b)
+    })
+    return sortedEntries
+  }, [filteredKnowledges])
 
   // 首次加载时从本地读取知识库数据
   useEffect(() => {
@@ -100,7 +128,6 @@ export const KnowledgesPage: FC = () => {
   const handleModalClose = () => {
     setIsModalOpen(false)
     setEditingKnowledge(undefined)
-    setIsEditingGlobalIndex(false)
   }
 
   // 确认创建/编辑
@@ -147,34 +174,37 @@ export const KnowledgesPage: FC = () => {
     setDeletingKnowledgeId(null)
   }
 
-  // 编辑全局索引
-  const handleEditGlobalIndex = () => {
+  // 保存全局索引（将动态生成的内容直接保存为 INDEX.md）
+  const handleSaveGlobalIndex = () => {
     if (globalIndexKnowledge) {
-      setIsGlobalIndexOpen(false)
-      setModalMode('edit')
-      setEditingKnowledge(globalIndexKnowledge)
-      setIsEditingGlobalIndex(true)
-      setIsModalOpen(true)
+      // 已存在则覆盖更新
+      updateKnowledgeFile(globalIndexKnowledge.id, {
+        content: generatedIndexContent || '',
+        updatedAt: new Date().toISOString(),
+      })
+    } else {
+      // 不存在则新建
+      const now = new Date().toISOString()
+      const newKnowledge: KnowledgeFile = {
+        id: `knowledge-${Date.now()}`,
+        name: 'INDEX',
+        type: 'knowledge',
+        description: '知识库全局索引',
+        content: generatedIndexContent || '',
+        tags: ['index'],
+        createdAt: now,
+        updatedAt: now,
+      }
+      addKnowledgeFile(newKnowledge)
     }
+    setIsGlobalIndexOpen(false)
+    addToast('保存成功', 'success')
   }
 
-  // 创建全局索引
-  const handleCreateGlobalIndex = () => {
-    setIsGlobalIndexOpen(false)
-    setModalMode('create')
-    // 预填充 INDEX 名称
-    setEditingKnowledge({
-      id: '',
-      name: 'INDEX',
-      type: 'knowledge',
-      description: '',
-      content: '',
-      tags: [],
-      createdAt: '',
-      updatedAt: '',
-    })
-    setIsEditingGlobalIndex(true)
-    setIsModalOpen(true)
+  // 刷新全局索引（重新生成目录结构并返回最新内容）
+  const handleRefreshGlobalIndex = (): string | null => {
+    addToast('刷新成功', 'success')
+    return generatedIndexContent
   }
 
   return (
@@ -235,18 +265,30 @@ export const KnowledgesPage: FC = () => {
         {/* 页面内容 */}
         <div className="flex-1 p-6 overflow-y-auto">
           {filteredKnowledges.length > 0 ? (
-            <div className="max-w-6xl mx-auto">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                {filteredKnowledges.map((knowledge) => (
-                  <KnowledgeCard
-                    key={knowledge.id}
-                    knowledge={knowledge}
-                    onClick={() => handleCardClick(knowledge)}
-                    onEdit={() => handleEditClick(knowledge)}
-                    onDelete={() => handleDeleteClick(knowledge.id)}
-                  />
-                ))}
-              </div>
+            <div className="max-w-6xl mx-auto space-y-6">
+              {groupedKnowledges.map(([category, knowledges]) => (
+                <div key={category}>
+                  {/* 分类标题 */}
+                  {category && (
+                    <div className="flex items-center gap-2 mb-3 px-1">
+                      <FolderOpen size={14} className="text-gray-400" />
+                      <span className="text-sm font-medium text-gray-500">{category}</span>
+                      <span className="text-xs text-gray-400">({knowledges.length})</span>
+                    </div>
+                  )}
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {knowledges.map((knowledge) => (
+                      <KnowledgeCard
+                        key={knowledge.id}
+                        knowledge={knowledge}
+                        onClick={() => handleCardClick(knowledge)}
+                        onEdit={() => handleEditClick(knowledge)}
+                        onDelete={() => handleDeleteClick(knowledge.id)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              ))}
             </div>
           ) : (
             /* 空状态 */
@@ -267,7 +309,7 @@ export const KnowledgesPage: FC = () => {
         mode={modalMode}
         initialData={editingKnowledge}
         existingNames={knowledgeFiles.map((k) => k.name)}
-        isNameLocked={isEditingGlobalIndex}
+        isNameLocked={false}
       />
 
       {/* 删除确认弹窗 */}
@@ -302,8 +344,9 @@ export const KnowledgesPage: FC = () => {
         onClose={() => setIsGlobalIndexOpen(false)}
         content={globalIndexKnowledge?.content || null}
         exists={!!globalIndexKnowledge}
-        onEdit={handleEditGlobalIndex}
-        onCreate={handleCreateGlobalIndex}
+        generatedContent={generatedIndexContent}
+        onSave={handleSaveGlobalIndex}
+        onRefresh={handleRefreshGlobalIndex}
       />
     </div>
   )

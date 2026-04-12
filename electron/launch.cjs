@@ -817,12 +817,37 @@ ipcMain.handle('load-all-ability-files', () => {
 
 // ===== 知识库文件相关 IPC =====
 
-// 保存知识库文件（Markdown格式，以名称命名）
+// 需要排除的目录名（隐藏目录和版本控制目录）
+const EXCLUDED_DIRS = new Set(['.git', '.svn', '.hg', '.DS_Store', 'node_modules'])
+
+// 递归扫描目录获取所有 .md 文件（返回相对于 baseDir 的路径）
+const scanDirRecursive = (dir, baseDir = dir, result = []) => {
+  if (!fs.existsSync(dir)) return result
+  const items = fs.readdirSync(dir)
+  for (const item of items) {
+    if (EXCLUDED_DIRS.has(item) || item.startsWith('.')) continue
+    const fullPath = path.join(dir, item)
+    const stat = fs.statSync(fullPath)
+    if (stat.isDirectory()) {
+      scanDirRecursive(fullPath, baseDir, result)
+    } else if (item.endsWith('.md')) {
+      const relativePath = path.relative(baseDir, fullPath)
+      result.push(relativePath)
+    }
+  }
+  return result
+}
+
+// 保存知识库文件（Markdown格式，支持子目录路径，如 "backend/api"）
 ipcMain.handle('save-knowledge-file', (_, name, content) => {
   try {
     const knowledgesDir = getKnowledgesDir()
-    const fileName = `${name}.md`
-    const filePath = path.join(knowledgesDir, fileName)
+    const filePath = path.join(knowledgesDir, `${name}.md`)
+    // 自动创建中间目录
+    const dirPath = path.dirname(filePath)
+    if (!fs.existsSync(dirPath)) {
+      fs.mkdirSync(dirPath, { recursive: true })
+    }
     fs.writeFileSync(filePath, content, 'utf-8')
     return { success: true }
   } catch (error) {
@@ -831,7 +856,7 @@ ipcMain.handle('save-knowledge-file', (_, name, content) => {
   }
 })
 
-// 加载单个知识库文件内容
+// 加载单个知识库文件内容（支持子目录路径，如 "backend/api"）
 ipcMain.handle('load-knowledge-file', (_, name) => {
   try {
     const knowledgesDir = getKnowledgesDir()
@@ -848,7 +873,7 @@ ipcMain.handle('load-knowledge-file', (_, name) => {
   }
 })
 
-// 删除单个知识库文件
+// 删除单个知识库文件（支持子目录路径）
 ipcMain.handle('delete-knowledge-file', (_, name) => {
   try {
     const knowledgesDir = getKnowledgesDir()
@@ -863,20 +888,55 @@ ipcMain.handle('delete-knowledge-file', (_, name) => {
   }
 })
 
-// 加载所有知识库文件列表（返回所有 .md 文件名）
+// 加载所有知识库文件列表（递归扫描子目录，返回相对路径格式的文件名）
 ipcMain.handle('load-all-knowledge-files', () => {
   try {
     const knowledgesDir = getKnowledgesDir()
     if (!fs.existsSync(knowledgesDir)) {
       return { success: true, files: [] }
     }
-    const files = fs.readdirSync(knowledgesDir)
-      .filter(file => file.endsWith('.md'))
-      .map(file => file)
+    const files = scanDirRecursive(knowledgesDir)
     return { success: true, files }
   } catch (error) {
     console.error('加载知识库文件列表失败:', error)
     return { success: false, error: String(error), files: [] }
+  }
+})
+
+// 获取知识库目录下的所有子文件夹列表（树形结构）
+ipcMain.handle('list-knowledge-folders', () => {
+  try {
+    const knowledgesDir = getKnowledgesDir()
+    if (!fs.existsSync(knowledgesDir)) {
+      return { success: true, folders: [] }
+    }
+
+    // 递归扫描子目录，返回树形结构
+    const scanFolders = (dir, basePath = '') => {
+      const folders = []
+      if (!fs.existsSync(dir)) return folders
+      const items = fs.readdirSync(dir)
+      for (const item of items) {
+        if (EXCLUDED_DIRS.has(item) || item.startsWith('.')) continue
+        const fullPath = path.join(dir, item)
+        const stat = fs.statSync(fullPath)
+        if (stat.isDirectory()) {
+          const folderPath = basePath ? `${basePath}/${item}` : item
+          folders.push({
+            name: item,
+            path: folderPath,
+            children: scanFolders(fullPath, folderPath),
+          })
+        }
+      }
+      return folders
+    }
+
+    const folders = scanFolders(knowledgesDir)
+    return { success: true, folders }
+  } catch (error) {
+    console.error('获取知识库文件夹列表失败:', error)
+    return { success: false, error: String(error), folders: [] }
   }
 })
 
@@ -2481,4 +2541,320 @@ ipcMain.handle('list-skill-resources', (_, skillName, resourceType) => {
     console.error('列出技能资源文件失败:', error)
     return { success: false, error: String(error), files: [] }
   }
+})
+
+// ========== Claude Code CLI 集成 ==========
+
+const { spawn } = require('child_process')
+
+// Claude Code 子进程引用
+let claudeCodeProcess = null
+
+/**
+ * 发送 Claude Code 事件到渲染进程
+ */
+const sendClaudeCodeEvent = (event) => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('claude-code-event', {
+      ...event,
+      timestamp: new Date().toISOString()
+    })
+  }
+}
+
+/**
+ * 运行 Claude Code CLI
+ * 使用 claude -p --output-format=stream-json 非交互式模式
+ */
+ipcMain.handle('run-claude-code', async (_, config) => {
+  const { prompt, projectPath, sessionId, maxTurns, permissionMode } = config
+
+  console.log('\n' + '='.repeat(60))
+  console.log('[Claude Code] 开始执行')
+  console.log('[Claude Code] 任务:', prompt?.substring(0, 100))
+  console.log('[Claude Code] 项目路径:', projectPath)
+  console.log('[Claude Code] 恢复会话:', sessionId || '无')
+  console.log('[Claude Code] 最大轮次:', maxTurns || '默认')
+  console.log('='.repeat(60))
+
+  // 检测 claude CLI 是否存在
+  try {
+    const { execSync } = require('child_process')
+    execSync('which claude', { stdio: 'pipe' })
+  } catch (e) {
+    console.error('[Claude Code] 未检测到 claude CLI')
+    return {
+      success: false,
+      result: '',
+      error: '未检测到 claude CLI，请先安装 Claude Code (npm install -g @anthropic-ai/claude-code)'
+    }
+  }
+
+  return new Promise((resolve) => {
+    // 构造命令参数
+    const args = ['-p', prompt, '--output-format=stream-json', '--verbose']
+
+    // 添加工作目录
+    if (projectPath) {
+      args.push('--add-dir', projectPath)
+    }
+
+    // 恢复会话
+    if (sessionId) {
+      args.push('--resume', sessionId)
+    }
+
+    // 最大轮次
+    if (maxTurns) {
+      args.push('--max-turns', String(maxTurns))
+    }
+
+    // 权限模式
+    if (permissionMode) {
+      args.push('--permission-mode', permissionMode)
+    } else {
+      args.push('--permission-mode', 'acceptEdits')
+    }
+
+    console.log('[Claude Code] 命令: claude', args.map(a => a.includes(' ') ? `"${a}"` : a).join(' '))
+
+    let collectedText = ''
+    let collectedSessionId = null
+    let hasError = false
+
+    // 启动子进程
+    claudeCodeProcess = spawn('claude', args, {
+      cwd: projectPath || getProjectRoot(),
+      env: { ...process.env },
+      stdio: ['pipe', 'pipe', 'pipe']
+    })
+
+    // 关闭 stdin，防止 claude 进程等待输入
+    claudeCodeProcess.stdin.end()
+
+    let stdoutBuffer = ''
+    let stderrBuffer = ''
+
+    // 处理 stdout - 逐行解析 stream-json
+    claudeCodeProcess.stdout.on('data', (data) => {
+      stdoutBuffer += data.toString()
+      const lines = stdoutBuffer.split('\n')
+      stdoutBuffer = lines.pop() || '' // 保留未完成的行
+
+      for (const line of lines) {
+        if (!line.trim()) continue
+
+        try {
+          const parsed = JSON.parse(line)
+          console.log('[Claude Code] 收到事件:', parsed.type || 'unknown')
+
+          // 处理不同类型的事件
+          if (parsed.type === 'system') {
+            // 系统消息 - 提取 session_id
+            if (parsed.session_id && !collectedSessionId) {
+              collectedSessionId = parsed.session_id
+              console.log('[Claude Code] 会话ID:', collectedSessionId)
+              sendClaudeCodeEvent({
+                type: 'system',
+                data: { sessionId: collectedSessionId }
+              })
+            }
+            // init 子类型表示初始化完成
+            if (parsed.subtype === 'init') {
+              console.log('[Claude Code] 初始化完成, 模型:', parsed.model || 'unknown')
+            }
+          } else if (parsed.type === 'assistant') {
+            // 助手消息
+            const message = parsed.message
+            if (message && message.content) {
+              for (const contentItem of message.content) {
+                if (contentItem.type === 'thinking') {
+                  // 思考内容
+                  const thinking = contentItem.thinking || ''
+                  if (thinking) {
+                    sendClaudeCodeEvent({
+                      type: 'thinking',
+                      data: { content: thinking }
+                    })
+                  }
+                } else if (contentItem.type === 'text') {
+                  // 文本输出
+                  const text = contentItem.text || ''
+                  if (text) {
+                    collectedText += text
+                    sendClaudeCodeEvent({
+                      type: 'text',
+                      data: { content: text }
+                    })
+                  }
+                } else if (contentItem.type === 'tool_use') {
+                  // 工具调用
+                  sendClaudeCodeEvent({
+                    type: 'tool_use',
+                    data: {
+                      toolName: contentItem.name,
+                      toolInput: contentItem.input
+                    }
+                  })
+                }
+              }
+            }
+          } else if (parsed.type === 'user') {
+            // 用户消息（工具结果等）
+            const message = parsed.message
+            if (message && message.content) {
+              for (const contentItem of message.content) {
+                if (contentItem.type === 'tool_result') {
+                  // 工具执行结果
+                  const output = contentItem.content
+                  let outputText = ''
+                  if (typeof output === 'string') {
+                    outputText = output
+                  } else if (Array.isArray(output)) {
+                    outputText = output
+                      .filter(o => o.type === 'text')
+                      .map(o => o.text)
+                      .join('\n')
+                  }
+
+                  sendClaudeCodeEvent({
+                    type: 'tool_result',
+                    data: {
+                      toolName: contentItem.tool_use_id || '',
+                      toolOutput: outputText.substring(0, 2000)
+                    }
+                  })
+                }
+              }
+            }
+          } else if (parsed.type === 'result') {
+            // 最终结果事件
+            // result 字段可能是字符串，也可能是对象
+            if (parsed.result) {
+              if (typeof parsed.result === 'string') {
+                // 直接是文本结果
+                if (!collectedText) {
+                  collectedText = parsed.result
+                }
+              } else if (parsed.result.content && Array.isArray(parsed.result.content)) {
+                // content 数组格式
+                for (const contentItem of parsed.result.content) {
+                  if (contentItem.type === 'text' && contentItem.text) {
+                    if (!collectedText) {
+                      collectedText = contentItem.text
+                    }
+                  }
+                }
+              }
+            }
+            if (parsed.session_id) {
+              collectedSessionId = parsed.session_id
+            }
+            // 发送完成事件
+            sendClaudeCodeEvent({
+              type: 'stop',
+              data: {
+                stopReason: parsed.stop_reason || 'end_turn',
+                sessionId: parsed.session_id
+              }
+            })
+          }
+        } catch (e) {
+          // 忽略 JSON 解析失败的行
+        }
+      }
+    })
+
+    // 处理 stderr
+    claudeCodeProcess.stderr.on('data', (data) => {
+      stderrBuffer += data.toString()
+      console.error('[Claude Code] stderr:', data.toString())
+    })
+
+    // 处理进程退出
+    claudeCodeProcess.on('close', (code) => {
+      console.log('[Claude Code] 进程退出，code:', code)
+
+      // 处理剩余 buffer 中的最后一行
+      if (stdoutBuffer.trim()) {
+        try {
+          const parsed = JSON.parse(stdoutBuffer.trim())
+          // 如果是 result 类型，提取最终结果
+          if (parsed.type === 'result') {
+            if (typeof parsed.result === 'string' && !collectedText) {
+              collectedText = parsed.result
+            }
+            if (parsed.session_id && !collectedSessionId) {
+              collectedSessionId = parsed.session_id
+            }
+          }
+        } catch (e) {
+          // 忽略
+        }
+      }
+
+      claudeCodeProcess = null
+
+      if (code === 0) {
+        // 成功完成
+        if (!collectedText) {
+          collectedText = '(Claude Code 未返回文本内容)'
+        }
+
+        resolve({
+          success: true,
+          result: collectedText,
+          sessionId: collectedSessionId
+        })
+      } else {
+        // 执行失败
+        const errorMsg = stderrBuffer.trim() || `进程退出码: ${code}`
+        resolve({
+          success: false,
+          result: collectedText,
+          error: errorMsg,
+          sessionId: collectedSessionId
+        })
+      }
+    })
+
+    // 处理进程错误
+    claudeCodeProcess.on('error', (error) => {
+      console.error('[Claude Code] 进程错误:', error)
+      claudeCodeProcess = null
+      hasError = true
+
+      sendClaudeCodeEvent({
+        type: 'error',
+        data: { error: error.message }
+      })
+
+      resolve({
+        success: false,
+        result: '',
+        error: `启动 claude 进程失败: ${error.message}`
+      })
+    })
+  })
+})
+
+/**
+ * 中止 Claude Code 执行
+ */
+ipcMain.handle('abort-claude-code', async () => {
+  if (claudeCodeProcess) {
+    console.log('[Claude Code] 中止执行')
+    claudeCodeProcess.kill('SIGINT')
+
+    // 给 SIGINT 一点时间，如果进程没退出则强制 kill
+    setTimeout(() => {
+      if (claudeCodeProcess) {
+        claudeCodeProcess.kill('SIGKILL')
+        claudeCodeProcess = null
+      }
+    }, 3000)
+
+    return { success: true }
+  }
+  return { success: false, error: '没有正在运行的 Claude Code 进程' }
 })

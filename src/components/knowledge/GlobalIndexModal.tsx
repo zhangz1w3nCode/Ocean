@@ -1,5 +1,6 @@
+import { useState } from 'react'
 import type { FC } from 'react'
-import { FileText, FileSearch, Edit3, Plus } from 'lucide-react'
+import { FileText, FileSearch, Save, RefreshCw } from 'lucide-react'
 import { Modal, Button, MarkdownRenderer } from '../ui'
 
 interface GlobalIndexModalProps {
@@ -7,8 +8,9 @@ interface GlobalIndexModalProps {
   onClose: () => void
   content: string | null
   exists: boolean
-  onEdit: () => void
-  onCreate: () => void
+  generatedContent: string | null
+  onSave: () => void
+  onRefresh: () => string | null
 }
 
 // 全局索引使用浅灰色主题，区别于普通知识的蓝色
@@ -22,41 +24,62 @@ export const GlobalIndexModal: FC<GlobalIndexModalProps> = ({
   onClose,
   content,
   exists,
-  onEdit,
-  onCreate,
+  generatedContent,
+  onSave,
+  onRefresh,
 }) => {
+  // 刷新后的内容状态：null 表示未刷新，使用默认逻辑
+  const [refreshedContent, setRefreshedContent] = useState<string | null>(null)
+
+  // 决定显示的内容：刷新后优先显示刷新内容，否则本地优先
+  const displayContent = refreshedContent !== null
+    ? refreshedContent
+    : (exists ? content : generatedContent)
+
+  const handleRefresh = () => {
+    const newContent = onRefresh()
+    if (newContent !== undefined) {
+      setRefreshedContent(newContent)
+    }
+  }
+
+  // 弹窗关闭时重置刷新状态
+  const handleClose = () => {
+    setRefreshedContent(null)
+    onClose()
+  }
+
   return (
     <Modal
       isOpen={isOpen}
-      onClose={onClose}
+      onClose={handleClose}
       title=""
       size="xl"
       footer={
         <div className="flex justify-between">
-          <Button variant="ghost" size="sm" onClick={onClose}>
+          <Button variant="ghost" size="sm" onClick={handleClose}>
             关闭
           </Button>
-          {exists ? (
+          <div className="flex items-center gap-2">
             <Button
               variant="outline"
               size="sm"
-              onClick={onEdit}
+              onClick={handleRefresh}
               className="bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 hover:border-gray-400 rounded-lg"
             >
-              <Edit3 size={14} className="mr-1.5" />
-              编辑
+              <RefreshCw size={14} className="mr-1.5" />
+              刷新
             </Button>
-          ) : (
             <Button
               variant="outline"
               size="sm"
-              onClick={onCreate}
+              onClick={onSave}
               className="bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 hover:border-gray-400 rounded-lg"
             >
-              <Plus size={14} className="mr-1.5" />
-              创建
+              <Save size={14} className="mr-1.5" />
+              保存
             </Button>
-          )}
+          </div>
         </div>
       }
     >
@@ -81,7 +104,7 @@ export const GlobalIndexModal: FC<GlobalIndexModalProps> = ({
               INDEX.md
             </span>
             <span className="text-sm text-macos-text-tertiary">
-              {exists ? '知识库全局索引文件' : '索引文件不存在'}
+              {exists && refreshedContent === null ? '知识库全局索引文件' : '自动生成 - 知识库目录结构'}
             </span>
           </div>
         </div>
@@ -89,26 +112,23 @@ export const GlobalIndexModal: FC<GlobalIndexModalProps> = ({
 
       {/* 内容区域 - 固定高度，超出滚动 */}
       <div className="max-h-[400px] overflow-y-auto pr-2">
-        {exists && content ? (
+        {displayContent ? (
           <div>
             <label className="flex items-center gap-2 text-sm font-medium text-macos-text mb-1.5">
               <FileText size={16} />
-              索引内容
+              {exists && refreshedContent === null ? '索引内容' : '目录结构'}
             </label>
             <div className="bg-gray-50 rounded-lg p-4">
-              <MarkdownRenderer content={content} />
+              <MarkdownRenderer content={displayContent} />
             </div>
-          </div>
+                      </div>
         ) : (
           <div className="flex flex-col items-center justify-center py-12">
             <div className="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center mb-4">
               <FileSearch size={32} className="text-gray-400" />
             </div>
             <p className="text-sm text-macos-text-tertiary">
-              当前知识库中没有全局索引文件
-            </p>
-            <p className="text-xs text-macos-text-tertiary mt-1">
-              点击"创建"按钮新建全局索引文件
+              当前知识库中没有文档
             </p>
           </div>
         )}

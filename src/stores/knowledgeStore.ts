@@ -48,9 +48,13 @@ export const useKnowledgeStore = create<KnowledgeState>((set) => ({
     set((state) => {
       const knowledgeToDelete = state.knowledgeFiles.find((knowledge) => knowledge.id === id)
       const newKnowledges = state.knowledgeFiles.filter((knowledge) => knowledge.id !== id)
-      // 异步删除文件并保存列表
+      // 异步删除文件并保存列表（使用 filepath 支持子目录路径）
       if (knowledgeToDelete) {
-        deleteKnowledgeFileFromLocal(knowledgeToDelete.name)
+        const deletePath = knowledgeToDelete.filepath ||
+          (knowledgeToDelete.category
+            ? `${knowledgeToDelete.category}/${knowledgeToDelete.name}`
+            : knowledgeToDelete.name)
+        deleteKnowledgeFileFromLocal(deletePath)
       }
       return { knowledgeFiles: newKnowledges }
     }),

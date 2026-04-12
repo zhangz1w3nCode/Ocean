@@ -1,6 +1,6 @@
 import type { FC } from 'react'
 import { useState, useEffect, useRef } from 'react'
-import { Type, Wand2, Eye, Edit3, MessageSquare, FileCode, FileText, FolderOpen, Plus, Trash2, X, PenLine, Brain, Bot, Loader2 } from 'lucide-react'
+import { Type, Wand2, Eye, Edit3, MessageSquare, FileCode, FileText, FolderOpen, Plus, Trash2, X, PenLine, Brain, Bot, Loader2, Sparkles } from 'lucide-react'
 import { Modal, Input, Textarea, Button, ConfirmModal, MarkdownEditor, MarkdownRenderer, OptimizeModal } from '../ui'
 import { useToastStore } from '../../stores/toastStore'
 import { useSettingsStore } from '../../stores/settingsStore'
@@ -10,10 +10,12 @@ import { generateWithLLM, parseAbilityContent } from '../../services/llmService'
 import { getDefaultLLMProvider, isElectron, loadSkillTemplateFile } from '../../utils/storage'
 import { useAgentLoop } from '../../hooks/useAgentLoop'
 import { AgentLoopLogger } from '../agent/AgentLoopLogger'
+import { useClaudeCode } from '../../hooks/useClaudeCode'
+import { ClaudeCodeLogger } from '../agent/ClaudeCodeLogger'
 import type { SkillFile, SkillResource } from '../../types'
 
 // 创建模式类型
-type CreateMode = 'select' | 'manual' | 'smart' | 'agentic'
+type CreateMode = 'select' | 'manual' | 'smart' | 'agentic' | 'claude'
 
 interface SkillModalProps {
   isOpen: boolean
@@ -101,6 +103,31 @@ export const SkillModal: FC<SkillModalProps> = ({
     },
     onError: (error) => {
       addToast(error.message || 'Agentic 执行失败', 'error')
+    }
+  })
+
+  // 使用 useClaudeCode hook
+  const {
+    steps: claudeSteps,
+    isRunning: isClaudeRunning,
+    expandedSteps: claudeExpandedSteps,
+    sessionId: claudeSessionId,
+    toggleStepExpand: toggleClaudeStepExpand,
+    clearSteps: clearClaudeSteps,
+    execute: executeClaudeCode,
+    abort: abortClaudeCode,
+  } = useClaudeCode({
+    onComplete: (result) => {
+      if (result.success && result.result) {
+        setContent(result.result)
+        setCreateMode('manual')
+        addToast('Claude 创建成功', 'success')
+      } else {
+        addToast(result.error || 'Claude Code 执行失败', 'error')
+      }
+    },
+    onError: (error) => {
+      addToast(error.message || 'Claude Code 执行失败', 'error')
     }
   })
 
@@ -206,6 +233,7 @@ export const SkillModal: FC<SkillModalProps> = ({
       setActiveTab('content')
       resetResourceEditState()
       clearAgenticSteps()
+      clearClaudeSteps()
       // 延迟设置快照，确保状态已更新
       setTimeout(() => {
         initialSnapshot.current = getSnapshot()
@@ -380,6 +408,70 @@ export const SkillModal: FC<SkillModalProps> = ({
     }
   }
 
+  // Claude 创建 - 使用本地 claude CLI
+  const handleClaudeCreate = async () => {
+    if (!userDescription.trim()) {
+      setInvalidFields(new Set(['userDescription']))
+      addToast('请输入技能描述', 'warning')
+      setTimeout(() => setInvalidFields(new Set()), 3000)
+      return
+    }
+
+    if (!isElectron()) {
+      addToast('Claude 创建功能仅在 Electron 环境中可用', 'warning')
+      return
+    }
+
+    if (!currentProject?.path) {
+      addToast('请先选择一个项目', 'warning')
+      return
+    }
+
+    try {
+      await executeClaudeCode(userDescription, {
+        projectPath: currentProject.path,
+        maxTurns: 10,
+        permissionMode: 'acceptEdits'
+      })
+    } catch (error) {
+      console.error('[Claude Skill Create] 执行失败:', error)
+    }
+  }
+
+  // Claude 继续对话
+  const handleClaudeContinue = async () => {
+    if (!claudeSessionId || !userDescription.trim()) {
+      addToast('请输入继续对话的内容', 'warning')
+      return
+    }
+
+    if (!currentProject?.path) {
+      addToast('请先选择一个项目', 'warning')
+      return
+    }
+
+    try {
+      await executeClaudeCode(userDescription, {
+        projectPath: currentProject.path,
+        sessionId: claudeSessionId,
+        maxTurns: 10,
+        permissionMode: 'acceptEdits'
+      })
+    } catch (error) {
+      console.error('[Claude Skill Continue] 执行失败:', error)
+    }
+  }
+
+  // 中止 Claude 执行
+  const handleAbortClaude = async () => {
+    try {
+      await abortClaudeCode()
+      addToast('已中止 Claude 执行', 'warning')
+    } catch (error) {
+      console.error('中止 Claude Code 失败:', error)
+    }
+  }
+
   const handleSubmit = () => {
     // 验证技能名称
     if (!name.trim()) {
@@ -445,6 +537,7 @@ export const SkillModal: FC<SkillModalProps> = ({
     setCreateMode('select')
     resetResourceEditState()
     clearAgenticSteps()
+    clearClaudeSteps()
     onClose()
   }
 
@@ -465,6 +558,7 @@ export const SkillModal: FC<SkillModalProps> = ({
     // 清空当前创建方式的内容
     setUserDescription('')
     clearAgenticSteps()
+    clearClaudeSteps()
     setName('')
     setDescription('')
     setContent('')
@@ -617,6 +711,15 @@ export const SkillModal: FC<SkillModalProps> = ({
           </div>
           <span className="text-sm font-medium text-gray-700">Agentic创建</span>
         </button>
+        <button
+          onClick={() => setCreateMode('claude')}
+          className="flex flex-col items-center gap-3 p-6 w-36 border border-gray-200 rounded-xl hover:border-gray-300 hover:bg-gray-50 transition-all"
+        >
+          <div className="w-12 h-12 rounded-full bg-violet-50 flex items-center justify-center">
+            <Sparkles size={24} className="text-violet-500" />
+          </div>
+          <span className="text-sm font-medium text-gray-700">Claude创建</span>
+        </button>
       </div>
     </div>
   )
@@ -762,6 +865,108 @@ export const SkillModal: FC<SkillModalProps> = ({
     </div>
   )
 
+  // 渲染 Claude 创建界面
+  const renderClaudeCreate = () => (
+    <div className="space-y-5 max-h-[60vh] overflow-y-auto pr-2">
+      {/* 用户描述输入 */}
+      <div>
+        <label className="flex items-center gap-2 text-sm font-medium text-macos-text mb-1.5">
+          <Sparkles size={16} className="text-violet-500" />
+          描述你想要创建的技能
+        </label>
+        <Textarea
+          placeholder="例如：帮我创建一个代码分析技能，可以检查代码质量、发现潜在问题...&#10;&#10;Claude 模式会利用本机 Claude Code CLI 自动执行：&#10;1. 读取项目中已有的技能文档作为参考&#10;2. 根据你的描述智能生成技能内容&#10;3. 支持多轮对话，逐步调整优化"
+          value={userDescription}
+          onChange={(e) => {
+            setUserDescription(e.target.value)
+            if (invalidFields.has('userDescription')) setInvalidFields(new Set())
+          }}
+          rows={6}
+          invalid={invalidFields.has('userDescription')}
+          disabled={isClaudeRunning}
+        />
+      </div>
+
+      {/* 会话信息 */}
+      {claudeSessionId && (
+        <div className="flex items-center gap-2 px-3 py-2 bg-violet-50 rounded-lg">
+          <Sparkles size={14} className="text-violet-400" />
+          <span className="text-xs text-violet-600">
+            会话 {claudeSessionId.substring(0, 12)}... 可继续对话
+          </span>
+        </div>
+      )}
+
+      {/* Claude Code 执行日志 */}
+      {claudeSteps.length > 0 && (
+        <ClaudeCodeLogger
+          steps={claudeSteps}
+          isRunning={isClaudeRunning}
+          expandedSteps={claudeExpandedSteps}
+          onToggleExpand={toggleClaudeStepExpand}
+          maxHeight={300}
+        />
+      )}
+
+      {/* 控制按钮 */}
+      <div className="flex items-center justify-end gap-3">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => {
+            if (userDescription.trim() || claudeSteps.length > 0) {
+              setShowBackConfirm(true)
+            } else {
+              setCreateMode('select')
+            }
+          }}
+          disabled={isClaudeRunning}
+        >
+          返回选择
+        </Button>
+        {claudeSessionId && !isClaudeRunning && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleClaudeContinue}
+            disabled={!userDescription.trim()}
+            className="bg-white border border-violet-200 text-violet-600 hover:bg-violet-50 hover:border-violet-300 rounded-lg"
+          >
+            <Sparkles size={14} className="mr-1.5" />
+            继续对话
+          </Button>
+        )}
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            if (!isClaudeRunning) {
+              if (claudeSessionId) {
+                clearClaudeSteps()
+              }
+              handleClaudeCreate()
+            } else {
+              handleAbortClaude()
+            }
+          }}
+          className="bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 hover:border-gray-400 rounded-lg"
+        >
+          {isClaudeRunning ? (
+            <>
+              <Loader2 size={14} className="animate-spin mr-1.5" />
+              中止生成
+            </>
+          ) : (
+            <>
+              <Sparkles size={14} className="mr-1.5" />
+              开始生成
+            </>
+          )}
+        </Button>
+      </div>
+    </div>
+  )
+
   // 根据模式渲染内容
   const renderContent = () => {
     if (mode === 'edit') {
@@ -775,6 +980,8 @@ export const SkillModal: FC<SkillModalProps> = ({
         return renderSmartCreate()
       case 'agentic':
         return renderAgenticCreate()
+      case 'claude':
+        return renderClaudeCreate()
       case 'manual':
         return renderManualEdit()
       default:

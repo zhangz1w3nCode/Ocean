@@ -224,7 +224,8 @@ export function useReferenceItems(options: UseReferenceItemsOptions = {}): Refer
       })
     }
     knowledgeFiles.forEach((knowledge) => {
-      const path = `.claude/knowledges/${knowledge.name}.md`
+      const knowledgePath = knowledge.filepath || (knowledge.category ? `${knowledge.category}/${knowledge.name}` : knowledge.name)
+      const path = `.claude/knowledges/${knowledgePath}.md`
       if (path !== excludePath) {
         items.push({
           id: knowledge.id,

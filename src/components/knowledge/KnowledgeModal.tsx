@@ -1,7 +1,8 @@
 import type { FC } from 'react'
 import { useState, useEffect, useRef } from 'react'
-import { Type, BookOpen, Eye, Edit3, MessageSquare, Tag, Plus, X, Check, PenLine, Bot, Loader2, Wand2 } from 'lucide-react'
+import { Type, BookOpen, Eye, Edit3, MessageSquare, Tag, Plus, X, Check, PenLine, Bot, Loader2, Wand2, FolderOpen, ChevronRight } from 'lucide-react'
 import { Modal, Input, Textarea, Button, ConfirmModal, MarkdownEditor, MarkdownRenderer } from '../ui'
+import { CategorySelectModal } from './CategorySelectModal'
 import { useToastStore } from '../../stores/toastStore'
 import { useSettingsStore } from '../../stores/settingsStore'
 import { useProjectStore } from '../../stores/projectStore'
@@ -43,6 +44,10 @@ export const KnowledgeModal: FC<KnowledgeModalProps> = ({
   const [description, setDescription] = useState('')
   const [content, setContent] = useState('')
   const [tags, setTags] = useState<string[]>([])
+  const [category, setCategory] = useState('')
+
+  // 分类选择弹窗状态
+  const [isCategorySelectOpen, setIsCategorySelectOpen] = useState(false)
 
   // Agentic 创建的用户描述
   const [userDescription, setUserDescription] = useState('')
@@ -102,6 +107,7 @@ export const KnowledgeModal: FC<KnowledgeModalProps> = ({
       description,
       content,
       tags,
+      category,
       createMode,
       userDescription,
     })
@@ -123,6 +129,7 @@ export const KnowledgeModal: FC<KnowledgeModalProps> = ({
         setDescription(initialData.description || '')
         setContent(initialData.content || '')
         setTags(initialData.tags || [])
+        setCategory(initialData.category || '')
         setCreateMode('manual') // 编辑模式直接进入手动模式
       } else {
         // 创建模式：重置为默认值
@@ -130,6 +137,7 @@ export const KnowledgeModal: FC<KnowledgeModalProps> = ({
         setDescription('')
         setContent('')
         setTags([])
+        setCategory('')
         setUserDescription('')
         setCreateMode('select')
       }
@@ -324,6 +332,8 @@ export const KnowledgeModal: FC<KnowledgeModalProps> = ({
       description: description.trim(),
       content: content.trim(),
       tags,
+      category: category.trim(),
+      filepath: category.trim() ? `${category.trim()}/${name.trim()}` : name.trim(),
     })
 
     // 显示成功提示
@@ -343,6 +353,7 @@ export const KnowledgeModal: FC<KnowledgeModalProps> = ({
     setDescription('')
     setContent('')
     setTags([])
+    setCategory('')
     setUserDescription('')
     setIsAddingTag(false)
     setNewTagInput('')
@@ -524,6 +535,35 @@ export const KnowledgeModal: FC<KnowledgeModalProps> = ({
           onChange={(e) => setDescription(e.target.value)}
           rows={2}
         />
+      </div>
+
+      {/* 知识分类 - 点击弹出文件夹选择器 */}
+      <div>
+        <label className="flex items-center gap-2 text-sm font-medium text-macos-text mb-1.5">
+          <FolderOpen size={16} className="text-macos-text-secondary" />
+          知识分类
+        </label>
+        <button
+          type="button"
+          onClick={() => setIsCategorySelectOpen(true)}
+          className={`w-full flex items-center justify-between px-3 py-2 text-left text-sm border rounded-lg transition-colors
+            ${category ? 'border-gray-200 bg-white hover:border-gray-300' : 'border-gray-200 bg-white hover:border-gray-300 text-macos-text-tertiary'}`}
+        >
+          <span className="flex items-center gap-2 truncate">
+            {category ? (
+              <>
+                <FolderOpen size={14} className="text-gray-400 flex-shrink-0" />
+                <span className="text-gray-700">{category}</span>
+              </>
+            ) : (
+              <span>点击选择分类（留空表示根目录）</span>
+            )}
+          </span>
+          <ChevronRight size={14} className="text-gray-400 flex-shrink-0" />
+        </button>
+        <p className="mt-1 text-xs text-macos-text-tertiary">
+          分类路径对应子目录结构，支持多级分类
+        </p>
       </div>
 
       {/* 知识标签 */}
@@ -747,6 +787,14 @@ export const KnowledgeModal: FC<KnowledgeModalProps> = ({
         cancelText="继续编辑"
         onConfirm={handleConfirmBack}
         onCancel={handleCancelBack}
+      />
+
+      {/* 分类选择弹窗 */}
+      <CategorySelectModal
+        isOpen={isCategorySelectOpen}
+        onClose={() => setIsCategorySelectOpen(false)}
+        onSelect={(path) => setCategory(path)}
+        currentCategory={category}
       />
     </>
   )

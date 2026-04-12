@@ -1,5 +1,5 @@
 import type { FC } from 'react'
-import { BookOpen, MessageSquare, FileText, Tag } from 'lucide-react'
+import { BookOpen, MessageSquare, FileText, Tag, FolderOpen } from 'lucide-react'
 import { Modal, Button, MarkdownRenderer } from '../ui'
 import type { KnowledgeFile } from '../../types'
 
@@ -79,6 +79,12 @@ export const KnowledgeDetailModal: FC<KnowledgeDetailModalProps> = ({
             <span className="text-sm text-macos-text-tertiary">
               更新于 {formatDate(knowledge.updatedAt)}
             </span>
+            {knowledge.category && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-gray-100 text-gray-500 rounded-full text-xs">
+                <FolderOpen size={10} />
+                {knowledge.category}
+              </span>
+            )}
           </div>
         </div>
       </div>

@@ -196,6 +196,8 @@ export interface KnowledgeFile {
   description: string // 从 frontmatter 的 description 字段读取
   content: string // frontmatter 后的内容
   tags: string[] // 标签数组
+  category?: string // 分类路径（如 "backend" 或 "backend/v2"），对应子目录结构
+  filepath?: string // 完整文件相对路径（如 "backend/api"），用于文件系统操作
   createdAt: string
   updatedAt: string // 从文件系统获取
 }
@@ -417,4 +419,62 @@ export interface CreateSkillInput {
   scripts?: { name: string; content: string }[]
   references?: { name: string; content: string }[]
   examples?: { name: string; content: string }[]
+}
+
+// ========== Claude Code 类型定义 ==========
+
+// Claude Code 流式事件类型
+export type ClaudeCodeEventType =
+  | 'thinking'      // 思考内容
+  | 'text'          // 输出文本
+  | 'tool_use'      // 工具调用
+  | 'tool_result'   // 工具结果
+  | 'system'        // 系统信息（包含 session_id）
+  | 'stop'          // 停止信号
+  | 'error'         // 错误
+
+// Claude Code 流式事件（IPC 传输）
+export interface ClaudeCodeEvent {
+  type: ClaudeCodeEventType
+  timestamp: string
+  data: {
+    content?: string
+    toolName?: string
+    toolInput?: Record<string, unknown>
+    toolOutput?: string
+    sessionId?: string
+    stopReason?: string
+    error?: string
+  }
+}
+
+// Claude Code 执行配置
+export interface ClaudeCodeExecuteConfig {
+  prompt: string              // 用户提示词
+  projectPath: string         // 项目路径
+  sessionId?: string          // 可选：恢复会话ID
+  maxTurns?: number           // 最大轮次
+  permissionMode?: string     // 权限模式
+}
+
+// Claude Code 执行结果
+export interface ClaudeCodeExecuteResult {
+  success: boolean
+  result: string              // 最终结果内容
+  sessionId?: string          // 会话ID（用于后续恢复）
+  error?: string              // 错误信息
+}
+
+// Claude Code 执行步骤（前端展示）
+export interface ClaudeCodeStep {
+  id: string
+  type: ClaudeCodeEventType
+  title: string
+  content?: string
+  timestamp: Date
+  details?: {
+    toolName?: string
+    toolInput?: Record<string, unknown>
+    toolOutput?: string
+  }
 }

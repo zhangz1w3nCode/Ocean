@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "electron:dev": "concurrently \"pnpm dev\" \"wait-on http://localhost:5173 && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron electron/launch.cjs\"",
+    "electron:dev": "concurrently \"pnpm dev\" \"wait-on http://localhost:5173 && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron electron/launch.cjs --remote-debugging-port=9222\"",
     "electron:preview": "cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron electron/launch.cjs",
     "build": "tsc && vite build",
     "build:electron": "tsc -p electron/tsconfig.json",

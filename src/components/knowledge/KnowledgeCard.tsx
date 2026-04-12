@@ -1,5 +1,5 @@
 import type { FC } from 'react'
-import { BookOpen, Edit3, Trash2 } from 'lucide-react'
+import { BookOpen, Edit3, Trash2, FolderOpen } from 'lucide-react'
 import { Card } from '../ui/Card'
 import type { KnowledgeFile } from '../../types'
 
@@ -60,23 +60,29 @@ export const KnowledgeCard: FC<KnowledgeCardProps> = ({ knowledge, onClick, onEd
         </div>
 
         {/* 标签区域 */}
-        {knowledge.tags && knowledge.tags.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 mb-2">
-            {knowledge.tags.slice(0, 3).map((tag, index) => (
-              <span
-                key={index}
-                className="inline-flex items-center px-2 py-0.5 bg-blue-50 text-blue-600 rounded-full text-xs"
-              >
-                {tag}
-              </span>
-            ))}
-            {knowledge.tags.length > 3 && (
-              <span className="text-xs text-gray-400">
-                +{knowledge.tags.length - 3}
-              </span>
-            )}
-          </div>
-        )}
+        <div className="flex flex-wrap gap-1.5 mb-2">
+          {/* 分类标签 */}
+          {knowledge.category && (
+            <span className="inline-flex items-center gap-0.5 px-2 py-0.5 bg-gray-100 text-gray-500 rounded-full text-xs">
+              <FolderOpen size={10} />
+              {knowledge.category}
+            </span>
+          )}
+          {/* 知识标签 */}
+          {knowledge.tags && knowledge.tags.slice(0, 3).map((tag, index) => (
+            <span
+              key={index}
+              className="inline-flex items-center px-2 py-0.5 bg-blue-50 text-blue-600 rounded-full text-xs"
+            >
+              {tag}
+            </span>
+          ))}
+          {knowledge.tags && knowledge.tags.length > 3 && (
+            <span className="text-xs text-gray-400">
+              +{knowledge.tags.length - 3}
+            </span>
+          )}
+        </div>
       </div>
 
       {/* 内容预览区 - 浅灰色背景 */}

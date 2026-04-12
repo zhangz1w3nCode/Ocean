@@ -62,6 +62,7 @@ const electronAPI = {
   loadKnowledgeFile: (name) => ipcRenderer.invoke('load-knowledge-file', name),
   deleteKnowledgeFile: (name) => ipcRenderer.invoke('delete-knowledge-file', name),
   loadAllKnowledgeFiles: () => ipcRenderer.invoke('load-all-knowledge-files'),
+  listKnowledgeFolders: () => ipcRenderer.invoke('list-knowledge-folders'),
 
   // 技能文件数据持久化（目录结构，存储在 skills 目录）
   createSkillDirectory: (name, input) => ipcRenderer.invoke('create-skill-directory', name, input),
@@ -130,7 +131,16 @@ const electronAPI = {
   saveKnowledgeTemplateFile: (templateType, content) =>
     ipcRenderer.invoke('save-knowledge-template-file', templateType, content),
   loadKnowledgeTemplateFile: (templateType) =>
-    ipcRenderer.invoke('load-knowledge-template-file', templateType)
+    ipcRenderer.invoke('load-knowledge-template-file', templateType),
+
+  // Claude Code CLI API
+  runClaudeCode: (config) => ipcRenderer.invoke('run-claude-code', config),
+  abortClaudeCode: () => ipcRenderer.invoke('abort-claude-code'),
+  onClaudeCodeEvent: (callback) => {
+    const listener = (_event, data) => callback(data)
+    ipcRenderer.on('claude-code-event', listener)
+    return () => ipcRenderer.removeListener('claude-code-event', listener)
+  }
 }
 
 // 通过 window 暴露

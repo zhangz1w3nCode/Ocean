@@ -50,6 +50,30 @@ export interface KnowledgeLink {
 }
 
 /**
+ * 从链接路径中提取知识目标名称（支持子目录路径）
+ * - .claude/knowledges/backend/api.md -> backend/api
+ * - ./backend/api.md -> backend/api
+ * - backend/api.md -> backend/api
+ * - api.md -> api
+ */
+const extractTargetName = (cleanedPath: string): string => {
+  const pathWithoutExt = cleanedPath.replace(/\.(md|mdx)$/, '')
+
+  // 处理完整路径：.claude/knowledges/backend/api -> backend/api
+  const knowledgesIdx = pathWithoutExt.indexOf('/knowledges/')
+  if (knowledgesIdx >= 0) {
+    return pathWithoutExt.substring(knowledgesIdx + '/knowledges/'.length)
+  }
+
+  // 处理相对路径前缀：./backend/api -> backend/api
+  if (pathWithoutExt.startsWith('./')) {
+    return pathWithoutExt.substring(2)
+  }
+
+  return pathWithoutExt
+}
+
+/**
  * 解析知识内容中的链接关系
  * 支持两种格式：
  * 1. [[xxx.md|关系]] - WikiLink 格式，支持自定义关系
@@ -70,10 +94,7 @@ export function parseKnowledgeLinks(content: string): KnowledgeLink[] {
 
     // 清理路径中可能存在的反引号（混合格式如 [[`xxx.md`|关系]]）
     const cleanedPath = cleanBackticks(rawPath)
-
-    // 提取文件名（去除路径前缀和扩展名）
-    const fileName = cleanedPath.split('/').pop() || cleanedPath
-    const targetName = fileName.replace(/\.(md|mdx)$/, '')
+    const targetName = extractTargetName(cleanedPath)
 
     links.push({
       targetName,
@@ -100,10 +121,8 @@ export function parseKnowledgeLinks(content: string): KnowledgeLink[] {
     }
 
     const rawPath = match[1].trim()
-
-    // 提取文件名（去除路径前缀和扩展名）
-    const fileName = rawPath.split('/').pop() || rawPath
-    const targetName = fileName.replace(/\.(md|mdx)$/, '')
+    const cleanedPath = cleanBackticks(rawPath)
+    const targetName = extractTargetName(cleanedPath)
 
     // 检查是否已经解析过相同的目标（避免重复）
     const isDuplicate = links.some(link => link.targetName === targetName)
@@ -140,13 +159,11 @@ export function parseKnowledgeLinks(content: string): KnowledgeLink[] {
 }
 
 /**
- * 从链接路径中提取知识名称
- * @param linkPath 链接路径，如 `./知识A.md` 或 `.claude/knowledges/知识A.md`
- * @returns 知识名称
+ * 从链接路径中提取知识名称（支持子目录路径）
+ * @param linkPath 链接路径，如 `./知识A.md`、`.claude/knowledges/知识A.md` 或 `backend/api.md`
+ * @returns 知识名称（含子目录路径，如 "backend/api" 或 "知识A"）
  */
 export function extractKnowledgeName(linkPath: string): string {
-  // 清理路径中可能存在的反引号
   const cleanedPath = cleanBackticks(linkPath)
-  const fileName = cleanedPath.split('/').pop() || cleanedPath
-  return fileName.replace(/\.(md|mdx)$/, '')
+  return extractTargetName(cleanedPath)
 }

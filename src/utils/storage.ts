@@ -6,6 +6,13 @@ import { generateWorkflowMdContent } from './workflow-generator'
 // 重新导出工作流生成器函数
 export { generateWorkflowMdContent }
 
+// 知识库文件夹树节点
+export interface KnowledgeFolder {
+  name: string
+  path: string
+  children: KnowledgeFolder[]
+}
+
 // 声明全局 window.electronAPI
 declare global {
   interface Window {
@@ -60,6 +67,7 @@ declare global {
       loadKnowledgeFile: (name: string) => Promise<{ success: boolean; content: string | null; mtime: string | null; error?: string }>
       deleteKnowledgeFile: (name: string) => Promise<{ success: boolean; error?: string }>
       loadAllKnowledgeFiles: () => Promise<{ success: boolean; files?: string[]; error?: string }>
+      listKnowledgeFolders: () => Promise<{ success: boolean; folders?: KnowledgeFolder[]; error?: string }>
       // 技能文件相关（目录结构，存储在 skills 目录）
       createSkillDirectory: (name: string, input: any) => Promise<{ success: boolean; error?: string }>
       saveSkillFile: (name: string, content: string) => Promise<{ success: boolean; error?: string }>
@@ -136,6 +144,10 @@ declare global {
       // 知识模块模板文件 API
       saveKnowledgeTemplateFile: (templateType: 'agentic-create', content: string) => Promise<{ success: boolean; error?: string }>
       loadKnowledgeTemplateFile: (templateType: 'agentic-create') => Promise<{ success: boolean; content: string | null; error?: string }>
+      // Claude Code CLI API
+      runClaudeCode: (config: import('../types').ClaudeCodeExecuteConfig) => Promise<import('../types').ClaudeCodeExecuteResult>
+      abortClaudeCode: () => Promise<{ success: boolean; error?: string }>
+      onClaudeCodeEvent: (callback: (event: import('../types').ClaudeCodeEvent) => void) => () => void
     }
   }
 }
@@ -2282,21 +2294,22 @@ const parseKnowledgeFrontmatter = (content: string): { metadata: Record<string, 
 
 // 生成知识库格式的 Markdown
 const generateKnowledgeMarkdown = (
-  metadata: { name: string; description: string; tags: string[] },
+  metadata: { name: string; description: string; tags: string[]; category?: string },
   content: string
 ): string => {
   const tagsStr = metadata.tags && metadata.tags.length > 0
     ? `tags: [${metadata.tags.join(', ')}]`
     : ''
+  const categoryStr = metadata.category ? `category: ${metadata.category}` : ''
 
   return `---
 name: ${metadata.name}
-description: ${metadata.description}${tagsStr ? `\n${tagsStr}` : ''}
+description: ${metadata.description}${tagsStr ? `\n${tagsStr}` : ''}${categoryStr ? `\n${categoryStr}` : ''}
 ---
 ${content}`
 }
 
-// 保存知识库文件列表（每个知识库保存为独立的 Markdown 文件）
+// 保存知识库文件列表（每个知识库保存为独立的 Markdown 文件，支持子目录）
 export const saveKnowledgeFilesToLocal = async (knowledges: any[]): Promise<boolean> => {
   if (!isElectron()) {
     // 浏览器环境：使用 localStorage 存储
@@ -2314,13 +2327,16 @@ export const saveKnowledgeFilesToLocal = async (knowledges: any[]): Promise<bool
     // 获取现有文件列表，用于删除不再需要的文件
     const existingResult = await window.electronAPI!.loadAllKnowledgeFiles()
     const existingFiles = existingResult.success ? existingResult.files || [] : []
-    const currentNames = knowledges.map(k => k.name)
+    // 当前文件的完整路径列表（含子目录）
+    const currentPaths = knowledges.map(k =>
+      k.category ? `${k.category}/${k.name}` : k.name
+    )
 
     // 删除不再需要的文件
     for (const fileName of existingFiles) {
-      const knowledgeName = fileName.replace(/\.md$/, '')
-      if (!currentNames.includes(knowledgeName)) {
-        await window.electronAPI!.deleteKnowledgeFile(knowledgeName)
+      const knowledgePath = fileName.replace(/\.md$/, '')
+      if (!currentPaths.includes(knowledgePath)) {
+        await window.electronAPI!.deleteKnowledgeFile(knowledgePath)
       }
     }
 
@@ -2330,12 +2346,18 @@ export const saveKnowledgeFilesToLocal = async (knowledges: any[]): Promise<bool
         name: knowledge.name,
         description: knowledge.description || '',
         tags: knowledge.tags || [],
+        category: knowledge.category || '',
       }
       const mdContent = generateKnowledgeMarkdown(metadata, knowledge.content || '')
 
-      const saveResult = await window.electronAPI!.saveKnowledgeFile(knowledge.name, mdContent)
+      // 根据是否有 category 决定存储路径
+      const savePath = knowledge.category
+        ? `${knowledge.category}/${knowledge.name}`
+        : knowledge.name
+
+      const saveResult = await window.electronAPI!.saveKnowledgeFile(savePath, mdContent)
       if (!saveResult.success) {
-        console.error(`保存知识库文件 ${knowledge.name} 失败:`, saveResult.error)
+        console.error(`保存知识库文件 ${savePath} 失败:`, saveResult.error)
       }
     }
 
@@ -2346,7 +2368,7 @@ export const saveKnowledgeFilesToLocal = async (knowledges: any[]): Promise<bool
   }
 }
 
-// 加载知识库文件列表
+// 加载知识库文件列表（递归扫描子目录）
 export const loadKnowledgeFilesFromLocal = async (): Promise<any[]> => {
   if (!isElectron()) {
     // 浏览器环境
@@ -2360,7 +2382,7 @@ export const loadKnowledgeFilesFromLocal = async (): Promise<any[]> => {
     }
   }
 
-  // Electron环境：从 knowledges 目录的 Markdown 文件加载
+  // Electron环境：从 knowledges 目录的 Markdown 文件加载（含子目录）
   try {
     const result = await window.electronAPI!.loadAllKnowledgeFiles()
 
@@ -2368,18 +2390,30 @@ export const loadKnowledgeFilesFromLocal = async (): Promise<any[]> => {
       const knowledges: any[] = []
 
       for (const fileName of result.files) {
-        const knowledgeName = fileName.replace(/\.md$/, '')
-        const contentResult = await window.electronAPI!.loadKnowledgeFile(knowledgeName)
+        // 跳过 INDEX.md 文件（全局索引，不在知识列表中展示）
+        if (fileName.toLowerCase() === 'index.md') continue
+
+        // 文件路径不含 .md 后缀（如 "backend/api" 或 "root-doc"）
+        const knowledgePath = fileName.replace(/\.md$/, '')
+        const contentResult = await window.electronAPI!.loadKnowledgeFile(knowledgePath)
         if (contentResult.success && contentResult.content) {
           const { metadata, body } = parseKnowledgeFrontmatter(contentResult.content)
 
+          // 从文件路径中提取 category（子目录路径）
+          // 如 "backend/api" -> category: "backend", name 文件名部分 "api"
+          // 如 "root-doc" -> category: "", name: "root-doc"
+          const lastSlashIndex = knowledgePath.lastIndexOf('/')
+          const category = lastSlashIndex > 0 ? knowledgePath.substring(0, lastSlashIndex) : ''
+
           knowledges.push({
             id: `knowledge-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-            name: metadata.name || knowledgeName,
+            name: metadata.name || knowledgePath.substring(lastSlashIndex + 1),
             type: 'knowledge',
             description: metadata.description || '',
             content: body,
             tags: metadata.tags || [],
+            category: metadata.category || category,
+            filepath: knowledgePath,
             createdAt: contentResult.mtime || new Date().toISOString(),
             updatedAt: contentResult.mtime || new Date().toISOString(),
           })
@@ -2395,8 +2429,94 @@ export const loadKnowledgeFilesFromLocal = async (): Promise<any[]> => {
   }
 }
 
-// 删除单个知识库文件
-export const deleteKnowledgeFileFromLocal = async (name: string): Promise<boolean> => {
+// 树形节点结构
+interface TreeNode {
+  name: string
+  children: Map<string, TreeNode>
+  files: string[]
+}
+
+/**
+ * 根据知识库文件列表动态生成树形目录 markdown 内容
+ * 根据 category 路径递归构建嵌套树，用 box-drawing 字符渲染
+ */
+export const generateIndexContent = (knowledgeFiles: { name: string; category?: string }[]): string => {
+  // 构建树形结构
+  const root: TreeNode = { name: '', children: new Map(), files: [] }
+
+  for (const file of knowledgeFiles) {
+    const category = file.category || ''
+    if (!category) {
+      root.files.push(file.name)
+    } else {
+      const parts = category.split('/')
+      let current = root
+      for (const part of parts) {
+        if (!current.children.has(part)) {
+          current.children.set(part, { name: part, children: new Map(), files: [] })
+        }
+        current = current.children.get(part)!
+      }
+      current.files.push(file.name)
+    }
+  }
+
+  // 移除和节点名同名的文件（目录节点已代表该名称，避免重复显示）
+  const removeDuplicateFiles = (node: TreeNode) => {
+    node.files = node.files.filter(f => f !== node.name)
+    for (const child of node.children.values()) {
+      removeDuplicateFiles(child)
+    }
+  }
+  removeDuplicateFiles(root)
+
+  const lines: string[] = []
+
+  const renderNode = (node: TreeNode, prefix: string, isRoot: boolean) => {
+    const sortedChildren = Array.from(node.children.entries()).sort(([a], [b]) => a.localeCompare(b))
+    const sortedFiles = [...node.files].sort()
+
+    // 统一排列：先文件后文件夹
+    const items: Array<{ type: 'file'; name: string } | { type: 'dir'; name: string; node: TreeNode }> = []
+    for (const fileName of sortedFiles) {
+      items.push({ type: 'file', name: `${fileName}.md` })
+    }
+    for (const [childName, childNode] of sortedChildren) {
+      items.push({ type: 'dir', name: childName, node: childNode })
+    }
+
+    for (let i = 0; i < items.length; i++) {
+      const itemIsLast = i === items.length - 1
+      const item = items[i]
+
+      if (isRoot) {
+        lines.push(`${item.name}`)
+        if (item.type === 'dir') {
+          renderNode(item.node, '', false)
+        }
+      } else {
+        const connector = itemIsLast ? '└── ' : '├── '
+        lines.push(`${prefix}${connector}${item.name}`)
+        if (item.type === 'dir') {
+          const childPrefix = prefix + (itemIsLast ? '    ' : '│   ')
+          renderNode(item.node, childPrefix, false)
+        }
+      }
+    }
+  }
+
+  renderNode(root, '', true)
+
+  // 树形内容放到代码块中，保证 MarkdownRenderer 渲染时保留格式
+  let result = '```\n'
+  result += lines.join('\n')
+  result += '\n```'
+
+  return result
+}
+
+// 删除单个知识库文件（支持子目录路径）
+export const deleteKnowledgeFileFromLocal = async (filepath: string): Promise<boolean> => {
   if (!isElectron()) {
     // 浏览器环境：由 store 处理
     return true
@@ -2404,7 +2524,7 @@ export const deleteKnowledgeFileFromLocal = async (name: string): Promise<boolea
 
   // Electron 环境
   try {
-    const result = await window.electronAPI!.deleteKnowledgeFile(name)
+    const result = await window.electronAPI!.deleteKnowledgeFile(filepath)
     return result.success
   } catch (error) {
     console.error('删除知识库文件失败:', error)

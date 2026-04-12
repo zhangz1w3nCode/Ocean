@@ -51,10 +51,20 @@ export function useKnowledgeGraph() {
   const { knowledgeFiles } = useKnowledgeStore()
 
   // 构建知识名称到 ID 的映射（不区分大小写）
+  // 支持子目录路径：如 "backend/api" -> id，同时保留简短名称映射
   const nameToIdMap = useMemo(() => {
     const map = new Map<string, string>()
     knowledgeFiles.forEach((k) => {
+      // 简短名称映射（兼容旧引用格式）
       map.set(k.name.toLowerCase(), k.id)
+      // 带分类路径映射（如 "backend/api" -> id，支持子目录引用）
+      if (k.category) {
+        map.set(`${k.category}/${k.name}`.toLowerCase(), k.id)
+      }
+      // filepath 映射（最完整路径）
+      if (k.filepath) {
+        map.set(k.filepath.toLowerCase(), k.id)
+      }
     })
     return map
   }, [knowledgeFiles])
