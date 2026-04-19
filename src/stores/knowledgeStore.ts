@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import type { KnowledgeFile } from '../types'
 import {
   saveKnowledgeFilesToLocal,
+  saveSingleKnowledgeFileToLocal,
   loadKnowledgeFilesFromLocal,
   deleteKnowledgeFileFromLocal,
 } from '../utils/storage'
@@ -29,8 +30,8 @@ export const useKnowledgeStore = create<KnowledgeState>((set) => ({
   addKnowledgeFile: (knowledge) =>
     set((state) => {
       const newKnowledges = [knowledge, ...state.knowledgeFiles]
-      // 异步保存到本地
-      saveKnowledgeFilesToLocal(newKnowledges)
+      // 只保存新增的单个文件，避免全量保存
+      saveSingleKnowledgeFileToLocal(knowledge)
       return { knowledgeFiles: newKnowledges }
     }),
 
@@ -39,8 +40,11 @@ export const useKnowledgeStore = create<KnowledgeState>((set) => ({
       const newKnowledges = state.knowledgeFiles.map((knowledge) =>
         knowledge.id === id ? { ...knowledge, ...updates } : knowledge
       )
-      // 异步保存到本地
-      saveKnowledgeFilesToLocal(newKnowledges)
+      // 只保存更新的单个文件，避免全量保存
+      const updated = newKnowledges.find((k) => k.id === id)
+      if (updated) {
+        saveSingleKnowledgeFileToLocal(updated)
+      }
       return { knowledgeFiles: newKnowledges }
     }),
 

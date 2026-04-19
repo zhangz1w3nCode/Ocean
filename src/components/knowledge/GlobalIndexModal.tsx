@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { FC } from 'react'
-import { FileText, FileSearch, Save, RefreshCw } from 'lucide-react'
+import { FileSearch, Save, RefreshCw } from 'lucide-react'
 import { Modal, Button, MarkdownRenderer } from '../ui'
 
 interface GlobalIndexModalProps {
@@ -10,7 +10,7 @@ interface GlobalIndexModalProps {
   exists: boolean
   generatedContent: string | null
   onSave: () => void
-  onRefresh: () => string | null
+  onRefresh: () => Promise<string | null>
 }
 
 // 全局索引使用浅灰色主题，区别于普通知识的蓝色
@@ -30,16 +30,23 @@ export const GlobalIndexModal: FC<GlobalIndexModalProps> = ({
 }) => {
   // 刷新后的内容状态：null 表示未刷新，使用默认逻辑
   const [refreshedContent, setRefreshedContent] = useState<string | null>(null)
+  // 刷新中的加载状态
+  const [isRefreshing, setIsRefreshing] = useState(false)
 
   // 决定显示的内容：刷新后优先显示刷新内容，否则本地优先
   const displayContent = refreshedContent !== null
     ? refreshedContent
     : (exists ? content : generatedContent)
 
-  const handleRefresh = () => {
-    const newContent = onRefresh()
-    if (newContent !== undefined) {
-      setRefreshedContent(newContent)
+  const handleRefresh = async () => {
+    setIsRefreshing(true)
+    try {
+      const newContent = await onRefresh()
+      if (newContent !== undefined) {
+        setRefreshedContent(newContent)
+      }
+    } finally {
+      setIsRefreshing(false)
     }
   }
 
@@ -65,10 +72,11 @@ export const GlobalIndexModal: FC<GlobalIndexModalProps> = ({
               variant="outline"
               size="sm"
               onClick={handleRefresh}
-              className="bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 hover:border-gray-400 rounded-lg"
+              disabled={isRefreshing}
+              className="bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 hover:border-gray-400 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <RefreshCw size={14} className="mr-1.5" />
-              刷新
+              <RefreshCw size={14} className={`mr-1.5 ${isRefreshing ? 'animate-spin' : ''}`} />
+              {isRefreshing ? '刷新中...' : '刷新'}
             </Button>
             <Button
               variant="outline"
@@ -104,7 +112,7 @@ export const GlobalIndexModal: FC<GlobalIndexModalProps> = ({
               INDEX.md
             </span>
             <span className="text-sm text-macos-text-tertiary">
-              {exists && refreshedContent === null ? '知识库全局索引文件' : '自动生成 - 知识库目录结构'}
+              知识库全局索引
             </span>
           </div>
         </div>
@@ -114,10 +122,6 @@ export const GlobalIndexModal: FC<GlobalIndexModalProps> = ({
       <div className="max-h-[400px] overflow-y-auto pr-2">
         {displayContent ? (
           <div>
-            <label className="flex items-center gap-2 text-sm font-medium text-macos-text mb-1.5">
-              <FileText size={16} />
-              {exists && refreshedContent === null ? '索引内容' : '目录结构'}
-            </label>
             <div className="bg-gray-50 rounded-lg p-4">
               <MarkdownRenderer content={displayContent} />
             </div>

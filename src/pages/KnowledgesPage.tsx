@@ -201,10 +201,18 @@ export const KnowledgesPage: FC = () => {
     addToast('保存成功', 'success')
   }
 
-  // 刷新全局索引（重新生成目录结构并返回最新内容）
-  const handleRefreshGlobalIndex = (): string | null => {
+  // 刷新全局索引（从磁盘重新加载后再生成目录结构）
+  const handleRefreshGlobalIndex = async (): Promise<string | null> => {
+    await loadKnowledgeFiles() // 从磁盘重新读取知识库文件
+    const latestFiles = useKnowledgeStore.getState().knowledgeFiles
+    const nonIndexFiles = latestFiles.filter((k) => k.name.toLowerCase() !== 'index')
+    if (nonIndexFiles.length === 0) {
+      addToast('刷新成功', 'success')
+      return null
+    }
+    const freshContent = generateIndexContent(nonIndexFiles)
     addToast('刷新成功', 'success')
-    return generatedIndexContent
+    return freshContent
   }
 
   return (

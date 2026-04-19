@@ -199,7 +199,7 @@ export const AgentModal: FC<AgentModalProps> = ({
               智能体名称 *
             </label>
             <Input
-              placeholder="例如：ant-doc-agent"
+              placeholder="例如：doc-agent"
               value={name}
               onChange={(e) => {
                 setName(e.target.value)

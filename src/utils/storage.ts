@@ -2368,6 +2368,46 @@ export const saveKnowledgeFilesToLocal = async (knowledges: any[]): Promise<bool
   }
 }
 
+// 保存单个知识库文件到本地（避免全量保存）
+export const saveSingleKnowledgeFileToLocal = async (knowledge: any): Promise<boolean> => {
+  if (!isElectron()) {
+    // 浏览器环境：仍使用全量方式保存到 localStorage
+    const stored = localStorage.getItem(KNOWLEDGE_FILES_KEY)
+    const knowledges = stored ? JSON.parse(stored) : []
+    const idx = knowledges.findIndex((k: any) => k.id === knowledge.id)
+    if (idx >= 0) {
+      knowledges[idx] = knowledge
+    } else {
+      knowledges.unshift(knowledge)
+    }
+    localStorage.setItem(KNOWLEDGE_FILES_KEY, JSON.stringify(knowledges))
+    return true
+  }
+
+  // Electron 环境：仅保存该文件
+  try {
+    const metadata = {
+      name: knowledge.name,
+      description: knowledge.description || '',
+      tags: knowledge.tags || [],
+      category: knowledge.category || '',
+    }
+    const mdContent = generateKnowledgeMarkdown(metadata, knowledge.content || '')
+    const savePath = knowledge.category
+      ? `${knowledge.category}/${knowledge.name}`
+      : knowledge.name
+    const saveResult = await window.electronAPI!.saveKnowledgeFile(savePath, mdContent)
+    if (!saveResult.success) {
+      console.error(`保存知识库文件 ${savePath} 失败:`, saveResult.error)
+      return false
+    }
+    return true
+  } catch (error) {
+    console.error('保存知识库文件失败:', error)
+    return false
+  }
+}
+
 // 加载知识库文件列表（递归扫描子目录）
 export const loadKnowledgeFilesFromLocal = async (): Promise<any[]> => {
   if (!isElectron()) {
@@ -2412,7 +2452,7 @@ export const loadKnowledgeFilesFromLocal = async (): Promise<any[]> => {
             description: metadata.description || '',
             content: body,
             tags: metadata.tags || [],
-            category: metadata.category || category,
+            category: category,
             filepath: knowledgePath,
             createdAt: contentResult.mtime || new Date().toISOString(),
             updatedAt: contentResult.mtime || new Date().toISOString(),
@@ -2461,9 +2501,10 @@ export const generateIndexContent = (knowledgeFiles: { name: string; category?: 
     }
   }
 
-  // 移除和节点名同名的文件（目录节点已代表该名称，避免重复显示）
+  // 移除与子目录同名且无自定义内容的文件
+  // 仅当同名文件是目录的自动概览（无 description/content）时才移除
+  // 有实际内容的同名文件（如 zoloz/zoloz.md）应保留展示
   const removeDuplicateFiles = (node: TreeNode) => {
-    node.files = node.files.filter(f => f !== node.name)
     for (const child of node.children.values()) {
       removeDuplicateFiles(child)
     }
