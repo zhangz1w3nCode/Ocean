@@ -2,9 +2,9 @@
 
 # Ocean
 
-**CLI Agent Asset & Capability Visualization Management Platform**
+**Claude Code Asset & Capability Visualization Management Platform**
 
-A desktop application built with Electron + React + TypeScript that uses Markdown files as the core data carrier, providing unified management and visual orchestration for CLI Agent (e.g., Claude Code) assets including agents, commands, abilities, knowledge bases, workflows, and more.
+A desktop application built with `Electron` + `React` + `TypeScript` that uses Markdown files as the core data carrier. All data is stored locally, providing unified management and visual orchestration for Claude Code assets including agents, commands, abilities, skills, knowledge bases, workflows, and more.
 
 [English](./README.md) | [中文](./README_CN.md)
 
@@ -12,418 +12,242 @@ A desktop application built with Electron + React + TypeScript that uses Markdow
 
 ---
 
+## Why Ocean
+
+Claude Code is a powerful AI coding agent, but managing its assets (agents, commands, abilities, skills, knowledge, workflows) is fragmented across directories and text files. Ocean provides a unified visual management platform purpose-built for Claude Code, turning these scattered Markdown files into a coherent, manageable system.
+
+- **Reference, not copy** -- Assets are linked through `@` references and `%` WikiLinks instead of being duplicated. A single source of truth means editing an ability or knowledge entry automatically reflects everywhere it is referenced.
+- **Knowledge as a graph** -- Knowledge entries are stored as individual Markdown files and connected via WikiLinks with labeled relationships. The entire knowledge network is rendered as an interactive force-directed graph where you can click any node to view details, and tune physics parameters like centripetal force and node distance.
+- **Zero data lock-in** -- All data is stored as standard Markdown files in the `.claude/` directory. You can edit them with any text editor or use Ocean's visual interface.
+- **Fully local** -- No cloud services, no accounts, no data uploads. Your assets stay on your machine.
+- **Visual orchestration** -- Compose complex workflows by dragging and connecting nodes on a canvas. Each node is interactive -- click to configure, drag to reposition, branch to create decision paths. The visual approach makes multi-step workflows tangible and intuitive to build.
+
 ## Features
 
-- **Local-First** - All data is stored as Markdown files in the local `.claude/` directory, giving you full control over your data
-- **Visual Editing** - Professional flowchart editing powered by `@xyflow/react` with drag-and-drop, connection, undo/redo support
-- **Knowledge Graph** - Build knowledge graphs based on WikiLink reference relationships with force-directed layout visualization
-- **Multi-dimensional References** - Support both `@mention` and `[[WikiLink]]` syntax to establish associations between business entities
-- **Markdown-First** - All business data stored as `.md` files, easy for version control and human-AI collaboration
-- **Dual Environment** - Electron desktop app + browser preview for flexible adaptation
-- **Mermaid Diagrams** - Render Mermaid flowcharts, sequence diagrams, class diagrams, and more within Markdown
-- **Agentic Creation** - Auto-generate ability documents via AI Agent, simplifying content creation
-- **LLM Configuration** - Provider settings support custom model parameters (temperature, max tokens, etc.)
-- **Live File Loading** - Workflow details and other content loaded from local files in real-time
+### Asset Management
 
----
+Ocean manages 8 types of Claude Code assets, each with full CRUD operations, Markdown preview, and reference linking:
 
-## Modules
+| Module | Storage Location | Description |
+|--------|-----------------|-------------|
+| Agents | `.claude/agents/` | Define AI agent profiles with model selection, role instructions, and icon customization |
+| Commands | `.claude/commands/` | Create reusable slash commands with Frontmatter metadata |
+| Abilities | `.claude/abilities/` | Define atomic capability units that can be referenced by other assets |
+| Skills | `.claude/skills/` | Package complex skills with scripts, references, and examples in a directory structure |
+| Knowledge | `.claude/knowledges/` | Manage business knowledge with tags, categories, WikiLink references, and a visual knowledge graph |
+| Nodes | `.claude/nodes/` | Define reusable workflow building blocks |
+| Resources | `.claude/resources/` | Manage reference resource files |
+| Workflows | `.claude/workflows/` | Design and manage workflow definitions |
 
-Ocean includes eight core business modules and one settings module, each with data stored independently as Markdown files:
+### Visual Workflow Editor
 
-| Module | Directory | File Types | Description |
-|--------|-----------|------------|-------------|
-| **Agents** | `.claude/agents/` | `sub-agent`, `mcp` | AI agent configuration and role definitions |
-| **Commands** | `.claude/commands/` | `command` | Executable commands and slash instructions |
-| **Abilities** | `.claude/abilities/` | `ability` | AI capability unit definitions with LLM creation & optimization |
-| **Skills** | `.claude/skills/` | `skill` | Reusable skill definitions with scripts/references/examples resources |
-| **Knowledge** | `.claude/knowledges/` | `knowledge` | Business knowledge base management with Agentic auto-creation |
-| **Workflows** | `.claude/workflows/` | `workflow` | Visual process definition and orchestration with local node folders |
-| **Nodes** | `.claude/nodes/` | `business`, `process` | Workflow node template definitions |
-| **Resources** | `.claude/resources/` | `rule`, `reference`, `tool` | Rules, reference docs, and tool descriptions |
-| **Settings** | Config files | JSON | LLM providers, CLI Agent, Agentic mode, ability/skill/knowledge config |
+Build complex multi-step workflows through direct visual manipulation instead of editing configuration files by hand.
 
-### Workflow Node Types
+- Drag-and-drop flow editor built on React Flow
+- 6 node types: Start, End, Process, Decision, Business, Local
+- Click any node to open its property panel for inline editing
+- Drag to reposition nodes, draw edges to define execution paths
+- Branch management for decision nodes with dynamic output handles
+- Auto-layout powered by Dagre algorithm
+- Grid snapping, multi-select, copy/paste, context menu
+- Generates structured WORKFLOW.md output with Mermaid flowcharts and step-by-step execution paths
 
-The flow editor supports six node types:
+### Knowledge Graph
 
-| Node Type | Color | Description |
-|-----------|-------|-------------|
-| Start Node | Green | Workflow entry point |
-| Process Node | Blue | General processing step with inline task editing |
-| Decision Node | Yellow | Conditional branching with custom branch configuration |
-| Business Node | Purple | References global node templates, carries complex business logic |
-| Local Node | Blue | Workflow-private node, content stored in workflow directory |
-| End Node | Red | Workflow exit point |
+Each knowledge entry is a standalone Markdown file. Entries are connected via WikiLinks (`[[file.md|relation]]`) with labeled relationships, and the entire network is visualized as an interactive force-directed graph.
 
-### Settings Module
+- Force-directed graph visualization powered by D3-force
+- WikiLink syntax with relationship labels (e.g., `[[architecture.md|depends-on]]`)
+- Click any node to open its detail view directly from the graph
+- Dynamic node sizing based on reference count -- highly referenced entries stand out visually
+- Interactive hover highlighting with smooth fade animations
+- Configurable physics: centripetal force, node link distance, velocity decay, and more
+- Relationship labels rendered on edges with toggle visibility
+- Node coloring based on in-degree / out-degree to distinguish knowledge hubs from leaf entries
 
-The settings module provides global configuration management with five categories:
+### AI-Powered Creation
 
-| Category | Description |
-|----------|-------------|
-| **LLM Providers** | Manage multiple LLM API providers (OpenAI/Anthropic/Azure/Custom), with connection testing and model parameter configuration |
-| **Agentic Mode** | Configure AI Agent autonomous execution mode, supporting 7 tools (file read/write/edit/search/terminal), with iteration limit and timeout |
-| **Ability Config** | Configure prompt templates for ability LLM creation and optimization |
-| **Skill Config** | Configure global settings for skills |
-| **Knowledge Config** | Configure global settings for knowledge base Agentic creation |
+Multiple creation modes powered by LLM integration:
 
----
+- **Manual creation** -- Write content directly
+- **LLM creation** -- Generate content using AI with customizable prompt templates
+- **Agentic creation** -- AI autonomously creates content using tools and file system access
+- **Claude Code CLI** -- Invoke Claude Code directly for content generation
+
+Additional AI features:
+- Content optimization with git diff-style comparison
+- 20+ LLM provider support via pi-mono SDK
+- Configurable model parameters (temperature, max_tokens, etc.)
+
+### Cross-Asset Reference System
+
+Ocean uses a reference-based architecture instead of copying content between assets:
+
+- **`@` reference** -- Type `@` in the Markdown editor to insert a reference to any asset (agents, commands, abilities, skills, knowledge entries, resources, nodes). The referenced content is stored as a file path, not a copy. When the source asset is updated, all references stay in sync.
+- **`%` WikiLink** -- Type `%` to insert a WikiLink (`[[file.md|relation]]`) that creates bidirectional links between knowledge entries. These relationships are visualized in the knowledge graph.
+
+This means each piece of content exists in exactly one place. Editing the source automatically reflects across all references -- no version drift, no stale copies. Every improvement to a shared asset compounds across the entire system: the more you reference, the greater the return.
+
+### Markdown Editor & Rendering
+
+- CodeMirror 6-based Markdown editor with syntax highlighting
+- GitHub Flavored Markdown rendering (tables, strikethrough, task lists)
+- Mermaid diagram rendering
+- Code block syntax highlighting (highlight.js)
+- Rehype-raw for embedded HTML support
 
 ## Tech Stack
 
-| Layer | Technology |
-|-------|-----------|
-| Framework | React 19 |
-| Build Tool | Vite 5 |
-| Language | TypeScript 5 |
-| State Management | Zustand 5 |
-| Flow Engine | @xyflow/react 12 |
-| Desktop | Electron 40 |
-| Styling | Tailwind CSS 3 |
-| Animation | framer-motion 12 |
-| Icons | lucide-react |
-| Markdown Rendering | react-markdown + remark-gfm |
-| Code Editor | @uiw/react-codemirror |
-| Knowledge Graph | react-force-graph-2d + d3-force |
-| Diagrams | mermaid |
-
----
+| Category | Technology | Version |
+|----------|-----------|---------|
+| Framework | React | 19.2 |
+| Language | TypeScript | 5.9 |
+| Build Tool | Vite | 5.4 |
+| Desktop | Electron | 40.4 |
+| Styling | Tailwind CSS | 3.4 |
+| Animation | Framer Motion | 12.34 |
+| Icons | Lucide React | 0.563 |
+| State Management | Zustand | 5.0 |
+| Flow Editor | @xyflow/react (React Flow) | 12.10 |
+| Auto Layout | Dagre | 2.0 |
+| Force Graph | D3-force + react-force-graph-2d | 3.0 / 1.29 |
+| Code Editor | CodeMirror 6 (@uiw/react-codemirror) | 4.25 |
+| Markdown Rendering | react-markdown + remark-gfm + rehype-highlight | 10.1 |
+| Diagrams | Mermaid | 11.12 |
+| Drag & Drop | @dnd-kit | 6.3 |
+| AI/LLM | pi-mono SDK (pi-agent-core, pi-ai, pi-coding-agent) | 0.57 |
+| Package Manager | pnpm | 10.19 |
 
 ## Getting Started
 
 ### Prerequisites
 
-- Node.js >= 18.0.0
-- pnpm >= 8.0.0
+- **Node.js** >= 18
+- **pnpm** >= 8 (recommended: 10.19+)
 
-### Install
+### Installation
 
 ```bash
+# Clone the repository
+git clone https://github.com/zhangz1w3nCode/ocean.git
+cd ocean
+
+# Install dependencies
 pnpm install
 ```
 
 ### Development
 
-#### Option 1: Electron Desktop (Recommended)
-
-Start Vite dev server and Electron app together with hot reload:
-
 ```bash
+# Start the Vite dev server (web mode)
+pnpm dev
+
+# Start Electron dev mode (desktop app)
 pnpm electron:dev
 ```
 
-This will:
-1. Start the Vite dev server (default port 5173)
-2. Wait for Vite to be ready, then launch Electron
-3. Auto-open DevTools
-
-#### Option 2: Web Dev Server Only
-
-```bash
-pnpm dev
-```
-
-Then open `http://localhost:5173` in your browser.
-
-#### Option 3: Preview Built Electron App
-
-```bash
-pnpm build
-pnpm electron:preview
-```
+The web dev server starts at `http://localhost:5173`. Electron dev mode launches the desktop app with hot-reload.
 
 ### Build
 
 ```bash
-# Build frontend assets
+# Build web assets
 pnpm build
 
-# Build Electron main process
-pnpm build:electron
-
-# Package desktop app (output to release/)
+# Build and package Electron app
 pnpm electron:build
 ```
 
----
+Build outputs:
+- **Web**: `dist/`
+- **macOS**: `release/` (DMG for Apple Silicon arm64)
+- **Windows**: `release/` (NSIS installer for x64)
 
 ## Project Structure
 
 ```
 ocean/
-├── electron/                   # Electron main process
-│   ├── launch.cjs             # Dev environment launcher (CJS)
-│   └── preload.dev.cjs        # Dev environment preload script
+├── electron/                    # Electron main process
+│   ├── launch.cjs               # Main process entry (IPC handlers, file system ops)
+│   └── preload.dev.cjs          # Preload script (exposes electronAPI)
 ├── src/
-│   ├── components/
-│   │   ├── ability/           # Ability module
-│   │   ├── agent/             # Agent module
-│   │   ├── command/           # Command module
-│   │   ├── flow/              # Flow editor
-│   │   │   ├── FlowCanvas.tsx
-│   │   │   ├── FlowToolbar.tsx
-│   │   │   ├── NodePanel.tsx
-│   │   │   ├── PropertiesPanel.tsx
-│   │   │   └── nodes/         # Node components
-│   │   ├── knowledge/         # Knowledge module
-│   │   ├── layout/            # Layout components
-│   │   ├── node/              # Node management
-│   │   ├── resource/          # Resource files
-│   │   ├── settings/          # Settings (LLM, Agentic, CLI Agent, etc.)
-│   │   ├── skill/             # Skill module
-│   │   ├── ui/                # Shared UI components
-│   │   │   ├── MarkdownEditor/
-│   │   │   └── MarkdownRenderer/
-│   │   └── workflow/          # Workflow module
-│   ├── pages/                 # Page components
-│   ├── stores/                # Zustand state stores
-│   ├── types/                 # TypeScript type definitions
-│   ├── utils/                 # Utility functions
-│   └── hooks/                 # React hooks
-├── dist/                      # Web build output
-├── dist-electron/             # Electron build output
-└── release/                   # Packaged applications
+│   ├── main.tsx                 # Application entry point
+│   ├── App.tsx                  # Root component (routing, layout)
+│   ├── pages/                   # Page components
+│   │   ├── ProjectSelectionPage.tsx
+│   │   ├── AgentsPage.tsx
+│   │   ├── CommandsPage.tsx
+│   │   ├── AbilitiesPage.tsx
+│   │   ├── SkillsPage.tsx
+│   │   ├── KnowledgesPage.tsx
+│   │   ├── NodesPage.tsx
+│   │   ├── ResourcesPage.tsx
+│   │   ├── WorkflowsPage.tsx
+│   │   ├── FlowEditorPage.tsx
+│   │   ├── SettingsPage.tsx
+│   │   └── LLMSettings.tsx
+│   ├── components/              # UI components
+│   │   ├── ability/             # Ability module components
+│   │   ├── agent/               # Agent module components
+│   │   ├── command/             # Command module components
+│   │   ├── flow/                # Flow editor components & node types
+│   │   ├── knowledge/           # Knowledge module & graph components
+│   │   ├── layout/              # Layout components (Sidebar, MainContent)
+│   │   ├── node/                # Node module components
+│   │   ├── resource/            # Resource module components
+│   │   ├── settings/            # Settings page components
+│   │   ├── skill/               # Skill module components
+│   │   ├── ui/                  # Shared UI components
+│   │   │   ├── MarkdownEditor/  # CodeMirror-based Markdown editor
+│   │   │   └── MarkdownRenderer/ # Markdown rendering (Mermaid, WikiLink)
+│   │   └── workflow/            # Workflow module components
+│   ├── hooks/                   # Custom React hooks
+│   │   ├── useAgentLoop.ts      # Agent loop execution hook
+│   │   └── useAgenticExecutor.tsx # Agentic mode executor hook
+│   ├── services/                # Business logic services
+│   │   ├── llmService.ts        # LLM API integration
+│   │   ├── agentLoopService.ts  # Agent loop execution service
+│   │   └── agenticService.ts    # Agentic creation service
+│   ├── stores/                  # Zustand state stores (13 stores)
+│   ├── types/                   # TypeScript type definitions
+│   └── utils/                   # Utility functions
+│       ├── storage.ts           # Storage helpers
+│       ├── workflow-generator.ts # Workflow document generator
+│       └── knowledgeGraphParser.ts # Knowledge graph data parser
+├── build/                       # Build assets (app icons)
+├── package.json
+├── vite.config.ts
+├── tsconfig.json
+├── tailwind.config.ts
+└── LICENSE                      # MIT License
 ```
-
----
 
 ## Data Storage
 
-### Storage Directory
-
-All business data is stored as Markdown files in the `.claude/` hidden directory at the project root:
+All data is stored as Markdown files within the project's `.claude/` directory:
 
 ```
-project-root/
+your-project/
 └── .claude/
-    ├── agents/        # Agent files (*.md)
-    ├── commands/      # Command files (*.md)
-    ├── abilities/     # Ability files (*.md)
-    ├── knowledges/    # Knowledge files (*.md)
-    ├── workflows/     # Workflow files (*.md)
-    │   └── {workflow}/
-    │       └── nodes/ # Workflow local nodes (*.md)
-    ├── nodes/         # Global node definition files (*.md)
-    ├── resources/     # Resource files (*.md)
-    └── skills/        # Skill files (*.md)
-        └── {skill}/
-            ├── SKILL.md      # Skill main file
-            ├── scripts/      # Script files
-            ├── references/   # Reference files
-            └── examples/     # Example files
+    ├── agents/                  # Agent definitions (*.md)
+    ├── commands/                # Command definitions (*.md)
+    ├── abilities/               # Ability definitions (*.md)
+    ├── skills/                  # Skill packages (directory per skill)
+    │   └── skill-name/
+    │       ├── SKILL.md
+    │       ├── scripts/
+    │       ├── references/
+    │       └── examples/
+    ├── knowledges/              # Knowledge entries (*.md)
+    ├── nodes/                   # Node definitions (*.md)
+    ├── resources/               # Resource files (*.md)
+    └── workflows/               # Workflow definitions
+        └── workflow-name/
+            ├── flow.json        # Graph structure
+            └── WORKFLOW.md      # Generated workflow document
 ```
 
-### Markdown Format
-
-All business entities use YAML Frontmatter for metadata:
-
-```markdown
----
-name: Example Agent
-description: An AI agent
-model: haiku
-color: blue
----
-
-# Agent Content
-
-Detailed description here...
-```
-
-### Workflow Markdown Example
-
-```markdown
----
-type: workflow
-name: Example Workflow
-description: This is an example workflow
----
-
-# Example Workflow
-
-## Description
-- This is an example workflow
-
-## Input Materials
-- Input 1
-- Input 2
-
-## Output Products
-- Output 1
-
-## Process
-
-```mermaid
-flowchart TD
-
-    %% Node Definitions
-    start_node(["Start"])
-    BusinessProcessing["Business Processing"]
-    ConditionCheck{"Condition Check<br/>Check: Is condition met"}
-    ProcessTask["Process Task"]
-    end_node(["End"])
-
-    %% Flow Connections
-    start_node --> BusinessProcessing
-    BusinessProcessing --> ConditionCheck
-    ConditionCheck -->|Yes| ProcessTask
-    ConditionCheck -->|No| end_node
-    ProcessTask --> end_node
-```
-
-## Nodes
-
-| Node Name | Execution Content |
-|-----------|-------------------|
-| Business Processing | `.claude/nodes/BusinessProcessing.md` |
-| Process Task | `Task description content` |
-
-## Mandatory Requirements
-- Must create a `TodoList` to track the entire `process`
-- Must strictly follow the `process` execution, skipping any stage is prohibited
-- If the `execution content` contains a file path, it represents the task that must be read and completed for this node
-- Must follow the `progressive node file loading principle` - first review and understand the overall `process` content, then check the specific `execution content` of the `node` only when executing that node
-- Mandatory node retry: if executing a node does not meet expectations, retry 2 times before proceeding to the next node
-
-## Prohibited Actions
-- Prohibited from directly reading `execution content` files
-- Prohibited from fabricating/assuming/forging/fictionalizing/guessing/lying about any information
-
-## Best Practices
-### Execution Process
-- 1. Review the WORKFLOW.md file
-- 2. Understand the overall `process` content without reviewing specific node files
-- 3. Create a `TodoList`
-- 4. Execute according to the nodes in the `process`
-- 5. View the `xxx` node name
-- 6. Map the node name in `nodes` to the specific execution content file or task description
-- 7. Read and execute the node's execution content
-- 8. If execution succeeds, update the `TodoList` task status and proceed to the next node; if execution fails, retry
-- 9. Proceed to the next node, looping through `Read Node` -> `View Node Task Details` -> `Execute Node` -> `Update Task Status` until reaching the end node to complete the process
-```
-
----
-
-## Core Features
-
-### Reference System
-
-Supports two reference syntaxes:
-
-#### @ Mention
-
-Type `@` in the editor to trigger the reference picker, supporting cross-module entity references:
-
-```
-@AgentName -> `.claude/agents/AgentName.md`
-@NodeName -> `.claude/nodes/NodeName.md`
-```
-
-#### WikiLink
-
-Obsidian-style WikiLink syntax:
-
-```
-[[xxx.md|relation]]    # Link with relation name
-[[xxx.md]]             # Plain link, default relation is "associated"
-```
-
-Auto-detected colors by business type:
-- `/agents/` - Purple (Agent)
-- `/nodes/` - Blue (Node)
-- `/workflows/` - Red (Workflow)
-- `/commands/` - Purple (Command)
-- `/resources/` - Green (Resource)
-- `/abilities/` - Yellow (Ability)
-- `/knowledges/` - Blue (Knowledge)
-- `/skills/` - Orange (Skill)
-
-### Knowledge Graph
-
-Builds knowledge graphs from WikiLink references:
-
-- **Force-directed layout** - Adjustable node repulsion, gravity, and link attraction
-- **Bidirectional merge** - Auto-merge bidirectional references to avoid label overlap
-- **Interactions** - Hover highlight, drag nodes, click to navigate details
-- **Configurable** - Node size, link length, label size, and more
-
-### Flow Editor Shortcuts
-
-| Shortcut | Action |
-|----------|--------|
-| Ctrl+Z | Undo |
-| Ctrl+Y / Ctrl+Shift+Z | Redo |
-| Ctrl+C | Copy selected nodes |
-| Ctrl+V | Paste nodes |
-| Delete / Backspace | Delete selected |
-| Ctrl+Click | Multi-select nodes |
-| Shift+Drag | Box select |
-| Two-finger scroll | Pan canvas (Mac trackpad) |
-
----
-
-## Architecture
-
-```
-+-----------------------------------------------------------+
-|                    Frontend Layer (React)                  |
-|  +-----------+ +------------+ +---------+ +-------------+ |
-|  |   Pages   | | Components | | Stores  | | Flow Editor | |
-|  +-----------+ +------------+ +---------+ +-------------+ |
-+-----------------------------------------------------------+
-|                    Storage Layer                           |
-|         localStorage (Browser) / Node FS (Electron)        |
-+-----------------------------------------------------------+
-|                    IPC Layer                               |
-|         window.electronAPI / Preload Script                |
-+-----------------------------------------------------------+
-|                    Electron Main Process                   |
-|         File System + Dialogs + Config Management          |
-+-----------------------------------------------------------+
-```
-
----
-
-## FAQ
-
-### Electron Installation Failed
-
-If Electron installation fails, try using a mirror:
-
-```bash
-export ELECTRON_MIRROR="https://npmmirror.com/mirrors/electron/"
-pnpm install
-```
-
-### Port Already in Use
-
-If the default port 5173 is occupied, Vite will automatically try the next available port.
-
-### DevTools
-
-In the Electron app:
-- Shortcut: `Cmd + Option + I` (macOS)
-- Menu: View -> Toggle Developer Tools
-
-### Mermaid Rendering Issues
-
-If Mermaid diagrams don't render correctly:
-- Ensure all dependencies are installed with `pnpm install`
-- Verify Vite config includes `optimizeDeps: { include: ['mermaid'] }`
-- Check diagram syntax against the [Mermaid docs](https://mermaid.js.org/)
-
----
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+Each asset is a standard Markdown file with optional YAML Frontmatter metadata. This means you can version-control your assets with Git and edit them with any text editor.
 
 ## License
 

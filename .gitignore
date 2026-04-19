@@ -49,3 +49,9 @@ Thumbs.db
 
 # 项目排除路径
 /tailwind.config.js
+
+# Claude Code 配置
+.claude/
+
+# Ocean 运行时配置
+.ocean/
