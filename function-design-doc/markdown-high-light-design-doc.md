@@ -200,10 +200,10 @@ export const referenceHighlightExtension = StateField.define<ReturnType<typeof b
 ```
 编辑器显示效果：
 
-`agents/ant-doc-agent.md` 是一个蚂蚁文档助手
+`agents/doc-agent.md` 是一个文档助手
 
 渲染后：
-[蓝色反引号][蓝色背景路径][蓝色反引号] 是一个蚂蚁文档助手
+[蓝色反引号][蓝色背景路径][蓝色反引号] 是一个文档助手
 ```
 
 ---
@@ -248,7 +248,7 @@ const referenceItems = useReferenceItems({ excludeCategory })
 
 ```
 用户输入：这是一个助手 @
-选择后：这是一个助手 `agents/ant-doc-agent.md`
+选择后：这是一个助手 `agents/doc-agent.md`
 ```
 
 ---

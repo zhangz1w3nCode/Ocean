@@ -554,7 +554,7 @@ const handleClose = (skipConfirm = false) => {
 ```markdown
 <!-- 工具文件 frontmatter -->
 ---
-name: ant-doc-agent
+name: doc-agent
 description: ...
 model: haiku
 color: blue

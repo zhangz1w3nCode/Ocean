@@ -436,9 +436,9 @@ const WIKI_LINK_PATTERN = /\[\[`([^`]+)`(\|[^\]]+)?\]\]/g
 
 ### 示例
 ```typescript
-// 编辑名为 "ant-doc-agent" 的智能体时
+// 编辑名为 "doc-agent" 的智能体时
 <MarkdownEditor
-  excludePath=".claude/agents/ant-doc-agent.md"
+  excludePath=".claude/agents/doc-agent.md"
   // 其他智能体仍可出现在引用列表中
 />
 ```

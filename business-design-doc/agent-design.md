@@ -27,8 +27,8 @@
 
 ```markdown
 ---
-name: ant-doc-agent
-description: 该agent是蚂蚁文档助手Agent...
+name: doc-agent
+description: 该agent是文档助手Agent...
 model: haiku
 color: blue
 ---
@@ -848,7 +848,7 @@ description: ...
 
 <!-- 智能体文件 frontmatter -->
 ---
-name: ant-doc-agent
+name: doc-agent
 description: ...
 model: haiku
 color: blue

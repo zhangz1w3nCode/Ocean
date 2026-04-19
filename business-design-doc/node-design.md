@@ -942,9 +942,9 @@ const contentPreview = node.task?.replace(/[#*`]/g, '').slice(0, 100) || ''
 
 ```markdown
 ---
-name: 蚂蚁文档解析节点
+name: 文档解析节点
 type: process
-description: 解析蚂蚁文档内容并获取相关信息
+description: 解析文档内容并获取相关信息
 ---
 
 # 节点内容
@@ -952,7 +952,7 @@ description: 解析蚂蚁文档内容并获取相关信息
 这里是节点的详细内容，支持 Markdown 格式...
 
 ## 功能说明
-- 解析蚂蚁文档
+- 解析文档
 - 获取文档内容
 - 处理文档引用
 ```
