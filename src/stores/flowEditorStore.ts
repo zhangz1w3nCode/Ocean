@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { ReactFlowNode, ReactFlowEdge } from '../types/flow'
+import { generateNodeId, generateEdgeId } from '../types/flow'
 
 // 历史记录项
 interface HistoryItem {
@@ -249,13 +250,13 @@ export const useFlowEditorStore = create<FlowEditorState>((set, get) => ({
   initNewWorkflow: (name, id) => {
     const initialNodes: ReactFlowNode[] = [
       {
-        id: 'start-1',
+        id: generateNodeId('start'),
         type: 'start',
         position: { x: 200, y: 250 },
         data: { label: '开始' },
       },
       {
-        id: 'end-1',
+        id: generateNodeId('end'),
         type: 'end',
         position: { x: 500, y: 250 },
         data: { label: '结束' },
@@ -392,7 +393,7 @@ export const useFlowEditorStore = create<FlowEditorState>((set, get) => ({
     // 生成ID映射
     const idMap: Record<string, string> = {}
     const newNodes = clipboard.nodes.map(node => {
-      const newId = `${node.type}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+      const newId = generateNodeId(node.type)
       idMap[node.id] = newId
       return {
         ...node,
@@ -408,7 +409,7 @@ export const useFlowEditorStore = create<FlowEditorState>((set, get) => ({
     // 更新边的source和target
     const newEdges = clipboard.edges.map(edge => ({
       ...edge,
-      id: `e-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      id: generateEdgeId(),
       source: idMap[edge.source],
       target: idMap[edge.target],
     }))

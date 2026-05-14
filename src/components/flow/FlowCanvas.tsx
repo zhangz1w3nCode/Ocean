@@ -20,6 +20,7 @@ import '@xyflow/react/dist/style.css'
 import { useFlowEditorStore } from '../../stores/flowEditorStore'
 import { useNodeStore } from '../../stores/nodeStore'
 import type { ReactFlowNode } from '../../types/flow'
+import { generateNodeId, generateEdgeId } from '../../types/flow'
 import {
   StartNode,
   EndNode,
@@ -186,7 +187,7 @@ export const FlowCanvas: FC = () => {
 
     let newEdge: any = {
       ...connection,
-      id: `e-${Date.now()}`,
+      id: generateEdgeId(),
       type: 'default',
     }
 
@@ -419,7 +420,7 @@ export const FlowCanvas: FC = () => {
       })
 
       const newNode: ReactFlowNode = {
-        id: `${type}-${Date.now()}`,
+        id: generateNodeId(type),
         type: type as ReactFlowNode['type'],
         position: flowPosition,
         data: { label: nodeTypeLabels[type] || '新节点' },
@@ -447,7 +448,7 @@ export const FlowCanvas: FC = () => {
       if (nodeToCopy) {
         const newNode: ReactFlowNode = {
           ...nodeToCopy,
-          id: `${nodeToCopy.type}-${Date.now()}`,
+          id: generateNodeId(nodeToCopy.type),
           position: {
             x: nodeToCopy.position.x + 20,
             y: nodeToCopy.position.y + 20,
@@ -518,7 +519,7 @@ export const FlowCanvas: FC = () => {
         const nodeDefinition = nodeDefinitions.find(def => def.id === template.nodeDefId)
 
         const newNode: ReactFlowNode = {
-          id: `${template.type}-${Date.now()}`,
+          id: generateNodeId(template.type),
           type: template.type,
           position,
           data: {

@@ -10,6 +10,7 @@ import {
   loadAllWorkflowFolders,
   deleteWorkflowFolder,
   renameWorkflowFolder,
+  loadWorkflowFromFolder,
 } from '../utils/storage'
 
 interface WorkflowState {
@@ -22,6 +23,7 @@ interface WorkflowState {
   deleteWorkflow: (id: string) => void
   getWorkflowById: (id: string) => Workflow | undefined
   getWorkflowByName: (name: string) => Workflow | undefined
+  reloadWorkflowById: (id: string) => Promise<void>
   saveWorkflowData: (id: string, nodes: ReactFlowNode[], edges: ReactFlowEdge[]) => Promise<boolean>
   loadWorkflows: () => Promise<void>
   // 新增文件夹操作方法
@@ -76,6 +78,24 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
   getWorkflowById: (id) => get().workflows.find((wf) => wf.id === id),
 
   getWorkflowByName: (name) => get().workflows.find((wf) => wf.name === name),
+
+  reloadWorkflowById: async (id) => {
+    const workflow = get().workflows.find((wf) => wf.id === id)
+    if (!workflow || !workflow.hasMetadata) return
+
+    try {
+      const fresh = await loadWorkflowFromFolder(workflow.name)
+      if (fresh) {
+        // 保留原始 id（从列表加载时的 id），避免 WORKFLOW.md 中无 id 字段导致匹配不上
+        fresh.id = workflow.id
+        set((state) => ({
+          workflows: state.workflows.map((wf) => (wf.id === id ? fresh : wf)),
+        }))
+      }
+    } catch (error) {
+      console.error('重新加载工作流失败:', error)
+    }
+  },
 
   saveWorkflowData: async (id, nodes, edges) => {
     try {

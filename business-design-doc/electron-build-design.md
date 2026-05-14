@@ -1,7 +1,7 @@
 # Electron 打包构建设计文档
 
-> **版本**: 1.0
-> **日期**: 2026-03-19
+> **版本**: 1.1
+> **日期**: 2026-05-14
 > **状态**: 已完成
 
 ---
@@ -86,6 +86,7 @@ function createWindow() {
       "electron/**/*"
     ],
     "mac": {
+      "icon": "build/icon.icns",
       "category": "public.app-category.productivity",
       "target": [
         {
@@ -109,6 +110,7 @@ function createWindow() {
       ]
     },
     "win": {
+      "icon": "build/icon.ico",
       "target": [
         {
           "target": "nsis",
@@ -127,16 +129,64 @@ function createWindow() {
 | macOS | arm64 | DMG | `release/Ocean-1.0.0-arm64.dmg` |
 | Windows | x64 | NSIS Installer | `release/Ocean Setup 1.0.0.exe` |
 
-## 5. 构建流程
+## 5. 应用图标配置
 
-### 5.1 本地开发
+### 5.1 图标文件目录
+
+图标资源统一存放在 `build/` 目录下，来源与 gain 项目保持一致：
+
+```
+build/
+├── icon.icns        # macOS 图标（icns 格式，包含多分辨率）
+├── icon.ico         # Windows 图标（ico 格式）
+├── icon.png         # 通用 PNG 图标（BrowserWindow 运行时使用）
+├── 128x128.png      # 128x128 分辨率
+├── 128x128@2x.png   # 128x128 @2x（Retina）
+└── 32x32.png        # 32x32 分辨率
+```
+
+### 5.2 图标引用方式
+
+**electron-builder 打包配置**（`package.json` 的 `build` 字段）：
+
+```json
+{
+  "mac": {
+    "icon": "build/icon.icns"
+  },
+  "win": {
+    "icon": "build/icon.ico"
+  }
+}
+```
+
+**BrowserWindow 运行时图标**（`electron/launch.cjs`）：
+
+```javascript
+mainWindow = new BrowserWindow({
+  icon: path.join(__dirname, '..', 'build', 'icon.png'),
+  // ... 其他配置
+})
+```
+
+### 5.3 图标格式说明
+
+| 平台 | 格式 | 路径 | 用途 |
+|------|------|------|------|
+| macOS | `.icns` | `build/icon.icns` | DMG 安装包、Dock 图标、Finder 图标 |
+| Windows | `.ico` | `build/icon.ico` | NSIS 安装包、任务栏图标、桌面快捷方式 |
+| 运行时 | `.png` | `build/icon.png` | BrowserWindow 窗口图标 |
+
+## 6. 构建流程
+
+### 6.1 本地开发
 
 ```bash
 # 启动开发服务器 + Electron
 pnpm electron:dev
 ```
 
-### 5.2 生产构建
+### 6.2 生产构建
 
 ```bash
 # 构建前端资源
@@ -146,7 +196,7 @@ pnpm build
 pnpm electron:build
 ```
 
-### 5.3 打包输出结构
+### 6.3 打包输出结构
 
 ```
 release/
@@ -158,9 +208,9 @@ release/
 └── Ocean Setup 1.0.0.exe       # Windows 安装包
 ```
 
-## 6. 调试技巧
+## 7. 调试技巧
 
-### 6.1 生产环境调试
+### 7.1 生产环境调试
 
 在 `launch.cjs` 中临时启用 DevTools：
 
@@ -172,7 +222,7 @@ if (!devServerURL) {
 }
 ```
 
-### 6.2 日志检查
+### 7.2 日志检查
 
 查看 Electron 控制台输出的路径信息：
 
@@ -180,7 +230,7 @@ if (!devServerURL) {
 Loading from production build: /Applications/Ocean.app/Contents/Resources/app/dist/index.html
 ```
 
-### 6.3 打包内容检查
+### 7.3 打包内容检查
 
 验证 `app.asar` 内容：
 
@@ -192,9 +242,9 @@ npx asar list /Applications/Ocean.app/Contents/Resources/app.asar
 npx asar list /Applications/Ocean.app/Contents/Resources/app.asar | grep index.html
 ```
 
-## 7. 常见问题
+## 8. 常见问题
 
-### 7.1 白屏（仅显示窗口控制按钮）
+### 8.1 白屏（仅显示窗口控制按钮）
 
 **症状**: 应用启动后只有红黄绿按钮，页面内容空白
 
@@ -202,7 +252,7 @@ npx asar list /Applications/Ocean.app/Contents/Resources/app.asar | grep index.h
 
 **解决**: 参考本文档第 3.2 节的窗口加载逻辑
 
-### 7.2 文件找不到
+### 8.2 文件找不到
 
 **症状**: 控制台报错 `Error: ENOENT: no such file or directory`
 
@@ -210,7 +260,7 @@ npx asar list /Applications/Ocean.app/Contents/Resources/app.asar | grep index.h
 
 **解决**: 确保 `package.json` 中 `build.files` 包含 `"dist/**/*"`
 
-### 7.3 编码错误
+### 8.3 编码错误
 
 **症状**: 页面显示乱码或 JavaScript 执行错误
 
@@ -218,7 +268,7 @@ npx asar list /Applications/Ocean.app/Contents/Resources/app.asar | grep index.h
 
 **解决**: 统一使用 CommonJS 格式（`.cjs`）作为主进程入口
 
-## 8. 相关文件
+## 9. 相关文件
 
 | 文件 | 说明 |
 |------|------|
@@ -226,11 +276,15 @@ npx asar list /Applications/Ocean.app/Contents/Resources/app.asar | grep index.h
 | `electron/preload.dev.cjs` | Preload 脚本，暴露 IPC API |
 | `package.json` | electron-builder 配置 |
 | `vite.config.ts` | Vite 构建配置 |
+| `build/icon.icns` | macOS 应用图标 |
+| `build/icon.ico` | Windows 应用图标 |
+| `build/icon.png` | BrowserWindow 运行时图标 |
 
-## 9. 变更历史
+## 10. 变更历史
 
 | 版本 | 日期 | 变更内容 |
 |------|------|----------|
 | 1.0 | 2026-03-19 | 初始文档，包含白屏修复方案和跨平台配置 |
+| 1.1 | 2026-05-14 | 新增应用图标配置章节，macOS/Windows/BrowserWindow 图标引用，构建版本 v1.0.7 |
 
 ---

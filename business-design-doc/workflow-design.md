@@ -2903,4 +2903,109 @@ export const WorkflowDetailModal: FC<WorkflowDetailModalProps> = ({
 
 ---
 
+## 三十七、节点ID统一生成规范
+
+### 37.1 改造背景
+
+旧版节点ID生成机制存在5种不同格式，可读性差且不一致：
+
+| 场景 | 旧格式 | 问题 |
+|------|--------|------|
+| 新建工作流初始节点 | `start-1`、`end-1` | 硬编码，全局不唯一 |
+| 拖拽/右键添加节点 | `business-1714032123456` | 时间戳可读性极差 |
+| 复制节点 | `process-1714032123456` | 同上 |
+| 粘贴节点 | `process-1714032123456-k2j8h5a1b` | 格式更复杂 |
+| 降级解析 | `decision-1`、`business-1-1` | 序号可能重复 |
+
+### 37.2 新ID格式规范
+
+- **节点ID**：`{type}-{9位随机字符串}`，如 `start-x7k2m9p4r`、`business-a1b2c3d4e`
+- **边ID**：`e-{9位随机字符串}`，如 `e-f8g7h6j5k`
+- **随机字符串**：使用 `Math.random().toString(36).substr(2, 9)` 生成
+- **唯一性**：10000次生成无碰撞验证通过
+
+### 37.3 统一生成函数
+
+位置：`src/types/flow.ts`
+
+```typescript
+export function generateNodeId(type: string): string {
+  const id = Math.random().toString(36).substr(2, 9)
+  return `${type}-${id}`
+}
+
+export function generateEdgeId(): string {
+  const id = Math.random().toString(36).substr(2, 9)
+  return `e-${id}`
+}
+```
+
+### 37.4 所有节点创建场景统一调用
+
+| 场景 | 文件 | 函数 | 旧逻辑 |
+|------|------|------|---------|
+| 新建工作流初始节点 | flowEditorStore.ts | `initNewWorkflow` | 硬编码 `start-1`/`end-1` |
+| 拖拽放置 | FlowCanvas.tsx | `onDrop` | `${template.type}-${Date.now()}` |
+| 右键菜单添加 | FlowCanvas.tsx | `handleAddNode` | `${type}-${Date.now()}` |
+| 右键复制 | FlowCanvas.tsx | `handleCopyNode` | `${nodeToCopy.type}-${Date.now()}` |
+| 粘贴(Ctrl+V) | flowEditorStore.ts | `pasteNodes` | `${type}-${Date.now()}-${随机串}` |
+| 手动连线 | FlowCanvas.tsx | `onConnect` | `e-${Date.now()}` |
+| 粘贴连线 | flowEditorStore.ts | `pasteNodes` | `e-${Date.now()}-${随机串}` |
+
+### 37.5 文件位置
+
+| 文件 | 修改内容 |
+|------|----------|
+| `src/types/flow.ts` | 新增 `generateNodeId`、`generateEdgeId` 函数 |
+| `src/stores/flowEditorStore.ts` | `initNewWorkflow`、`pasteNodes` 使用新函数 |
+| `src/components/flow/FlowCanvas.tsx` | `onDrop`、`handleAddNode`、`handleCopyNode`、`onConnect` 使用新函数 |
+
+---
+
+## 三十八、工作流编辑器实时加载机制
+
+### 38.1 改造背景
+
+旧版 `WorkflowEditorModal` 的 `initializeWorkflow` 中有 `workflowId !== currentId` 判断，导致打开同一个工作流时直接跳过重新加载，使用 zustand store 内存中的旧数据。当 flow.json 被外部修改后，编辑器不会读取最新内容。
+
+### 38.2 实现方案
+
+1. 在 `workflowStore` 中新增 `reloadWorkflowById(id)` 方法，按工作流 name 从文件系统重新读取 flow.json 和 WORKFLOW.md
+2. 修改 `initializeWorkflow` 为每次打开编辑器时先调用 `reloadWorkflowById` 再加载数据
+3. 保留原始 workflow.id，避免 WORKFLOW.md 中无 id 字段导致 id 重新生成后映射失败
+
+### 38.3 关键代码逻辑
+
+```typescript
+// initializeWorkflow - 每次打开都从文件系统重新加载
+const initializeWorkflow = useCallback(async () => {
+  if (!workflowId) return
+
+  // 从文件系统重新加载
+  const store = useWorkflowStore.getState()
+  await store.reloadWorkflowById(workflowId)
+
+  // 从 store 获取最新数据
+  const freshStore = useWorkflowStore.getState()
+  const wf = freshStore.getWorkflowById(workflowId)
+  // ... 加载或初始化
+}, [workflowId, initNewWorkflow, reset, loadWorkflow])
+```
+
+### 38.4 文件位置
+
+| 文件 | 修改内容 |
+|------|----------|
+| `src/stores/workflowStore.ts` | 新增 `reloadWorkflowById` 方法，import `loadWorkflowFromFolder` |
+| `src/components/workflow/WorkflowEditorModal.tsx` | 重构 `initializeWorkflow` 为实时加载 |
+
+### 38.5 版本记录
+
+| 版本 | 日期 | 说明 |
+|------|------|------|
+| 2.12 | 2026-04-25 | **节点ID统一生成** - 将5种不同格式统一为 `{type}-{9位随机字符串}`，新增 generateNodeId/generateEdgeId 函数 |
+| 2.12 | 2026-04-25 | **编辑器实时加载** - 每次打开编辑器从文件系统重新读取数据，新增 reloadWorkflowById 方法 |
+
+---
+
 *本文档持续更新中，如有新的设计规范请及时补充。*

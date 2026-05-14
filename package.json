@@ -1,6 +1,6 @@
 {
   "name": "ocean",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "Ocean",
   "main": "electron/launch.cjs",
   "type": "module",
@@ -24,6 +24,7 @@
       "electron/**/*"
     ],
     "mac": {
+      "icon": "build/icon.icns",
       "category": "public.app-category.productivity",
       "target": [
         {
@@ -47,6 +48,7 @@
       ]
     },
     "win": {
+      "icon": "build/icon.ico",
       "target": [
         {
           "target": "nsis",

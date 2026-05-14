@@ -43,22 +43,29 @@ export const WorkflowEditorModal: FC<WorkflowEditorModalProps> = ({
   const workflowName = workflow?.name || '未命名工作流'
 
   // 初始化工作流
-  const initializeWorkflow = useCallback(() => {
+  const initializeWorkflow = useCallback(async () => {
     if (!workflowId) return
 
-    if (workflowId !== currentId) {
-      const wf = getWorkflowById(workflowId)
-      // 判断是否为新工作流：检查是否有已保存的节点数据，而不是依赖 ID 格式
-      if (wf && wf.nodes && wf.nodes.length > 0) {
-        // 有已保存的节点数据，加载它们
-        loadWorkflow(wf.nodes, wf.edges, wf.name, workflowId)
-      } else {
-        // 没有节点数据，初始化新工作流
-        reset()
-        initNewWorkflow(workflowName, workflowId)
-      }
+    // 每次打开都从文件系统重新加载对应的工作流数据，确保是最新的
+    const store = useWorkflowStore.getState()
+    if (store.reloadWorkflowById) {
+      await store.reloadWorkflowById(workflowId)
     }
-  }, [workflowId, currentId, workflowName, initNewWorkflow, reset, loadWorkflow, getWorkflowById])
+
+    // 重新加载后，从 store 获取最新数据
+    const freshStore = useWorkflowStore.getState()
+    const wf = freshStore.getWorkflowById(workflowId)
+    const name = wf?.name || '未命名工作流'
+
+    if (wf && wf.nodes && wf.nodes.length > 0) {
+      // 有已保存的节点数据，加载它们
+      loadWorkflow(wf.nodes, wf.edges, wf.name, workflowId)
+    } else {
+      // 没有节点数据，初始化新工作流
+      reset()
+      initNewWorkflow(name, workflowId)
+    }
+  }, [workflowId, initNewWorkflow, reset, loadWorkflow])
 
   useEffect(() => {
     if (isOpen && workflowId) {

@@ -1,6 +1,18 @@
 // React Flow 节点和边类型
 import type { Node, Edge } from '@xyflow/react'
 
+// 统一节点ID生成：{type}-{uuid短格式}
+export function generateNodeId(type: string): string {
+  const id = Math.random().toString(36).substr(2, 9)
+  return `${type}-${id}`
+}
+
+// 统一边ID生成：e-{uuid短格式}
+export function generateEdgeId(): string {
+  const id = Math.random().toString(36).substr(2, 9)
+  return `e-${id}`
+}
+
 // 分支配置
 export interface Branch {
   id: string
