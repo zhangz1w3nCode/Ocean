@@ -142,7 +142,7 @@ pnpm install
 # 启动 Vite 开发服务器（Web 模式）
 pnpm dev
 
-# 启动 Electron 开发模式（桌面应用）
+# 启动 Electron 开发模式
 pnpm electron:dev
 ```
 

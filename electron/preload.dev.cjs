@@ -133,6 +133,36 @@ const electronAPI = {
   loadKnowledgeTemplateFile: (templateType) =>
     ipcRenderer.invoke('load-knowledge-template-file', templateType),
 
+  // 智能体模块模板文件 API
+  saveAgentTemplateFile: (templateType, content) =>
+    ipcRenderer.invoke('save-agent-template-file', templateType, content),
+  loadAgentTemplateFile: (templateType) =>
+    ipcRenderer.invoke('load-agent-template-file', templateType),
+
+  // 命令模块模板文件 API
+  saveCommandTemplateFile: (templateType, content) =>
+    ipcRenderer.invoke('save-command-template-file', templateType, content),
+  loadCommandTemplateFile: (templateType) =>
+    ipcRenderer.invoke('load-command-template-file', templateType),
+
+  // 节点模块模板文件 API
+  saveNodeTemplateFile: (templateType, content) =>
+    ipcRenderer.invoke('save-node-template-file', templateType, content),
+  loadNodeTemplateFile: (templateType) =>
+    ipcRenderer.invoke('load-node-template-file', templateType),
+
+  // 资源模块模板文件 API
+  saveResourceTemplateFile: (templateType, content) =>
+    ipcRenderer.invoke('save-resource-template-file', templateType, content),
+  loadResourceTemplateFile: (templateType) =>
+    ipcRenderer.invoke('load-resource-template-file', templateType),
+
+  // 工作流模块模板文件 API
+  saveWorkflowTemplateFile: (templateType, content) =>
+    ipcRenderer.invoke('save-workflow-template-file', templateType, content),
+  loadWorkflowTemplateFile: (templateType) =>
+    ipcRenderer.invoke('load-workflow-template-file', templateType),
+
   // Claude Code CLI API
   runClaudeCode: (config) => ipcRenderer.invoke('run-claude-code', config),
   abortClaudeCode: () => ipcRenderer.invoke('abort-claude-code'),

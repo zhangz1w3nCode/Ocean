@@ -7,6 +7,11 @@ import { AgenticSettings } from '../components/settings/AgenticSettings'
 import { AbilitySettings } from '../components/settings/AbilitySettings'
 import { SkillSettings } from '../components/settings/SkillSettings'
 import { KnowledgeSettings } from '../components/settings/KnowledgeSettings'
+import { AgentSettings } from '../components/settings/AgentSettings'
+import { CommandSettings } from '../components/settings/CommandSettings'
+import { NodeSettings } from '../components/settings/NodeSettings'
+import { ResourceSettings } from '../components/settings/ResourceSettings'
+import { WorkflowSettings } from '../components/settings/WorkflowSettings'
 
 export const SettingsPage: FC = () => {
   const { currentCategory, loadLLMProviders, loadAgenticConfig, loadAbilityConfig } = useSettingsStore()
@@ -31,6 +36,16 @@ export const SettingsPage: FC = () => {
         return <SkillSettings />
       case 'knowledge':
         return <KnowledgeSettings />
+      case 'agent':
+        return <AgentSettings />
+      case 'command':
+        return <CommandSettings />
+      case 'node':
+        return <NodeSettings />
+      case 'resource':
+        return <ResourceSettings />
+      case 'workflow':
+        return <WorkflowSettings />
       default:
         return <LLMSettings />
     }

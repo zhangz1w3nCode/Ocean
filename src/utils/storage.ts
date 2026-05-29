@@ -144,6 +144,21 @@ declare global {
       // 知识模块模板文件 API
       saveKnowledgeTemplateFile: (templateType: 'agentic-create', content: string) => Promise<{ success: boolean; error?: string }>
       loadKnowledgeTemplateFile: (templateType: 'agentic-create') => Promise<{ success: boolean; content: string | null; error?: string }>
+      // 智能体模块模板文件 API
+      saveAgentTemplateFile: (templateType: 'agentic-create', content: string) => Promise<{ success: boolean; error?: string }>
+      loadAgentTemplateFile: (templateType: 'agentic-create') => Promise<{ success: boolean; content: string | null; error?: string }>
+      // 命令模块模板文件 API
+      saveCommandTemplateFile: (templateType: 'agentic-create', content: string) => Promise<{ success: boolean; error?: string }>
+      loadCommandTemplateFile: (templateType: 'agentic-create') => Promise<{ success: boolean; content: string | null; error?: string }>
+      // 节点模块模板文件 API
+      saveNodeTemplateFile: (templateType: 'agentic-create', content: string) => Promise<{ success: boolean; error?: string }>
+      loadNodeTemplateFile: (templateType: 'agentic-create') => Promise<{ success: boolean; content: string | null; error?: string }>
+      // 资源模块模板文件 API
+      saveResourceTemplateFile: (templateType: 'agentic-create', content: string) => Promise<{ success: boolean; error?: string }>
+      loadResourceTemplateFile: (templateType: 'agentic-create') => Promise<{ success: boolean; content: string | null; error?: string }>
+      // 工作流模块模板文件 API
+      saveWorkflowTemplateFile: (templateType: 'agentic-create', content: string) => Promise<{ success: boolean; error?: string }>
+      loadWorkflowTemplateFile: (templateType: 'agentic-create') => Promise<{ success: boolean; content: string | null; error?: string }>
       // Claude Code CLI API
       runClaudeCode: (config: import('../types').ClaudeCodeExecuteConfig) => Promise<import('../types').ClaudeCodeExecuteResult>
       abortClaudeCode: () => Promise<{ success: boolean; error?: string }>
@@ -4228,4 +4243,334 @@ export const saveKnowledgeTemplateFile = async (templateType: 'agentic-create', 
  */
 export const getDefaultKnowledgeAgenticCreatePromptTemplate = (): string => {
   return DEFAULT_KNOWLEDGE_AGENTIC_CREATE_PROMPT_TEMPLATE
+}
+
+// ===== 智能体模块模板存储方法 =====
+
+export const getDefaultAgentAgenticCreatePromptTemplate = (): string => {
+  return DEFAULT_AGENT_AGENTIC_CREATE_PROMPT_TEMPLATE
+}
+
+export const getDefaultCommandAgenticCreatePromptTemplate = (): string => {
+  return DEFAULT_COMMAND_AGENTIC_CREATE_PROMPT_TEMPLATE
+}
+
+export const getDefaultNodeAgenticCreatePromptTemplate = (): string => {
+  return DEFAULT_NODE_AGENTIC_CREATE_PROMPT_TEMPLATE
+}
+
+export const getDefaultResourceAgenticCreatePromptTemplate = (): string => {
+  return DEFAULT_RESOURCE_AGENTIC_CREATE_PROMPT_TEMPLATE
+}
+
+export const getDefaultWorkflowAgenticCreatePromptTemplate = (): string => {
+  return DEFAULT_WORKFLOW_AGENTIC_CREATE_PROMPT_TEMPLATE
+}
+
+const DEFAULT_AGENT_AGENTIC_CREATE_PROMPT_TEMPLATE = `## 角色
+你是一个专业的智能体设计助手，请根据用户需求生成高质量的智能体角色指令内容。
+
+## 任务
+根据用户描述，生成详细的智能体角色指令文档内容。
+
+## 注意事项
+- 内容结构要清晰，使用 Markdown 格式
+- 角色指令应包含明确的角色定位、行为准则和响应风格
+- 提供具体的场景示例和限制条件
+- 可以使用 [[文件名.md|关系]] 格式建立与其他文档的关联
+
+## 输出要求
+直接输出智能体角色指令的详细内容（Markdown格式），不需要包含名称和描述字段。
+
+用户描述：{{userDescription}}`
+
+export const loadAgentTemplateFile = async (templateType: 'agentic-create'): Promise<string> => {
+  const getDefaultTemplate = (type: string): string => {
+    switch (type) {
+      case 'agentic-create':
+        return DEFAULT_AGENT_AGENTIC_CREATE_PROMPT_TEMPLATE
+      default:
+        return DEFAULT_AGENT_AGENTIC_CREATE_PROMPT_TEMPLATE
+    }
+  }
+
+  if (!isElectron()) {
+    const key = `agent-template-${templateType}`
+    const stored = localStorage.getItem(key)
+    if (stored) return stored
+    return getDefaultTemplate(templateType)
+  }
+
+  try {
+    const result = await window.electronAPI?.loadAgentTemplateFile?.(templateType)
+    if (result && result.success && result.content) {
+      return result.content
+    }
+    return getDefaultTemplate(templateType)
+  } catch (error) {
+    console.error(`加载智能体模板文件失败 (${templateType}):`, error)
+    return getDefaultTemplate(templateType)
+  }
+}
+
+export const saveAgentTemplateFile = async (templateType: 'agentic-create', content: string): Promise<void> => {
+  if (!isElectron()) {
+    const key = `agent-template-${templateType}`
+    localStorage.setItem(key, content)
+    return
+  }
+  try {
+    await window.electronAPI?.saveAgentTemplateFile?.(templateType, content)
+  } catch (error) {
+    console.error(`保存智能体模板文件失败 (${templateType}):`, error)
+    throw error
+  }
+}
+
+// ===== 命令模块模板存储方法 =====
+
+const DEFAULT_COMMAND_AGENTIC_CREATE_PROMPT_TEMPLATE = `## 角色
+你是一个专业的命令设计助手，请根据用户需求生成高质量的命令文档内容。
+
+## 任务
+根据用户描述，生成详细的命令文档内容。
+
+## 注意事项
+- 内容结构要清晰，使用 Markdown 格式
+- 命令文档应包含明确的命令说明、使用场景和参数定义
+- 提供具体的示例和注意事项
+- 可以使用 [[文件名.md|关系]] 格式建立与其他文档的关联
+
+## 输出要求
+直接输出命令的详细内容（Markdown格式），不需要包含名称和描述字段。
+
+用户描述：{{userDescription}}`
+
+export const loadCommandTemplateFile = async (templateType: 'agentic-create'): Promise<string> => {
+  const getDefaultTemplate = (type: string): string => {
+    switch (type) {
+      case 'agentic-create':
+        return DEFAULT_COMMAND_AGENTIC_CREATE_PROMPT_TEMPLATE
+      default:
+        return DEFAULT_COMMAND_AGENTIC_CREATE_PROMPT_TEMPLATE
+    }
+  }
+
+  if (!isElectron()) {
+    const key = `command-template-${templateType}`
+    const stored = localStorage.getItem(key)
+    if (stored) return stored
+    return getDefaultTemplate(templateType)
+  }
+
+  try {
+    const result = await window.electronAPI?.loadCommandTemplateFile?.(templateType)
+    if (result && result.success && result.content) {
+      return result.content
+    }
+    return getDefaultTemplate(templateType)
+  } catch (error) {
+    console.error(`加载命令模板文件失败 (${templateType}):`, error)
+    return getDefaultTemplate(templateType)
+  }
+}
+
+export const saveCommandTemplateFile = async (templateType: 'agentic-create', content: string): Promise<void> => {
+  if (!isElectron()) {
+    const key = `command-template-${templateType}`
+    localStorage.setItem(key, content)
+    return
+  }
+  try {
+    await window.electronAPI?.saveCommandTemplateFile?.(templateType, content)
+  } catch (error) {
+    console.error(`保存命令模板文件失败 (${templateType}):`, error)
+    throw error
+  }
+}
+
+// ===== 节点模块模板存储方法 =====
+
+const DEFAULT_NODE_AGENTIC_CREATE_PROMPT_TEMPLATE = `## 角色
+你是一个专业的节点设计助手，请根据用户需求生成高质量的节点文档内容。
+
+## 任务
+根据用户描述，生成详细的节点文档内容。
+
+## 注意事项
+- 内容结构要清晰，使用 Markdown 格式
+- 节点文档应包含明确的节点功能说明、输入输出定义和处理逻辑
+- 提供具体的场景示例和异常处理说明
+- 可以使用 [[文件名.md|关系]] 格式建立与其他文档的关联
+
+## 输出要求
+直接输出节点的详细内容（Markdown格式），不需要包含名称和描述字段。
+
+用户描述：{{userDescription}}`
+
+export const loadNodeTemplateFile = async (templateType: 'agentic-create'): Promise<string> => {
+  const getDefaultTemplate = (type: string): string => {
+    switch (type) {
+      case 'agentic-create':
+        return DEFAULT_NODE_AGENTIC_CREATE_PROMPT_TEMPLATE
+      default:
+        return DEFAULT_NODE_AGENTIC_CREATE_PROMPT_TEMPLATE
+    }
+  }
+
+  if (!isElectron()) {
+    const key = `node-template-${templateType}`
+    const stored = localStorage.getItem(key)
+    if (stored) return stored
+    return getDefaultTemplate(templateType)
+  }
+
+  try {
+    const result = await window.electronAPI?.loadNodeTemplateFile?.(templateType)
+    if (result && result.success && result.content) {
+      return result.content
+    }
+    return getDefaultTemplate(templateType)
+  } catch (error) {
+    console.error(`加载节点模板文件失败 (${templateType}):`, error)
+    return getDefaultTemplate(templateType)
+  }
+}
+
+export const saveNodeTemplateFile = async (templateType: 'agentic-create', content: string): Promise<void> => {
+  if (!isElectron()) {
+    const key = `node-template-${templateType}`
+    localStorage.setItem(key, content)
+    return
+  }
+  try {
+    await window.electronAPI?.saveNodeTemplateFile?.(templateType, content)
+  } catch (error) {
+    console.error(`保存节点模板文件失败 (${templateType}):`, error)
+    throw error
+  }
+}
+
+// ===== 资源模块模板存储方法 =====
+
+const DEFAULT_RESOURCE_AGENTIC_CREATE_PROMPT_TEMPLATE = `## 角色
+你是一个专业的资源文档设计助手，请根据用户需求生成高质量的资源文档内容。
+
+## 任务
+根据用户描述，生成详细的资源文档内容。
+
+## 注意事项
+- 内容结构要清晰，使用 Markdown 格式
+- 资源文档应包含明确的资源说明、使用规范和参考标准
+- 提供具体的示例和关联说明
+- 可以使用 [[文件名.md|关系]] 格式建立与其他文档的关联
+
+## 输出要求
+直接输出资源文档的详细内容（Markdown格式），不需要包含名称和描述字段。
+
+用户描述：{{userDescription}}`
+
+export const loadResourceTemplateFile = async (templateType: 'agentic-create'): Promise<string> => {
+  const getDefaultTemplate = (type: string): string => {
+    switch (type) {
+      case 'agentic-create':
+        return DEFAULT_RESOURCE_AGENTIC_CREATE_PROMPT_TEMPLATE
+      default:
+        return DEFAULT_RESOURCE_AGENTIC_CREATE_PROMPT_TEMPLATE
+    }
+  }
+
+  if (!isElectron()) {
+    const key = `resource-template-${templateType}`
+    const stored = localStorage.getItem(key)
+    if (stored) return stored
+    return getDefaultTemplate(templateType)
+  }
+
+  try {
+    const result = await window.electronAPI?.loadResourceTemplateFile?.(templateType)
+    if (result && result.success && result.content) {
+      return result.content
+    }
+    return getDefaultTemplate(templateType)
+  } catch (error) {
+    console.error(`加载资源模板文件失败 (${templateType}):`, error)
+    return getDefaultTemplate(templateType)
+  }
+}
+
+export const saveResourceTemplateFile = async (templateType: 'agentic-create', content: string): Promise<void> => {
+  if (!isElectron()) {
+    const key = `resource-template-${templateType}`
+    localStorage.setItem(key, content)
+    return
+  }
+  try {
+    await window.electronAPI?.saveResourceTemplateFile?.(templateType, content)
+  } catch (error) {
+    console.error(`保存资源模板文件失败 (${templateType}):`, error)
+    throw error
+  }
+}
+
+// ===== 工作流模块模板存储方法 =====
+
+const DEFAULT_WORKFLOW_AGENTIC_CREATE_PROMPT_TEMPLATE = `## 角色
+你是一个专业的工作流设计助手，请根据用户需求生成高质量的工作流描述内容。
+
+## 任务
+根据用户描述，生成详细的工作流描述内容，帮助用户理清业务流程。
+
+## 注意事项
+- 内容结构要清晰，使用 Markdown 格式
+- 工作流描述应包含明确的业务目标、阶段划分和各阶段职责
+- 提供具体的输入输出和流转条件
+- 可以使用 [[文件名.md|关系]] 格式建立与其他文档的关联
+
+## 输出要求
+直接输出工作流描述的详细内容（Markdown格式），不需要包含名称字段。
+
+用户描述：{{userDescription}}`
+
+export const loadWorkflowTemplateFile = async (templateType: 'agentic-create'): Promise<string> => {
+  const getDefaultTemplate = (type: string): string => {
+    switch (type) {
+      case 'agentic-create':
+        return DEFAULT_WORKFLOW_AGENTIC_CREATE_PROMPT_TEMPLATE
+      default:
+        return DEFAULT_WORKFLOW_AGENTIC_CREATE_PROMPT_TEMPLATE
+    }
+  }
+
+  if (!isElectron()) {
+    const key = `workflow-template-${templateType}`
+    const stored = localStorage.getItem(key)
+    if (stored) return stored
+    return getDefaultTemplate(templateType)
+  }
+
+  try {
+    const result = await window.electronAPI?.loadWorkflowTemplateFile?.(templateType)
+    if (result && result.success && result.content) {
+      return result.content
+    }
+    return getDefaultTemplate(templateType)
+  } catch (error) {
+    console.error(`加载工作流模板文件失败 (${templateType}):`, error)
+    return getDefaultTemplate(templateType)
+  }
+}
+
+export const saveWorkflowTemplateFile = async (templateType: 'agentic-create', content: string): Promise<void> => {
+  if (!isElectron()) {
+    const key = `workflow-template-${templateType}`
+    localStorage.setItem(key, content)
+    return
+  }
+  try {
+    await window.electronAPI?.saveWorkflowTemplateFile?.(templateType, content)
+  } catch (error) {
+    console.error(`保存工作流模板文件失败 (${templateType}):`, error)
+    throw error
+  }
 }

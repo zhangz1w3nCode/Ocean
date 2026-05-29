@@ -1,5 +1,5 @@
 import type { FC } from 'react'
-import { Cpu, Bot, Zap, Wand2, BookOpen, LucideIcon } from 'lucide-react'
+import { Cpu, Bot, Zap, Wand2, BookOpen, Users, Terminal, Layers, FolderOpen, GitBranch, LucideIcon } from 'lucide-react'
 import { useSettingsStore } from '../../stores/settingsStore'
 import type { SettingsCategory } from '../../types'
 
@@ -66,7 +66,32 @@ export const SettingsSidebar: FC = () => {
       id: 'knowledge' as SettingsCategory,
       label: '知识',
       icon: BookOpen,
-    }
+    },
+    {
+      id: 'agent' as SettingsCategory,
+      label: '智能体',
+      icon: Users,
+    },
+    {
+      id: 'command' as SettingsCategory,
+      label: '命令',
+      icon: Terminal,
+    },
+    {
+      id: 'node' as SettingsCategory,
+      label: '节点',
+      icon: Layers,
+    },
+    {
+      id: 'resource' as SettingsCategory,
+      label: '资源',
+      icon: FolderOpen,
+    },
+    {
+      id: 'workflow' as SettingsCategory,
+      label: '工作流',
+      icon: GitBranch,
+    },
   ]
 
   return (

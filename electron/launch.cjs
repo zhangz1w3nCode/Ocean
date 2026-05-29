@@ -2362,6 +2362,206 @@ ipcMain.handle('load-knowledge-template-file', async (_, templateType) => {
   }
 })
 
+// ===== 智能体模板文件相关 IPC =====
+
+ipcMain.handle('save-agent-template-file', async (_, templateType, content) => {
+  try {
+    const projectRoot = getProjectRoot()
+    const templateDir = path.join(projectRoot, '.ocean', 'template', 'agent')
+    if (!fs.existsSync(templateDir)) {
+      fs.mkdirSync(templateDir, { recursive: true })
+    }
+    const fileName = `${templateType}.json`
+    const filePath = path.join(templateDir, fileName)
+    const templateData = { content, updatedAt: new Date().toISOString() }
+    fs.writeFileSync(filePath, JSON.stringify(templateData, null, 2), 'utf-8')
+    console.log('保存智能体模板文件成功:', filePath)
+    return { success: true }
+  } catch (error) {
+    console.error('保存智能体模板文件失败:', error)
+    return { success: false, error: error.message }
+  }
+})
+
+ipcMain.handle('load-agent-template-file', async (_, templateType) => {
+  try {
+    const projectRoot = getProjectRoot()
+    const fileName = `${templateType}.json`
+    const filePath = path.join(projectRoot, '.ocean', 'template', 'agent', fileName)
+    if (!fs.existsSync(filePath)) {
+      console.log('智能体模板文件不存在:', filePath)
+      return { success: false, content: null }
+    }
+    const fileContent = fs.readFileSync(filePath, 'utf-8')
+    const templateData = JSON.parse(fileContent)
+    console.log('加载智能体模板文件成功:', filePath)
+    return { success: true, content: templateData.content }
+  } catch (error) {
+    console.error('加载智能体模板文件失败:', error)
+    return { success: false, error: error.message, content: null }
+  }
+})
+
+// ===== 命令模板文件相关 IPC =====
+
+ipcMain.handle('save-command-template-file', async (_, templateType, content) => {
+  try {
+    const projectRoot = getProjectRoot()
+    const templateDir = path.join(projectRoot, '.ocean', 'template', 'command')
+    if (!fs.existsSync(templateDir)) {
+      fs.mkdirSync(templateDir, { recursive: true })
+    }
+    const fileName = `${templateType}.json`
+    const filePath = path.join(templateDir, fileName)
+    const templateData = { content, updatedAt: new Date().toISOString() }
+    fs.writeFileSync(filePath, JSON.stringify(templateData, null, 2), 'utf-8')
+    console.log('保存命令模板文件成功:', filePath)
+    return { success: true }
+  } catch (error) {
+    console.error('保存命令模板文件失败:', error)
+    return { success: false, error: error.message }
+  }
+})
+
+ipcMain.handle('load-command-template-file', async (_, templateType) => {
+  try {
+    const projectRoot = getProjectRoot()
+    const fileName = `${templateType}.json`
+    const filePath = path.join(projectRoot, '.ocean', 'template', 'command', fileName)
+    if (!fs.existsSync(filePath)) {
+      console.log('命令模板文件不存在:', filePath)
+      return { success: false, content: null }
+    }
+    const fileContent = fs.readFileSync(filePath, 'utf-8')
+    const templateData = JSON.parse(fileContent)
+    console.log('加载命令模板文件成功:', filePath)
+    return { success: true, content: templateData.content }
+  } catch (error) {
+    console.error('加载命令模板文件失败:', error)
+    return { success: false, error: error.message, content: null }
+  }
+})
+
+// ===== 节点模板文件相关 IPC =====
+
+ipcMain.handle('save-node-template-file', async (_, templateType, content) => {
+  try {
+    const projectRoot = getProjectRoot()
+    const templateDir = path.join(projectRoot, '.ocean', 'template', 'node')
+    if (!fs.existsSync(templateDir)) {
+      fs.mkdirSync(templateDir, { recursive: true })
+    }
+    const fileName = `${templateType}.json`
+    const filePath = path.join(templateDir, fileName)
+    const templateData = { content, updatedAt: new Date().toISOString() }
+    fs.writeFileSync(filePath, JSON.stringify(templateData, null, 2), 'utf-8')
+    console.log('保存节点模板文件成功:', filePath)
+    return { success: true }
+  } catch (error) {
+    console.error('保存节点模板文件失败:', error)
+    return { success: false, error: error.message }
+  }
+})
+
+ipcMain.handle('load-node-template-file', async (_, templateType) => {
+  try {
+    const projectRoot = getProjectRoot()
+    const fileName = `${templateType}.json`
+    const filePath = path.join(projectRoot, '.ocean', 'template', 'node', fileName)
+    if (!fs.existsSync(filePath)) {
+      console.log('节点模板文件不存在:', filePath)
+      return { success: false, content: null }
+    }
+    const fileContent = fs.readFileSync(filePath, 'utf-8')
+    const templateData = JSON.parse(fileContent)
+    console.log('加载节点模板文件成功:', filePath)
+    return { success: true, content: templateData.content }
+  } catch (error) {
+    console.error('加载节点模板文件失败:', error)
+    return { success: false, error: error.message, content: null }
+  }
+})
+
+// ===== 资源模板文件相关 IPC =====
+
+ipcMain.handle('save-resource-template-file', async (_, templateType, content) => {
+  try {
+    const projectRoot = getProjectRoot()
+    const templateDir = path.join(projectRoot, '.ocean', 'template', 'resource')
+    if (!fs.existsSync(templateDir)) {
+      fs.mkdirSync(templateDir, { recursive: true })
+    }
+    const fileName = `${templateType}.json`
+    const filePath = path.join(templateDir, fileName)
+    const templateData = { content, updatedAt: new Date().toISOString() }
+    fs.writeFileSync(filePath, JSON.stringify(templateData, null, 2), 'utf-8')
+    console.log('保存资源模板文件成功:', filePath)
+    return { success: true }
+  } catch (error) {
+    console.error('保存资源模板文件失败:', error)
+    return { success: false, error: error.message }
+  }
+})
+
+ipcMain.handle('load-resource-template-file', async (_, templateType) => {
+  try {
+    const projectRoot = getProjectRoot()
+    const fileName = `${templateType}.json`
+    const filePath = path.join(projectRoot, '.ocean', 'template', 'resource', fileName)
+    if (!fs.existsSync(filePath)) {
+      console.log('资源模板文件不存在:', filePath)
+      return { success: false, content: null }
+    }
+    const fileContent = fs.readFileSync(filePath, 'utf-8')
+    const templateData = JSON.parse(fileContent)
+    console.log('加载资源模板文件成功:', filePath)
+    return { success: true, content: templateData.content }
+  } catch (error) {
+    console.error('加载资源模板文件失败:', error)
+    return { success: false, error: error.message, content: null }
+  }
+})
+
+// ===== 工作流模板文件相关 IPC =====
+
+ipcMain.handle('save-workflow-template-file', async (_, templateType, content) => {
+  try {
+    const projectRoot = getProjectRoot()
+    const templateDir = path.join(projectRoot, '.ocean', 'template', 'workflow')
+    if (!fs.existsSync(templateDir)) {
+      fs.mkdirSync(templateDir, { recursive: true })
+    }
+    const fileName = `${templateType}.json`
+    const filePath = path.join(templateDir, fileName)
+    const templateData = { content, updatedAt: new Date().toISOString() }
+    fs.writeFileSync(filePath, JSON.stringify(templateData, null, 2), 'utf-8')
+    console.log('保存工作流模板文件成功:', filePath)
+    return { success: true }
+  } catch (error) {
+    console.error('保存工作流模板文件失败:', error)
+    return { success: false, error: error.message }
+  }
+})
+
+ipcMain.handle('load-workflow-template-file', async (_, templateType) => {
+  try {
+    const projectRoot = getProjectRoot()
+    const fileName = `${templateType}.json`
+    const filePath = path.join(projectRoot, '.ocean', 'template', 'workflow', fileName)
+    if (!fs.existsSync(filePath)) {
+      console.log('工作流模板文件不存在:', filePath)
+      return { success: false, content: null }
+    }
+    const fileContent = fs.readFileSync(filePath, 'utf-8')
+    const templateData = JSON.parse(fileContent)
+    console.log('加载工作流模板文件成功:', filePath)
+    return { success: true, content: templateData.content }
+  } catch (error) {
+    console.error('加载工作流模板文件失败:', error)
+    return { success: false, error: error.message, content: null }
+  }
+})
+
 // ===== 技能文件相关 IPC =====
 
 // 创建技能目录结构
