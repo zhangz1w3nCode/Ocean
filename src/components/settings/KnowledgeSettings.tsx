@@ -1,6 +1,6 @@
 import type { FC } from 'react'
 import { useState, useEffect } from 'react'
-import { FileText, RotateCcw, Edit3, Eye, Wand2 } from 'lucide-react'
+import { RotateCcw, Edit3, Eye, Wand2 } from 'lucide-react'
 import { useToastStore } from '../../stores/toastStore'
 import { Button, MarkdownEditor, MarkdownRenderer } from '../ui'
 import {

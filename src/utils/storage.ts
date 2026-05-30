@@ -145,20 +145,20 @@ declare global {
       saveKnowledgeTemplateFile: (templateType: 'agentic-create', content: string) => Promise<{ success: boolean; error?: string }>
       loadKnowledgeTemplateFile: (templateType: 'agentic-create') => Promise<{ success: boolean; content: string | null; error?: string }>
       // 智能体模块模板文件 API
-      saveAgentTemplateFile: (templateType: 'agentic-create', content: string) => Promise<{ success: boolean; error?: string }>
-      loadAgentTemplateFile: (templateType: 'agentic-create') => Promise<{ success: boolean; content: string | null; error?: string }>
+      saveAgentTemplateFile: (templateType: 'agentic-create' | 'agentic-optimize', content: string) => Promise<{ success: boolean; error?: string }>
+      loadAgentTemplateFile: (templateType: 'agentic-create' | 'agentic-optimize') => Promise<{ success: boolean; content: string | null; error?: string }>
       // 命令模块模板文件 API
-      saveCommandTemplateFile: (templateType: 'agentic-create', content: string) => Promise<{ success: boolean; error?: string }>
-      loadCommandTemplateFile: (templateType: 'agentic-create') => Promise<{ success: boolean; content: string | null; error?: string }>
+      saveCommandTemplateFile: (templateType: 'agentic-create' | 'agentic-optimize', content: string) => Promise<{ success: boolean; error?: string }>
+      loadCommandTemplateFile: (templateType: 'agentic-create' | 'agentic-optimize') => Promise<{ success: boolean; content: string | null; error?: string }>
       // 节点模块模板文件 API
-      saveNodeTemplateFile: (templateType: 'agentic-create', content: string) => Promise<{ success: boolean; error?: string }>
-      loadNodeTemplateFile: (templateType: 'agentic-create') => Promise<{ success: boolean; content: string | null; error?: string }>
+      saveNodeTemplateFile: (templateType: 'agentic-create' | 'agentic-optimize', content: string) => Promise<{ success: boolean; error?: string }>
+      loadNodeTemplateFile: (templateType: 'agentic-create' | 'agentic-optimize') => Promise<{ success: boolean; content: string | null; error?: string }>
       // 资源模块模板文件 API
-      saveResourceTemplateFile: (templateType: 'agentic-create', content: string) => Promise<{ success: boolean; error?: string }>
-      loadResourceTemplateFile: (templateType: 'agentic-create') => Promise<{ success: boolean; content: string | null; error?: string }>
+      saveResourceTemplateFile: (templateType: 'agentic-create' | 'agentic-optimize', content: string) => Promise<{ success: boolean; error?: string }>
+      loadResourceTemplateFile: (templateType: 'agentic-create' | 'agentic-optimize') => Promise<{ success: boolean; content: string | null; error?: string }>
       // 工作流模块模板文件 API
-      saveWorkflowTemplateFile: (templateType: 'agentic-create', content: string) => Promise<{ success: boolean; error?: string }>
-      loadWorkflowTemplateFile: (templateType: 'agentic-create') => Promise<{ success: boolean; content: string | null; error?: string }>
+      saveWorkflowTemplateFile: (templateType: 'agentic-create' | 'agentic-optimize', content: string) => Promise<{ success: boolean; error?: string }>
+      loadWorkflowTemplateFile: (templateType: 'agentic-create' | 'agentic-optimize') => Promise<{ success: boolean; content: string | null; error?: string }>
       // Claude Code CLI API
       runClaudeCode: (config: import('../types').ClaudeCodeExecuteConfig) => Promise<import('../types').ClaudeCodeExecuteResult>
       abortClaudeCode: () => Promise<{ success: boolean; error?: string }>
@@ -4247,26 +4247,6 @@ export const getDefaultKnowledgeAgenticCreatePromptTemplate = (): string => {
 
 // ===== 智能体模块模板存储方法 =====
 
-export const getDefaultAgentAgenticCreatePromptTemplate = (): string => {
-  return DEFAULT_AGENT_AGENTIC_CREATE_PROMPT_TEMPLATE
-}
-
-export const getDefaultCommandAgenticCreatePromptTemplate = (): string => {
-  return DEFAULT_COMMAND_AGENTIC_CREATE_PROMPT_TEMPLATE
-}
-
-export const getDefaultNodeAgenticCreatePromptTemplate = (): string => {
-  return DEFAULT_NODE_AGENTIC_CREATE_PROMPT_TEMPLATE
-}
-
-export const getDefaultResourceAgenticCreatePromptTemplate = (): string => {
-  return DEFAULT_RESOURCE_AGENTIC_CREATE_PROMPT_TEMPLATE
-}
-
-export const getDefaultWorkflowAgenticCreatePromptTemplate = (): string => {
-  return DEFAULT_WORKFLOW_AGENTIC_CREATE_PROMPT_TEMPLATE
-}
-
 const DEFAULT_AGENT_AGENTIC_CREATE_PROMPT_TEMPLATE = `## 角色
 你是一个专业的智能体设计助手，请根据用户需求生成高质量的智能体角色指令内容。
 
@@ -4284,11 +4264,38 @@ const DEFAULT_AGENT_AGENTIC_CREATE_PROMPT_TEMPLATE = `## 角色
 
 用户描述：{{userDescription}}`
 
-export const loadAgentTemplateFile = async (templateType: 'agentic-create'): Promise<string> => {
+const DEFAULT_AGENT_AGENTIC_OPTIMIZE_PROMPT_TEMPLATE = `## 角色
+你是一个专业的智能体优化助手，请根据用户提供的优化目标改进智能体角色指令内容。
+
+## 任务
+根据优化目标，对当前智能体角色指令进行改进和优化。
+
+## 注意事项
+- 保持原有角色定位的基础上进行优化
+- 优化后的内容结构要清晰，使用 Markdown 格式
+- 可以使用 [[文件名.md|关系]] 格式建立与其他文档的关联
+
+## 输出要求
+直接输出优化后的智能体角色指令详细内容（Markdown格式）。
+
+优化目标：{{optimizeTarget}}
+当前内容：{{currentContent}}`
+
+export const getDefaultAgentAgenticCreatePromptTemplate = (): string => {
+  return DEFAULT_AGENT_AGENTIC_CREATE_PROMPT_TEMPLATE
+}
+
+export const getDefaultAgentAgenticOptimizePromptTemplate = (): string => {
+  return DEFAULT_AGENT_AGENTIC_OPTIMIZE_PROMPT_TEMPLATE
+}
+
+export const loadAgentTemplateFile = async (templateType: 'agentic-create' | 'agentic-optimize'): Promise<string> => {
   const getDefaultTemplate = (type: string): string => {
     switch (type) {
       case 'agentic-create':
         return DEFAULT_AGENT_AGENTIC_CREATE_PROMPT_TEMPLATE
+      case 'agentic-optimize':
+        return DEFAULT_AGENT_AGENTIC_OPTIMIZE_PROMPT_TEMPLATE
       default:
         return DEFAULT_AGENT_AGENTIC_CREATE_PROMPT_TEMPLATE
     }
@@ -4313,7 +4320,7 @@ export const loadAgentTemplateFile = async (templateType: 'agentic-create'): Pro
   }
 }
 
-export const saveAgentTemplateFile = async (templateType: 'agentic-create', content: string): Promise<void> => {
+export const saveAgentTemplateFile = async (templateType: 'agentic-create' | 'agentic-optimize', content: string): Promise<void> => {
   if (!isElectron()) {
     const key = `agent-template-${templateType}`
     localStorage.setItem(key, content)
@@ -4346,11 +4353,38 @@ const DEFAULT_COMMAND_AGENTIC_CREATE_PROMPT_TEMPLATE = `## 角色
 
 用户描述：{{userDescription}}`
 
-export const loadCommandTemplateFile = async (templateType: 'agentic-create'): Promise<string> => {
+const DEFAULT_COMMAND_AGENTIC_OPTIMIZE_PROMPT_TEMPLATE = `## 角色
+你是一个专业的命令优化助手，请根据用户提供的优化目标改进命令文档内容。
+
+## 任务
+根据优化目标，对当前命令文档进行改进和优化。
+
+## 注意事项
+- 保持原有命令功能的基础上进行优化
+- 优化后的内容结构要清晰，使用 Markdown 格式
+- 可以使用 [[文件名.md|关系]] 格式建立与其他文档的关联
+
+## 输出要求
+直接输出优化后的命令文档详细内容（Markdown格式）。
+
+优化目标：{{optimizeTarget}}
+当前内容：{{currentContent}}`
+
+export const getDefaultCommandAgenticCreatePromptTemplate = (): string => {
+  return DEFAULT_COMMAND_AGENTIC_CREATE_PROMPT_TEMPLATE
+}
+
+export const getDefaultCommandAgenticOptimizePromptTemplate = (): string => {
+  return DEFAULT_COMMAND_AGENTIC_OPTIMIZE_PROMPT_TEMPLATE
+}
+
+export const loadCommandTemplateFile = async (templateType: 'agentic-create' | 'agentic-optimize'): Promise<string> => {
   const getDefaultTemplate = (type: string): string => {
     switch (type) {
       case 'agentic-create':
         return DEFAULT_COMMAND_AGENTIC_CREATE_PROMPT_TEMPLATE
+      case 'agentic-optimize':
+        return DEFAULT_COMMAND_AGENTIC_OPTIMIZE_PROMPT_TEMPLATE
       default:
         return DEFAULT_COMMAND_AGENTIC_CREATE_PROMPT_TEMPLATE
     }
@@ -4375,7 +4409,7 @@ export const loadCommandTemplateFile = async (templateType: 'agentic-create'): P
   }
 }
 
-export const saveCommandTemplateFile = async (templateType: 'agentic-create', content: string): Promise<void> => {
+export const saveCommandTemplateFile = async (templateType: 'agentic-create' | 'agentic-optimize', content: string): Promise<void> => {
   if (!isElectron()) {
     const key = `command-template-${templateType}`
     localStorage.setItem(key, content)
@@ -4408,11 +4442,38 @@ const DEFAULT_NODE_AGENTIC_CREATE_PROMPT_TEMPLATE = `## 角色
 
 用户描述：{{userDescription}}`
 
-export const loadNodeTemplateFile = async (templateType: 'agentic-create'): Promise<string> => {
+const DEFAULT_NODE_AGENTIC_OPTIMIZE_PROMPT_TEMPLATE = `## 角色
+你是一个专业的节点优化助手，请根据用户提供的优化目标改进节点文档内容。
+
+## 任务
+根据优化目标，对当前节点文档进行改进和优化。
+
+## 注意事项
+- 保持原有节点功能的基础上进行优化
+- 优化后的内容结构要清晰，使用 Markdown 格式
+- 可以使用 [[文件名.md|关系]] 格式建立与其他文档的关联
+
+## 输出要求
+直接输出优化后的节点文档详细内容（Markdown格式）。
+
+优化目标：{{optimizeTarget}}
+当前内容：{{currentContent}}`
+
+export const getDefaultNodeAgenticCreatePromptTemplate = (): string => {
+  return DEFAULT_NODE_AGENTIC_CREATE_PROMPT_TEMPLATE
+}
+
+export const getDefaultNodeAgenticOptimizePromptTemplate = (): string => {
+  return DEFAULT_NODE_AGENTIC_OPTIMIZE_PROMPT_TEMPLATE
+}
+
+export const loadNodeTemplateFile = async (templateType: 'agentic-create' | 'agentic-optimize'): Promise<string> => {
   const getDefaultTemplate = (type: string): string => {
     switch (type) {
       case 'agentic-create':
         return DEFAULT_NODE_AGENTIC_CREATE_PROMPT_TEMPLATE
+      case 'agentic-optimize':
+        return DEFAULT_NODE_AGENTIC_OPTIMIZE_PROMPT_TEMPLATE
       default:
         return DEFAULT_NODE_AGENTIC_CREATE_PROMPT_TEMPLATE
     }
@@ -4437,7 +4498,7 @@ export const loadNodeTemplateFile = async (templateType: 'agentic-create'): Prom
   }
 }
 
-export const saveNodeTemplateFile = async (templateType: 'agentic-create', content: string): Promise<void> => {
+export const saveNodeTemplateFile = async (templateType: 'agentic-create' | 'agentic-optimize', content: string): Promise<void> => {
   if (!isElectron()) {
     const key = `node-template-${templateType}`
     localStorage.setItem(key, content)
@@ -4470,11 +4531,38 @@ const DEFAULT_RESOURCE_AGENTIC_CREATE_PROMPT_TEMPLATE = `## 角色
 
 用户描述：{{userDescription}}`
 
-export const loadResourceTemplateFile = async (templateType: 'agentic-create'): Promise<string> => {
+const DEFAULT_RESOURCE_AGENTIC_OPTIMIZE_PROMPT_TEMPLATE = `## 角色
+你是一个专业的资源文档优化助手，请根据用户提供的优化目标改进资源文档内容。
+
+## 任务
+根据优化目标，对当前资源文档进行改进和优化。
+
+## 注意事项
+- 保持原有资源说明的基础上进行优化
+- 优化后的内容结构要清晰，使用 Markdown 格式
+- 可以使用 [[文件名.md|关系]] 格式建立与其他文档的关联
+
+## 输出要求
+直接输出优化后的资源文档详细内容（Markdown格式）。
+
+优化目标：{{optimizeTarget}}
+当前内容：{{currentContent}}`
+
+export const getDefaultResourceAgenticCreatePromptTemplate = (): string => {
+  return DEFAULT_RESOURCE_AGENTIC_CREATE_PROMPT_TEMPLATE
+}
+
+export const getDefaultResourceAgenticOptimizePromptTemplate = (): string => {
+  return DEFAULT_RESOURCE_AGENTIC_OPTIMIZE_PROMPT_TEMPLATE
+}
+
+export const loadResourceTemplateFile = async (templateType: 'agentic-create' | 'agentic-optimize'): Promise<string> => {
   const getDefaultTemplate = (type: string): string => {
     switch (type) {
       case 'agentic-create':
         return DEFAULT_RESOURCE_AGENTIC_CREATE_PROMPT_TEMPLATE
+      case 'agentic-optimize':
+        return DEFAULT_RESOURCE_AGENTIC_OPTIMIZE_PROMPT_TEMPLATE
       default:
         return DEFAULT_RESOURCE_AGENTIC_CREATE_PROMPT_TEMPLATE
     }
@@ -4499,7 +4587,7 @@ export const loadResourceTemplateFile = async (templateType: 'agentic-create'): 
   }
 }
 
-export const saveResourceTemplateFile = async (templateType: 'agentic-create', content: string): Promise<void> => {
+export const saveResourceTemplateFile = async (templateType: 'agentic-create' | 'agentic-optimize', content: string): Promise<void> => {
   if (!isElectron()) {
     const key = `resource-template-${templateType}`
     localStorage.setItem(key, content)
@@ -4532,11 +4620,38 @@ const DEFAULT_WORKFLOW_AGENTIC_CREATE_PROMPT_TEMPLATE = `## 角色
 
 用户描述：{{userDescription}}`
 
-export const loadWorkflowTemplateFile = async (templateType: 'agentic-create'): Promise<string> => {
+const DEFAULT_WORKFLOW_AGENTIC_OPTIMIZE_PROMPT_TEMPLATE = `## 角色
+你是一个专业的工作流优化助手，请根据用户提供的优化目标改进工作流描述内容。
+
+## 任务
+根据优化目标，对当前工作流描述进行改进和优化。
+
+## 注意事项
+- 保持原有业务流程的基础上进行优化
+- 优化后的内容结构要清晰，使用 Markdown 格式
+- 可以使用 [[文件名.md|关系]] 格式建立与其他文档的关联
+
+## 输出要求
+直接输出优化后的工作流描述详细内容（Markdown格式）。
+
+优化目标：{{optimizeTarget}}
+当前内容：{{currentContent}}`
+
+export const getDefaultWorkflowAgenticCreatePromptTemplate = (): string => {
+  return DEFAULT_WORKFLOW_AGENTIC_CREATE_PROMPT_TEMPLATE
+}
+
+export const getDefaultWorkflowAgenticOptimizePromptTemplate = (): string => {
+  return DEFAULT_WORKFLOW_AGENTIC_OPTIMIZE_PROMPT_TEMPLATE
+}
+
+export const loadWorkflowTemplateFile = async (templateType: 'agentic-create' | 'agentic-optimize'): Promise<string> => {
   const getDefaultTemplate = (type: string): string => {
     switch (type) {
       case 'agentic-create':
         return DEFAULT_WORKFLOW_AGENTIC_CREATE_PROMPT_TEMPLATE
+      case 'agentic-optimize':
+        return DEFAULT_WORKFLOW_AGENTIC_OPTIMIZE_PROMPT_TEMPLATE
       default:
         return DEFAULT_WORKFLOW_AGENTIC_CREATE_PROMPT_TEMPLATE
     }
@@ -4561,7 +4676,7 @@ export const loadWorkflowTemplateFile = async (templateType: 'agentic-create'): 
   }
 }
 
-export const saveWorkflowTemplateFile = async (templateType: 'agentic-create', content: string): Promise<void> => {
+export const saveWorkflowTemplateFile = async (templateType: 'agentic-create' | 'agentic-optimize', content: string): Promise<void> => {
   if (!isElectron()) {
     const key = `workflow-template-${templateType}`
     localStorage.setItem(key, content)
