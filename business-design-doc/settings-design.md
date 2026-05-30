@@ -1744,34 +1744,113 @@ const handleSmartGenerate = async () => {
 
 ---
 
-## 21. UI 细节优化（2026-03-13）
+## 22. 各业务模块模板设置管理（2026-05-30）
 
-### 21.1 LLM 提供商卡片优化
+### 22.1 功能概述
 
-| 优化项 | 变更前 | 变更后 |
-|--------|--------|--------|
-| 信息展示 | 显示 Base URL + 默认模型文字 | 移除 Base URL，默认模型改为标签展示 |
-| 标签设计 | 单标签（类型标签） | 双标签（类型标签 + 默认模型标签） |
-| 默认模型标签 | 灰色文字 | 深灰色标签 `bg-gray-200 text-gray-700` |
-| 灰色区域 | 包含 Base URL、默认模型、启用开关 | 仅保留启用开关 |
-| 操作按钮 | 始终显示 | 悬浮显示（hover 时显示） |
+为智能体/命令/节点/资源/工作流五个业务模块新增设置页面，用于管理各模块的 Agentic 创建和优化模板提示词。与既有能力/技能/知识设置页一致，采用 Tab 分栏布局，且仅包含 Agentic 相关模板（不含 LLM 模板）。
 
-**相关文件**：
-- `src/components/settings/LLMProviderCard.tsx`
+### 22.2 SettingsCategory 扩展
 
-### 21.2 Agentic 设置页面图标优化
-
-| 卡片 | 图标 | 变更说明 |
-|------|------|----------|
-| LLM 配置 | Cpu | 保持不变 |
-| 工具配置 | Wrench | 从 Settings2 改为 Wrench（扳手） |
-| 高级参数 | SlidersHorizontal | 新增图标 |
-| Agentic 调试 | Zap | 保持不变 |
-
-**相关文件**：
-- `src/components/settings/AgenticSettings.tsx`
-
-**图标导入**：
 ```typescript
-import { ..., Wrench, SlidersHorizontal } from 'lucide-react'
+// 扩展前
+export type SettingsCategory = 'llm' | 'agentic' | 'ability' | 'skill' | 'knowledge'
+
+// 扩展后
+export type SettingsCategory = 'llm' | 'agentic' | 'ability' | 'skill' | 'knowledge' 
+  | 'agent' | 'command' | 'node' | 'resource' | 'workflow'
 ```
+
+### 22.3 设置侧边栏新增菜单项
+
+| 分类 ID | 标签 | 图标 | 说明 |
+|---------|------|------|------|
+| `agent` | 智能体 | Users | 智能体模块模板配置 |
+| `command` | 命令 | Terminal | 命令模块模板配置 |
+| `node` | 节点 | Layers | 节点模块模板配置 |
+| `resource` | 资源 | FolderOpen | 资源模块模板配置 |
+| `workflow` | 工作流 | GitBranch | 工作流模块模板配置 |
+
+### 22.4 模板文件系统架构
+
+每个业务模块的模板文件存储于项目 `.ocean/template/` 目录下：
+
+```
+.ocean/template/
+├── ability/
+│   ├── llm-create.json
+│   ├── llm-optimize.json
+│   ├── agentic-create.json
+│   └── agentic-optimize.json
+├── skill/
+│   ├── llm-create.json
+│   ├── agentic-create.json
+│   └── llm-optimize.json
+├── knowledge/
+│   └── agentic-create.json
+├── agent/                # 新增
+│   ├── agentic-create.json
+│   └── agentic-optimize.json
+├── command/              # 新增
+│   ├── agentic-create.json
+│   └── agentic-optimize.json
+├── node/                 # 新增
+│   ├── agentic-create.json
+│   └── agentic-optimize.json
+├── resource/             # 新增
+│   ├── agentic-create.json
+│   └── agentic-optimize.json
+└── workflow/             # 新增
+    ├── agentic-create.json
+    └── agentic-optimize.json
+```
+
+### 22.5 设置页面结构
+
+每个新设置页面与 AbilitySettings/SkillSettings 完全一致的模板编辑功能：
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                                          [重置为默认] [保存] │
+├─────────────────────────────────────────────────────────┤
+│  [Agentic创建模板] [Agentic优化模板]                       │
+├─────────────────────────────────────────────────────────┤
+│                                                          │
+│  (模块名称) Agentic创建提示词模板                          │
+│  配置提示词模板...                                         │
+│                                                          │
+│  ┌────────────────────────────────────────────────────┐ │
+│  │  (Markdown 编辑框 / 预览)                          │ │
+│  └────────────────────────────────────────────────────┘ │
+│                                                          │
+│  使用说明                                                │
+│  • Agentic 创建(模块名)时，系统会将用户描述的占位符替换...      │
+└──────────────────────────────────────────────────────────┘
+```
+
+**交互功能**：
+- Tab 切换：Agentic创建模板 / Agentic优化模板
+- 编辑/预览切换
+- 保存按钮：同时保存两个模板
+- 重置按钮：根据当前 Tab 重置对应模板为默认值
+- 使用说明：根据当前 Tab 动态展示
+
+### 22.6 默认模板占位符
+
+| 模板类型 | 占位符 | 说明 |
+|---------|--------|------|
+| `agentic-create` | `{{userDescription}}` | 用户输入的业务描述 |
+| `agentic-optimize` | `{{currentContent}}`、`{{optimizeTarget}}` | 当前内容 + 优化目标 |
+
+### 22.7 新增文件清单
+
+| 文件路径 | 说明 |
+|----------|------|
+| `src/components/settings/AgentSettings.tsx` | 智能体模板设置页 |
+| `src/components/settings/CommandSettings.tsx` | 命令模板设置页 |
+| `src/components/settings/NodeSettings.tsx` | 节点模板设置页 |
+| `src/components/settings/ResourceSettings.tsx` | 资源模板设置页 |
+| `src/components/settings/WorkflowSettings.tsx` | 工作流模板设置页 |
+| `src/components/settings/SettingsSidebar.tsx` | 新增 5 个菜单项 |
+| `src/components/settings/index.ts` | 导出 5 个新组件 |
+| `src/pages/SettingsPage.tsx` | 引入并路由 5 个新设置组件 |

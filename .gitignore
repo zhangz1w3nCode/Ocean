@@ -55,3 +55,6 @@ Thumbs.db
 
 # Ocean 运行时配置
 .ocean/
+
+# PI Agent 配置
+.pi/
