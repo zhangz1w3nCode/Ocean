@@ -4,7 +4,7 @@
 从 main 创建分支，彻底移除 Ocean 项目中的「命令 (Commands)」与「能力 (Abilities)」两个模块（页面、store、组件、类型、文件 I/O、Electron IPC、引用系统项、设置项、文档），且不破坏保留模块——对被 Skills 复用的 `parseAbilityContent` 等共享函数做保留或通用化重构。
 
 ## Current Phase
-全部完成（Phase 1-8 done）。代码改动在工作区，未 commit。
+全部完成（Phase 1-9）。4 commit 已推送至 origin/remove-commands-abilities-modules，PR #1 已创建（base: main）。
 
 ## Phases
 
@@ -63,8 +63,14 @@
 - [x] README.md / README_CN.md：移除 Commands/Abilities 模块行与目录结构（8→6 types）
 - [x] business-design-doc 三份 design-doc 已删除
 - [x] progress.md / task_plan.md 同步
-- [ ] git commit（待用户允许）
-- **Status:** complete（commit 待用户授权）
+- [x] git commit（4 commit 已推送，作者 zhangz1w3nCode <403592973@qq.com>）
+- **Status:** complete
+
+### Phase 9: PR 创建
+- [x] 设全局 git 身份（zhangz1w3nCode / 403592973@qq.com）
+- [x] 安装 gh CLI（v2.95.0）+ gh auth login 认证
+- [x] gh pr create --base main → PR #1 已创建（https://github.com/zhangz1w3nCode/Ocean/pull/1）
+- **Status:** complete
 
 ## Decisions Made
 | Decision | Rationale |

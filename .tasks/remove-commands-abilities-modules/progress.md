@@ -61,7 +61,18 @@
 - **Status:** complete
 - README.md / README_CN.md：模块表移除 Commands/Abilities 两行（8→6 types），目录结构移除 ability/ command/
 - business-design-doc/command-design.md、command-design-doc.md、ability-design.md：已删除
-- 未执行 git commit（依 CLAUDE.md，未经用户允许不提交）
+
+### Phase 9: 提交推送与 PR（/git-commit）
+- **Status:** complete
+- 设全局 git 身份：user.name=zhangz1w3nCode、user.email=403592973@qq.com
+- 4 个 commit 推送至 origin/remove-commands-abilities-modules：
+  1. `01bb043` refactor(commands/abilities): 移除命令与能力两个模块
+  2. `3d75c61` chore(config): 提交 .claude 下的 skill/agent/timeline 配置
+  3. `28f76ea` chore(config): 更新 CLAUDE.md 协作指令并提交任务记录
+  4. `8f493b8` fix(skill): 修正 git-commit 报告存储位置规则
+- 修正作者身份（amend --reset-author + force-with-lease）
+- GIT-COMMIT.md 位置修正（.tasks/{task-name}/git-commit-doc/）
+- 安装 gh CLI + gh auth login + 创建 PR #1（base: main）
 
 ## Test Results
 | Test | Input | Expected | Actual | Status |
@@ -82,11 +93,11 @@
 ## 5-Question Reboot Check
 | Question | Answer |
 |----------|--------|
-| Where am I? | 全部阶段完成 |
-| Where am I going? | 无剩余阶段（待用户决定是否 commit） |
+| Where am I? | 全部阶段完成（含提交与 PR） |
+| Where am I going? | 无剩余阶段（PR 待 review 合并） |
 | What's the goal? | 彻底移除 Commands/Abilities 模块且不破坏保留模块（已达成） |
 | What have I learned? | 见 findings.md：两模块深度耦合 42 文件，parseAbilityContent 被 Skills 复用已重命名通用化 |
-| What have I done? | 见上 Phase 1-8，tsc/build/cjs 全部通过 |
+| What have I done? | 见上 Phase 1-9：移除+验证+提交4commit+创建PR#1 |
 
 ---
-*移除任务完成。代码改动均在工作区（未 commit）。*
+*移除任务完成。4 个 commit 已推送，PR #1 已创建（https://github.com/zhangz1w3nCode/Ocean/pull/1）。*
