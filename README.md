@@ -26,13 +26,11 @@ Claude Code is a powerful AI coding agent, but managing its assets (agents, comm
 
 ### Asset Management
 
-Ocean manages 8 types of Claude Code assets, each with full CRUD operations, Markdown preview, and reference linking:
+Ocean manages 6 types of Claude Code assets, each with full CRUD operations, Markdown preview, and reference linking:
 
 | Module | Storage Location | Description |
 |--------|-----------------|-------------|
 | Agents | `.claude/agents/` | Define AI agent profiles with model selection, role instructions, and icon customization |
-| Commands | `.claude/commands/` | Create reusable slash commands with Frontmatter metadata |
-| Abilities | `.claude/abilities/` | Define atomic capability units that can be referenced by other assets |
 | Skills | `.claude/skills/` | Package complex skills with scripts, references, and examples in a directory structure |
 | Knowledge | `.claude/knowledges/` | Manage business knowledge with tags, categories, WikiLink references, and a visual knowledge graph |
 | Nodes | `.claude/nodes/` | Define reusable workflow building blocks |
@@ -187,9 +185,7 @@ ocean/
 │   │   ├── SettingsPage.tsx
 │   │   └── LLMSettings.tsx
 │   ├── components/              # UI components
-│   │   ├── ability/             # Ability module components
 │   │   ├── agent/               # Agent module components
-│   │   ├── command/             # Command module components
 │   │   ├── flow/                # Flow editor components & node types
 │   │   ├── knowledge/           # Knowledge module & graph components
 │   │   ├── layout/              # Layout components (Sidebar, MainContent)

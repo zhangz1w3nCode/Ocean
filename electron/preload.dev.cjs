@@ -45,18 +45,6 @@ const electronAPI = {
   deleteAgentFile: (name) => ipcRenderer.invoke('delete-agent-file', name),
   loadAllAgentFiles: () => ipcRenderer.invoke('load-all-agent-files'),
 
-  // 命令文件数据持久化（Markdown 格式，存储在 commands 目录）
-  saveCommandFile: (name, content) => ipcRenderer.invoke('save-command-file', name, content),
-  loadCommandFile: (name) => ipcRenderer.invoke('load-command-file', name),
-  deleteCommandFile: (name) => ipcRenderer.invoke('delete-command-file', name),
-  loadAllCommandFiles: () => ipcRenderer.invoke('load-all-command-files'),
-
-  // 能力文件数据持久化（Markdown 格式，存储在 abilities 目录）
-  saveAbilityFile: (name, content) => ipcRenderer.invoke('save-ability-file', name, content),
-  loadAbilityFile: (name) => ipcRenderer.invoke('load-ability-file', name),
-  deleteAbilityFile: (name) => ipcRenderer.invoke('delete-ability-file', name),
-  loadAllAbilityFiles: () => ipcRenderer.invoke('load-all-ability-files'),
-
   // 知识库文件数据持久化（Markdown 格式，存储在 knowledges 目录）
   saveKnowledgeFile: (name, content) => ipcRenderer.invoke('save-knowledge-file', name, content),
   loadKnowledgeFile: (name) => ipcRenderer.invoke('load-knowledge-file', name),
@@ -114,12 +102,6 @@ const electronAPI = {
     ipcRenderer.on('agent-loop-event', listener)
     return () => ipcRenderer.removeListener('agent-loop-event', listener)
   },
-
-  // 能力模块模板文件 API
-  saveAbilityTemplateFile: (templateType, content) =>
-    ipcRenderer.invoke('save-ability-template-file', templateType, content),
-  loadAbilityTemplateFile: (templateType) =>
-    ipcRenderer.invoke('load-ability-template-file', templateType),
 
   // 技能模块模板文件 API
   saveSkillTemplateFile: (templateType, content) =>

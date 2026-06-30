@@ -6,7 +6,7 @@ import { useToastStore } from '../../stores/toastStore'
 import { useSettingsStore } from '../../stores/settingsStore'
 import { useProjectStore } from '../../stores/projectStore'
 import { useSkillStore } from '../../stores/skillStore'
-import { generateWithLLM, parseAbilityContent } from '../../services/llmService'
+import { generateWithLLM, parseLlmContent } from '../../services/llmService'
 import { getDefaultLLMProvider, isElectron, loadSkillTemplateFile } from '../../utils/storage'
 import { useAgentLoop } from '../../hooks/useAgentLoop'
 import { AgentLoopLogger } from '../agent/AgentLoopLogger'
@@ -295,7 +295,7 @@ export const SkillModal: FC<SkillModalProps> = ({
       }
 
       // 解析返回的内容
-      const parsed = parseAbilityContent(result.content)
+      const parsed = parseLlmContent(result.content)
       if (!parsed) {
         addToast('无法解析 LLM 返回的内容，请检查提示词模板', 'warning')
         setIsGenerating(false)

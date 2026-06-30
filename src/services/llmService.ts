@@ -22,8 +22,8 @@ export interface LLMResponse {
   error?: string
 }
 
-// 能力生成结果
-export interface AbilityGenerateResult {
+// LLM 内容生成结果
+export interface LlmContentResult {
   content: string
 }
 
@@ -204,10 +204,10 @@ export const generateWithLLM = async (
 }
 
 /**
- * 优化能力内容 - 使用 pi-mono SDK 调用 LLM
+ * 优化内容 - 使用 pi-mono SDK 调用 LLM
  * 与LLM创建不同，优化是基于现有内容进行改进
  */
-export const optimizeAbilityWithLLM = async (
+export const optimizeContentWithLLM = async (
   provider: LLMProvider,
   promptTemplate: string,
   currentContent: string,
@@ -229,7 +229,7 @@ export const optimizeAbilityWithLLM = async (
     } else {
       // 降级处理：缺少占位符时自动追加
       console.warn('提示词模板中缺少必需的占位符，将自动追加内容')
-      prompt = `${promptTemplate}\n\n## 现有能力内容\n${currentContent}\n\n## 优化目标\n${optimizeTarget}`
+      prompt = `${promptTemplate}\n\n## 现有内容\n${currentContent}\n\n## 优化目标\n${optimizeTarget}`
     }
 
     // 获取 pi-mono provider 和 model
@@ -243,7 +243,7 @@ export const optimizeAbilityWithLLM = async (
       modelId
     })
 
-    console.log('\n=== 使用 pi-mono SDK 调用 LLM (优化能力) ===')
+    console.log('\n=== 使用 pi-mono SDK 调用 LLM (优化) ===')
     console.log('提供商:', provider.name)
     console.log('模型:', provider.defaultModel)
     console.log('优化目标:', optimizeTarget)
@@ -352,10 +352,10 @@ const removeThinkTags = (content: string): string => {
 }
 
 /**
- * 解析 LLM 返回的能力内容
+ * 解析 LLM 返回的内容
  * 简化版：直接返回内容，不要求 JSON 格式
  */
-export const parseAbilityContent = (content: string): AbilityGenerateResult | null => {
+export const parseLlmContent = (content: string): LlmContentResult | null => {
   try {
     console.log('\n========== LLM 返回的能力内容 ==========')
     console.log(content)

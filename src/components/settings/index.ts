@@ -1,5 +1,4 @@
 export { SettingsSidebar } from './SettingsSidebar'
-export { AbilitySettings } from './AbilitySettings'
 export { AgenticSettings } from './AgenticSettings'
 export { SkillSettings } from './SkillSettings'
 export { KnowledgeSettings } from './KnowledgeSettings'

@@ -1,11 +1,9 @@
 import type { FC } from 'react'
 import { useState, useEffect } from 'react'
-import { Terminal, Wand2, ArrowLeft, Edit3, Eye, Type, FileText } from 'lucide-react'
+import { Wand2, ArrowLeft, Edit3, Eye, Type, FileText } from 'lucide-react'
 import { Modal, Button, MarkdownEditor, MarkdownRenderer, Input, Textarea } from '../ui'
 import { useToastStore } from '../../stores/toastStore'
-import { useCommandStore } from '../../stores/commandStore'
 import { useSkillStore } from '../../stores/skillStore'
-import type { CommandFile } from '../../types'
 
 interface ApplyModalProps {
   isOpen: boolean
@@ -14,7 +12,7 @@ interface ApplyModalProps {
   workflowId: string | null
 }
 
-type ApplyTarget = 'command' | 'skill' | null
+type ApplyTarget = 'skill' | null
 type Step = 'select' | 'edit'
 
 export const ApplyModal: FC<ApplyModalProps> = ({
@@ -24,17 +22,12 @@ export const ApplyModal: FC<ApplyModalProps> = ({
   workflowId,
 }) => {
   const { addToast } = useToastStore()
-  const { commandFiles, addCommandFile } = useCommandStore()
   const { skillFiles, createSkill } = useSkillStore()
   const [step, setStep] = useState<Step>('select')
   const [selectedTarget, setSelectedTarget] = useState<ApplyTarget>(null)
   const [isCreating, setIsCreating] = useState(false)
   // 编辑/预览模式
   const [viewMode, setViewMode] = useState<'edit' | 'preview'>('preview')
-  // 命令名称（可编辑）
-  const [commandName, setCommandName] = useState('')
-  // 命令内容（可编辑）
-  const [commandContent, setCommandContent] = useState('')
   // 技能名称（可编辑）
   const [skillName, setSkillName] = useState('')
   // 技能描述（可编辑）
@@ -44,20 +37,6 @@ export const ApplyModal: FC<ApplyModalProps> = ({
 
   // 根据当前工作流名称生成工作流路径
   const workflowPath = `.claude/workflows/${workflowName}/WORKFLOW.md`
-
-  // 生成默认命令内容
-  const generateDefaultCommandContent = () => `# 用户需求
-- $ARGUMENTS
-
-# 工作流
-- 位置：\`${workflowPath}\`
-
-# 强制要求
-- 强制按照\`工作流\`的内容执行
-
-# 禁止事项
-- 不按照强制按照\`工作流\`的内容执行 注意替换内容中的工作流位置
-`
 
   // 生成默认技能内容
   const generateDefaultSkillContent = () => `# 用户需求
@@ -82,8 +61,6 @@ export const ApplyModal: FC<ApplyModalProps> = ({
 
       // 生成默认名称和内容
       const baseName = workflowName.toLowerCase().replace(/\s+/g, '-')
-      setCommandName(`execute-${baseName}-workflow`)
-      setCommandContent(generateDefaultCommandContent())
       setSkillName(`${baseName}-workflow-skill`)
       setSkillDescription('')
       setSkillContent(generateDefaultSkillContent())
@@ -105,13 +82,6 @@ export const ApplyModal: FC<ApplyModalProps> = ({
 
   const applyTargets = [
     {
-      id: 'command' as const,
-      name: '命令',
-      description: '创建一个命令，引用当前工作流',
-      icon: Terminal,
-      color: 'bg-gray-100 text-gray-600',
-    },
-    {
       id: 'skill' as const,
       name: '技能',
       description: '创建一个技能，引用当前工作流',
@@ -121,44 +91,6 @@ export const ApplyModal: FC<ApplyModalProps> = ({
   ]
 
   const targetInfo = applyTargets.find(t => t.id === selectedTarget)
-
-  const handleCreateCommand = async () => {
-    if (!workflowId) {
-      addToast('工作流ID无效', 'error')
-      return
-    }
-
-    // 检查名称是否已存在
-    const existingNames = commandFiles.map((c) => c.name)
-    if (existingNames.includes(commandName.trim())) {
-      addToast('当前命令已应用', 'warning')
-      return
-    }
-
-    setIsCreating(true)
-
-    try {
-      // 创建命令
-      const newCommand: CommandFile = {
-        id: `cmd-${Date.now()}`,
-        name: commandName.trim(),
-        description: `执行 "${workflowName}" 工作流的命令`,
-        content: commandContent,
-        type: 'command',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      }
-      await addCommandFile(newCommand)
-
-      addToast('命令创建成功', 'success')
-      onClose()
-    } catch (error) {
-      console.error('创建命令失败:', error)
-      addToast('创建命令失败，请重试', 'error')
-    } finally {
-      setIsCreating(false)
-    }
-  }
 
   const handleCreateSkill = async () => {
     if (!workflowId) {
@@ -198,19 +130,6 @@ export const ApplyModal: FC<ApplyModalProps> = ({
   }
 
   const handleConfirm = () => {
-    // 验证命令表单
-    if (selectedTarget === 'command') {
-      if (!commandName.trim()) {
-        addToast('请输入命令名称', 'warning')
-        return
-      }
-      if (!commandContent.trim()) {
-        addToast('请输入命令内容', 'warning')
-        return
-      }
-      handleCreateCommand()
-    }
-
     // 验证技能表单
     if (selectedTarget === 'skill') {
       if (!skillName.trim()) {
@@ -230,10 +149,10 @@ export const ApplyModal: FC<ApplyModalProps> = ({
   }
 
   // 获取当前名称和内容
-  const currentName = selectedTarget === 'command' ? commandName : skillName
-  const currentContent = selectedTarget === 'command' ? commandContent : skillContent
-  const setCurrentName = selectedTarget === 'command' ? setCommandName : setSkillName
-  const setCurrentContent = selectedTarget === 'command' ? setCommandContent : setSkillContent
+  const currentName = skillName
+  const currentContent = skillContent
+  const setCurrentName = setSkillName
+  const setCurrentContent = setSkillContent
 
   // 选择步骤
   if (step === 'select') {

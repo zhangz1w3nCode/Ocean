@@ -50,8 +50,9 @@ Thumbs.db
 # 项目排除路径
 /tailwind.config.js
 
-# Claude Code 配置
-.claude/
+# Claude Code 配置（追踪 agents/skills/timelines，仅忽略本地敏感配置）
+.claude/settings.local.json
+.claude/*.local.json
 
 # Ocean 运行时配置
 .ocean/

@@ -5,8 +5,6 @@ import { WorkflowsPage } from '../../pages/WorkflowsPage'
 import { NodesPage } from '../../pages/NodesPage'
 import { AgentsPage } from '../../pages/AgentsPage'
 import { ResourcesPage } from '../../pages/ResourcesPage'
-import { CommandsPage } from '../../pages/CommandsPage'
-import { AbilitiesPage } from '../../pages/AbilitiesPage'
 import { KnowledgesPage } from '../../pages/KnowledgesPage'
 import { SkillsPage } from '../../pages/SkillsPage'
 import { SettingsPage } from '../../pages/SettingsPage'
@@ -21,8 +19,6 @@ const pageComponents: Record<PageType, FC> = {
   nodes: NodesPage,
   agents: AgentsPage,
   resources: ResourcesPage,
-  commands: CommandsPage,
-  abilities: AbilitiesPage,
   knowledges: KnowledgesPage,
   skills: SkillsPage,
   settings: SettingsPage,

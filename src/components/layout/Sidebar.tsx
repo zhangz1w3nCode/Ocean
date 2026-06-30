@@ -17,15 +17,13 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { Bot, FolderGit2, Box, Folder, Terminal, ArrowRightLeft, Zap, BookOpen, Settings, Wand2 } from 'lucide-react'
+import { Bot, FolderGit2, Box, Folder, ArrowRightLeft, BookOpen, Settings, Wand2 } from 'lucide-react'
 import { useAppStore, type PageType } from '../../stores/appStore'
 import { useProjectStore } from '../../stores/projectStore'
 
 // 导航项定义
 const navItemDefinitions: { id: PageType; label: string; icon: typeof Bot }[] = [
   { id: 'agents', label: '智能体', icon: Bot },
-  { id: 'commands', label: '命令', icon: Terminal },
-  { id: 'abilities', label: '能力', icon: Zap },
   { id: 'skills', label: '技能', icon: Wand2 },
   { id: 'knowledges', label: '知识', icon: BookOpen },
   { id: 'workflows', label: '工作流', icon: FolderGit2 },

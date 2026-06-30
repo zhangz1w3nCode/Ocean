@@ -10,8 +10,6 @@ import { useProjectStore } from './stores/projectStore'
 import { useAppStore } from './stores/appStore'
 import { useResourceStore } from './stores/resourceStore'
 import { useAgentStore } from './stores/agentStore'
-import { useCommandStore } from './stores/commandStore'
-import { useAbilityStore } from './stores/abilityStore'
 import { useKnowledgeStore } from './stores/knowledgeStore'
 import { useSkillStore } from './stores/skillStore'
 
@@ -20,8 +18,6 @@ const App: FC = () => {
   const { loadWorkflows } = useWorkflowStore()
   const { loadResourceFiles } = useResourceStore()
   const { loadAgentFiles } = useAgentStore()
-  const { loadCommandFiles } = useCommandStore()
-  const { loadAbilityFiles } = useAbilityStore()
   const { loadKnowledgeFiles } = useKnowledgeStore()
   const { loadSkillFiles } = useSkillStore()
   const { isProjectLoaded, loadAppConfigOnStart, currentProject, setCurrentProject } = useProjectStore()
@@ -39,13 +35,11 @@ const App: FC = () => {
       loadWorkflows()
       loadResourceFiles()
       loadAgentFiles()
-      loadCommandFiles()
-      loadAbilityFiles()
       loadKnowledgeFiles()
       loadSkillFiles()
       finishSwitchingProject()
     }
-  }, [isProjectLoaded, currentProject, loadNodeDefinitions, loadWorkflows, loadResourceFiles, loadAgentFiles, loadCommandFiles, loadAbilityFiles, loadKnowledgeFiles, loadSkillFiles, finishSwitchingProject])
+  }, [isProjectLoaded, currentProject, loadNodeDefinitions, loadWorkflows, loadResourceFiles, loadAgentFiles, loadKnowledgeFiles, loadSkillFiles, finishSwitchingProject])
 
   // 切换项目时的处理
   useEffect(() => {
