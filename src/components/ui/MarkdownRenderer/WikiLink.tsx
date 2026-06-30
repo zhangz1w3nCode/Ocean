@@ -52,14 +52,8 @@ export function getReferenceType(path: string): { icon: string; color: string; b
   if (path.includes('/workflows/')) {
     return { icon: '工作流', color: '#DC2626', bgColor: '#FEE2E2' } // 红色
   }
-  if (path.includes('/commands/')) {
-    return { icon: '命令', color: '#7C3AED', bgColor: '#EDE9FE' } // 紫色
-  }
   if (path.includes('/resources/')) {
     return { icon: '资源', color: '#059669', bgColor: '#D1FAE5' } // 绿色
-  }
-  if (path.includes('/abilities/')) {
-    return { icon: '能力', color: '#D97706', bgColor: '#FEF3C7' } // 黄色
   }
   if (path.includes('/skills/')) {
     return { icon: '技能', color: '#7C3AED', bgColor: '#EDE9FE' } // 紫罗兰色

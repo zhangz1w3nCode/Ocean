@@ -1,11 +1,11 @@
 // LLM 服务
 export {
   generateWithLLM,
-  parseAbilityContent,
+  parseLlmContent,
   getSupportedProviders,
   testLLMConnection,
   type LLMResponse,
-  type AbilityGenerateResult
+  type LlmContentResult
 } from './llmService'
 
 // Agentic 服务

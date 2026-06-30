@@ -157,34 +157,6 @@ export interface AgentFile {
   updatedAt: string // 从文件系统获取
 }
 
-// 命令文件类型
-export type CommandFileType = 'command'
-
-// 命令文件定义
-export interface CommandFile {
-  id: string
-  name: string // 从 frontmatter 的 name 字段读取
-  type: CommandFileType // 固定为 'command'
-  description: string // 从 frontmatter 的 description 字段读取
-  content: string // frontmatter 后的内容
-  createdAt: string
-  updatedAt: string // 从文件系统获取
-}
-
-// 能力文件类型
-export type AbilityFileType = 'ability'
-
-// 能力文件定义
-export interface AbilityFile {
-  id: string
-  name: string // 从 frontmatter 的 name 字段读取
-  type: AbilityFileType // 固定为 'ability'
-  description: string // 从 frontmatter 的 description 字段读取
-  content: string // frontmatter 后的内容
-  createdAt: string
-  updatedAt: string // 从文件系统获取
-}
-
 // 知识库文件类型
 export type KnowledgeFileType = 'knowledge'
 
@@ -203,7 +175,7 @@ export interface KnowledgeFile {
 }
 
 // 引用分类类型
-export type ReferenceCategory = 'agents' | 'nodes' | 'workflows' | 'resources' | 'commands' | 'abilities' | 'knowledges' | 'skills'
+export type ReferenceCategory = 'agents' | 'nodes' | 'workflows' | 'resources' | 'knowledges' | 'skills'
 
 // 引用项定义
 export interface ReferenceItem {
@@ -283,7 +255,7 @@ export interface CLIAgent {
 }
 
 // 设置分类
-export type SettingsCategory = 'llm' | 'agentic' | 'ability' | 'skill' | 'knowledge'
+export type SettingsCategory = 'llm' | 'agentic' | 'skill' | 'knowledge'
 
 // 设置项接口
 export interface SettingsItem {
@@ -291,15 +263,6 @@ export interface SettingsItem {
   label: string
   icon: string  // Lucide 图标名称
   description: string
-}
-
-// ========== 能力配置类型定义 ==========
-
-// 能力配置(LLM创建提示词模板)
-export interface AbilityConfig {
-  promptTemplate: string        // 能力LLM创建的提示词模板
-  optimizePromptTemplate: string // 能力优化的提示词模板
-  updatedAt: string             // 更新时间
 }
 
 // ========== Agentic 配置类型定义 ==========

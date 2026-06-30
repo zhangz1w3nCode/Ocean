@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { LLMProvider, CLIAgent, SettingsCategory, AbilityConfig, AgenticConfig, AgenticToolType } from '../types'
+import { LLMProvider, CLIAgent, SettingsCategory, AgenticConfig, AgenticToolType } from '../types'
 import {
   loadLLMProvidersFromFile,
   addLLMProviderToFile,
@@ -7,8 +7,6 @@ import {
   deleteLLMProviderFromFile,
   saveCLIAgents,
   loadCLIAgents,
-  saveAbilityConfig,
-  loadAbilityConfig,
   saveAgenticConfig,
   loadAgenticConfig,
   testLLMConnection,
@@ -44,11 +42,6 @@ interface SettingsState {
   setDefaultCLIAgent: (id: string) => void
   testCLIAgent: (id: string) => Promise<boolean>
   loadCLIAgents: () => Promise<void>
-
-  // 能力配置
-  abilityConfig: AbilityConfig
-  updateAbilityConfig: (config: Partial<AbilityConfig>) => void
-  loadAbilityConfig: () => Promise<void>
 
   // Agentic 配置
   agenticConfig: AgenticConfig
@@ -270,30 +263,6 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   loadCLIAgents: async () => {
     const agents = await loadCLIAgents()
     set({ cliAgents: agents })
-  },
-
-  // 能力配置
-  abilityConfig: {
-    promptTemplate: '',
-    optimizePromptTemplate: '',
-    updatedAt: new Date().toISOString()
-  },
-
-  updateAbilityConfig: (config) => {
-    set((state) => {
-      const newConfig = {
-        ...state.abilityConfig,
-        ...config,
-        updatedAt: new Date().toISOString()
-      }
-      saveAbilityConfig(newConfig)
-      return { abilityConfig: newConfig }
-    })
-  },
-
-  loadAbilityConfig: async () => {
-    const config = await loadAbilityConfig()
-    set({ abilityConfig: config })
   },
 
   // Agentic 配置

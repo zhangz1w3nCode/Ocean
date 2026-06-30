@@ -4,19 +4,17 @@ import { useSettingsStore } from '../stores/settingsStore'
 import { SettingsSidebar } from '../components/settings/SettingsSidebar'
 import { LLMSettings } from './LLMSettings'
 import { AgenticSettings } from '../components/settings/AgenticSettings'
-import { AbilitySettings } from '../components/settings/AbilitySettings'
 import { SkillSettings } from '../components/settings/SkillSettings'
 import { KnowledgeSettings } from '../components/settings/KnowledgeSettings'
 
 export const SettingsPage: FC = () => {
-  const { currentCategory, loadLLMProviders, loadAgenticConfig, loadAbilityConfig } = useSettingsStore()
+  const { currentCategory, loadLLMProviders, loadAgenticConfig } = useSettingsStore()
 
   // 页面加载时加载设置数据
   useEffect(() => {
     loadLLMProviders()
     loadAgenticConfig()
-    loadAbilityConfig()
-  }, [loadLLMProviders, loadAgenticConfig, loadAbilityConfig])
+  }, [loadLLMProviders, loadAgenticConfig])
 
   // 根据当前选中的分类渲染不同的设置内容
   const renderSettingsContent = () => {
@@ -25,8 +23,6 @@ export const SettingsPage: FC = () => {
         return <LLMSettings />
       case 'agentic':
         return <AgenticSettings />
-      case 'ability':
-        return <AbilitySettings />
       case 'skill':
         return <SkillSettings />
       case 'knowledge':

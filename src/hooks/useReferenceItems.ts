@@ -4,8 +4,6 @@ import { useAgentStore } from '../stores/agentStore'
 import { useNodeStore } from '../stores/nodeStore'
 import { useWorkflowStore } from '../stores/workflowStore'
 import { useResourceStore } from '../stores/resourceStore'
-import { useCommandStore } from '../stores/commandStore'
-import { useAbilityStore } from '../stores/abilityStore'
 import { useKnowledgeStore } from '../stores/knowledgeStore'
 import { useSkillStore } from '../stores/skillStore'
 
@@ -19,8 +17,6 @@ const libraryConfig: { category: ReferenceCategory; name: string; path: string }
   { category: 'nodes', name: '节点库', path: '.claude/nodes/' },
   { category: 'workflows', name: '工作流库', path: '.claude/workflows/' },
   { category: 'resources', name: '资源文件库', path: '.claude/resources/' },
-  { category: 'commands', name: '命令库', path: '.claude/commands/' },
-  { category: 'abilities', name: '能力库', path: '.claude/abilities/' },
   { category: 'skills', name: '技能库', path: '.claude/skills/' },
   { category: 'knowledges', name: '知识库', path: '.claude/knowledges/' },
 ]
@@ -32,8 +28,6 @@ export function useReferenceItems(options: UseReferenceItemsOptions = {}): Refer
   const nodeDefinitions = useNodeStore((state) => state.nodeDefinitions)
   const workflows = useWorkflowStore((state) => state.workflows)
   const resourceFiles = useResourceStore((state) => state.resourceFiles)
-  const commandFiles = useCommandStore((state) => state.commandFiles)
-  const abilityFiles = useAbilityStore((state) => state.abilityFiles)
   const skillFiles = useSkillStore((state) => state.skillFiles)
   const knowledgeFiles = useKnowledgeStore((state) => state.knowledgeFiles)
 
@@ -138,54 +132,6 @@ export function useReferenceItems(options: UseReferenceItemsOptions = {}): Refer
       }
     })
 
-    // 命令 - 先添加库引用，再添加具体文件
-    const commandLibrary = libraryConfig.find(c => c.category === 'commands')!
-    if (commandLibrary.path !== excludePath) {
-      items.push({
-        id: 'library-commands',
-        name: commandLibrary.name,
-        category: 'commands',
-        path: commandLibrary.path,
-        isLibrary: true,
-      })
-    }
-    commandFiles.forEach((command) => {
-      const path = `.claude/commands/${command.name}.md`
-      if (path !== excludePath) {
-        items.push({
-          id: command.id,
-          name: command.name,
-          category: 'commands',
-          path,
-          description: command.description,
-        })
-      }
-    })
-
-    // 能力 - 先添加库引用，再添加具体文件
-    const abilityLibrary = libraryConfig.find(c => c.category === 'abilities')!
-    if (abilityLibrary.path !== excludePath) {
-      items.push({
-        id: 'library-abilities',
-        name: abilityLibrary.name,
-        category: 'abilities',
-        path: abilityLibrary.path,
-        isLibrary: true,
-      })
-    }
-    abilityFiles.forEach((ability) => {
-      const path = `.claude/abilities/${ability.name}.md`
-      if (path !== excludePath) {
-        items.push({
-          id: ability.id,
-          name: ability.name,
-          category: 'abilities',
-          path,
-          description: ability.description,
-        })
-      }
-    })
-
     // 技能 - 先添加库引用，再添加具体文件
     // 注意：技能使用文件夹结构，路径为 .claude/skills/{name}/SKILL.md
     const skillLibrary = libraryConfig.find(c => c.category === 'skills')!
@@ -238,5 +184,5 @@ export function useReferenceItems(options: UseReferenceItemsOptions = {}): Refer
     })
 
     return items
-  }, [excludePath, agentFiles, nodeDefinitions, workflows, resourceFiles, commandFiles, abilityFiles, skillFiles, knowledgeFiles])
+  }, [excludePath, agentFiles, nodeDefinitions, workflows, resourceFiles, skillFiles, knowledgeFiles])
 }

@@ -85,24 +85,6 @@ const getAgentsDir = () => {
   return dataDir
 }
 
-// 命令文件存储目录（commands）
-const getCommandsDir = () => {
-  const dataDir = path.join(getProjectRoot(), '.claude', 'commands')
-  if (!fs.existsSync(dataDir)) {
-    fs.mkdirSync(dataDir, { recursive: true })
-  }
-  return dataDir
-}
-
-// 能力文件存储目录（abilities）
-const getAbilitiesDir = () => {
-  const dataDir = path.join(getProjectRoot(), '.claude', 'abilities')
-  if (!fs.existsSync(dataDir)) {
-    fs.mkdirSync(dataDir, { recursive: true })
-  }
-  return dataDir
-}
-
 // 知识库文件存储目录（knowledges）
 const getKnowledgesDir = () => {
   const dataDir = path.join(getProjectRoot(), '.claude', 'knowledges')
@@ -685,136 +667,6 @@ ipcMain.handle('load-all-agent-files', () => {
   }
 })
 
-// ===== 命令文件相关 IPC =====
-
-// 保存命令文件（Markdown格式，以名称命名）
-ipcMain.handle('save-command-file', (_, name, content) => {
-  try {
-    const commandsDir = getCommandsDir()
-    const fileName = `${name}.md`
-    const filePath = path.join(commandsDir, fileName)
-    fs.writeFileSync(filePath, content, 'utf-8')
-    return { success: true }
-  } catch (error) {
-    console.error('保存命令文件失败:', error)
-    return { success: false, error: String(error) }
-  }
-})
-
-// 加载单个命令文件内容
-ipcMain.handle('load-command-file', (_, name) => {
-  try {
-    const commandsDir = getCommandsDir()
-    const filePath = path.join(commandsDir, `${name}.md`)
-    if (!fs.existsSync(filePath)) {
-      return { success: true, content: null, mtime: null }
-    }
-    const content = fs.readFileSync(filePath, 'utf-8')
-    const stats = fs.statSync(filePath)
-    return { success: true, content, mtime: stats.mtime.toISOString() }
-  } catch (error) {
-    console.error('加载命令文件失败:', error)
-    return { success: false, error: String(error), content: null, mtime: null }
-  }
-})
-
-// 删除单个命令文件
-ipcMain.handle('delete-command-file', (_, name) => {
-  try {
-    const commandsDir = getCommandsDir()
-    const filePath = path.join(commandsDir, `${name}.md`)
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath)
-    }
-    return { success: true }
-  } catch (error) {
-    console.error('删除命令文件失败:', error)
-    return { success: false, error: String(error) }
-  }
-})
-
-// 加载所有命令文件列表（返回所有 .md 文件名）
-ipcMain.handle('load-all-command-files', () => {
-  try {
-    const commandsDir = getCommandsDir()
-    if (!fs.existsSync(commandsDir)) {
-      return { success: true, files: [] }
-    }
-    const files = fs.readdirSync(commandsDir)
-      .filter(file => file.endsWith('.md'))
-      .map(file => file)
-    return { success: true, files }
-  } catch (error) {
-    console.error('加载命令文件列表失败:', error)
-    return { success: false, error: String(error), files: [] }
-  }
-})
-
-// ===== 能力文件相关 IPC =====
-
-// 保存能力文件（Markdown格式，以名称命名）
-ipcMain.handle('save-ability-file', (_, name, content) => {
-  try {
-    const abilitiesDir = getAbilitiesDir()
-    const fileName = `${name}.md`
-    const filePath = path.join(abilitiesDir, fileName)
-    fs.writeFileSync(filePath, content, 'utf-8')
-    return { success: true }
-  } catch (error) {
-    console.error('保存能力文件失败:', error)
-    return { success: false, error: String(error) }
-  }
-})
-
-// 加载单个能力文件内容
-ipcMain.handle('load-ability-file', (_, name) => {
-  try {
-    const abilitiesDir = getAbilitiesDir()
-    const filePath = path.join(abilitiesDir, `${name}.md`)
-    if (!fs.existsSync(filePath)) {
-      return { success: true, content: null, mtime: null }
-    }
-    const content = fs.readFileSync(filePath, 'utf-8')
-    const stats = fs.statSync(filePath)
-    return { success: true, content, mtime: stats.mtime.toISOString() }
-  } catch (error) {
-    console.error('加载能力文件失败:', error)
-    return { success: false, error: String(error), content: null, mtime: null }
-  }
-})
-
-// 删除单个能力文件
-ipcMain.handle('delete-ability-file', (_, name) => {
-  try {
-    const abilitiesDir = getAbilitiesDir()
-    const filePath = path.join(abilitiesDir, `${name}.md`)
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath)
-    }
-    return { success: true }
-  } catch (error) {
-    console.error('删除能力文件失败:', error)
-    return { success: false, error: String(error) }
-  }
-})
-
-// 加载所有能力文件列表（返回所有 .md 文件名）
-ipcMain.handle('load-all-ability-files', () => {
-  try {
-    const abilitiesDir = getAbilitiesDir()
-    if (!fs.existsSync(abilitiesDir)) {
-      return { success: true, files: [] }
-    }
-    const files = fs.readdirSync(abilitiesDir)
-      .filter(file => file.endsWith('.md'))
-      .map(file => file)
-    return { success: true, files }
-  } catch (error) {
-    console.error('加载能力文件列表失败:', error)
-    return { success: false, error: String(error), files: [] }
-  }
-})
-
 // ===== 知识库文件相关 IPC =====
 
 // 需要排除的目录名（隐藏目录和版本控制目录）
@@ -1013,7 +865,7 @@ ipcMain.handle('init-project-dir', (_, projectPath) => {
 
     // 创建必要的子目录
     const claudeDir = path.join(projectPath, '.claude')
-    const subDirs = ['workflows', 'nodes', 'resources', 'agents', 'commands', 'abilities', 'knowledges']
+    const subDirs = ['workflows', 'nodes', 'resources', 'agents', 'knowledges']
 
     for (const subDir of subDirs) {
       const dirPath = path.join(claudeDir, subDir)
@@ -2173,69 +2025,6 @@ ipcMain.handle('abort-agent-loop', async () => {
     return { success: true, message: '已发送中止信号' }
   }
   return { success: false, message: '没有正在执行的 Agent Loop' }
-})
-
-// ===== 能力模块模板文件 IPC 通道 =====
-
-/**
- * 保存能力模板文件
- * @param templateType 模板类型: 'smart-create' | 'optimize'
- * @param content 模板内容
- */
-ipcMain.handle('save-ability-template-file', async (_, templateType, content) => {
-  try {
-    const projectRoot = getProjectRoot()
-    const templateDir = path.join(projectRoot, '.ocean', 'template', 'ability')
-
-    // 确保目录存在
-    if (!fs.existsSync(templateDir)) {
-      fs.mkdirSync(templateDir, { recursive: true })
-    }
-
-    const fileName = `${templateType}.json`
-    const filePath = path.join(templateDir, fileName)
-
-    // 保存为 JSON 文件
-    const templateData = {
-      content,
-      updatedAt: new Date().toISOString()
-    }
-    fs.writeFileSync(filePath, JSON.stringify(templateData, null, 2), 'utf-8')
-
-    console.log('保存能力模板文件成功:', filePath)
-    return { success: true }
-  } catch (error) {
-    console.error('保存能力模板文件失败:', error)
-    return { success: false, error: error.message }
-  }
-})
-
-/**
- * 加载能力模板文件
- * @param templateType 模板类型: 'smart-create' | 'optimize'
- */
-ipcMain.handle('load-ability-template-file', async (_, templateType) => {
-  try {
-    const projectRoot = getProjectRoot()
-    const fileName = `${templateType}.json`
-    const filePath = path.join(projectRoot, '.ocean', 'template', 'ability', fileName)
-
-    // 检查文件是否存在
-    if (!fs.existsSync(filePath)) {
-      console.log('能力模板文件不存在:', filePath)
-      return { success: false, content: null }
-    }
-
-    // 读取文件内容
-    const fileContent = fs.readFileSync(filePath, 'utf-8')
-    const templateData = JSON.parse(fileContent)
-
-    console.log('加载能力模板文件成功:', filePath)
-    return { success: true, content: templateData.content }
-  } catch (error) {
-    console.error('加载能力模板文件失败:', error)
-    return { success: false, error: error.message, content: null }
-  }
 })
 
 // ===== 技能模板文件相关 IPC =====
