@@ -120,7 +120,7 @@ description: 代码提交
 - 验证远程仓库是否同步成功
 
 ### 步骤10：持久化提交报告
-  - 如果在那么将git commit报告存储到本地位置就在`.task/`下的`git-commit-doc/GIT-COMMIT.md`
+  - 如果在那么将git commit报告存储到本地位置就在`.tasks/{task-name}/`下的`git-commit-doc/GIT-COMMIT.md`
   - 如果不在那么跳过该步骤
 
 ### 步骤11：展示提交报告
