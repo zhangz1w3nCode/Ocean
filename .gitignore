@@ -56,3 +56,6 @@ Thumbs.db
 
 # Ocean 运行时配置
 .ocean/
+.pi/
+.worktrees/
+.tasks/
