@@ -4,6 +4,7 @@ import { Wand2, ArrowLeft, Edit3, Eye, Type, FileText } from 'lucide-react'
 import { Modal, Button, MarkdownEditor, MarkdownRenderer, Input, Textarea } from '../ui'
 import { useToastStore } from '../../stores/toastStore'
 import { useSkillStore } from '../../stores/skillStore'
+import { getAssetDirName } from '../../utils/asset-config'
 
 interface ApplyModalProps {
   isOpen: boolean
@@ -36,7 +37,7 @@ export const ApplyModal: FC<ApplyModalProps> = ({
   const [skillContent, setSkillContent] = useState('')
 
   // 根据当前工作流名称生成工作流路径
-  const workflowPath = `.claude/workflows/${workflowName}/WORKFLOW.md`
+  const workflowPath = `${getAssetDirName()}/workflows/${workflowName}/WORKFLOW.md`
 
   // 生成默认技能内容
   const generateDefaultSkillContent = () => `# 用户需求

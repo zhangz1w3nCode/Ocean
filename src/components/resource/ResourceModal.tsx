@@ -4,6 +4,7 @@ import { Type, FileText, BookOpen, Wrench, MessageSquare, Eye, Edit3 } from 'luc
 import { Modal, Input, Textarea, Button, ConfirmModal, MarkdownEditor, MarkdownRenderer } from '../ui'
 import { useToastStore } from '../../stores/toastStore'
 import type { ResourceFile, ResourceFileType } from '../../types'
+import { getAssetDirName } from '../../utils/asset-config'
 
 interface ResourceModalProps {
   isOpen: boolean
@@ -35,7 +36,7 @@ export const ResourceModal: FC<ResourceModalProps> = ({
   const [content, setContent] = useState('')
 
   // 计算排除路径（编辑模式下排除当前资源文件）
-  const excludePath = mode === 'edit' && initialData ? `.claude/resources/${initialData.name}.md` : undefined
+  const excludePath = mode === 'edit' && initialData ? `${getAssetDirName()}/resources/${initialData.name}.md` : undefined
 
   // 编辑/预览模式
   const [viewMode, setViewMode] = useState<'edit' | 'preview'>('edit')

@@ -6,15 +6,17 @@ import { LLMSettings } from './LLMSettings'
 import { AgenticSettings } from '../components/settings/AgenticSettings'
 import { SkillSettings } from '../components/settings/SkillSettings'
 import { KnowledgeSettings } from '../components/settings/KnowledgeSettings'
+import { AssetSourceSettings } from '../components/settings/AssetSourceSettings'
 
 export const SettingsPage: FC = () => {
-  const { currentCategory, loadLLMProviders, loadAgenticConfig } = useSettingsStore()
+  const { currentCategory, loadLLMProviders, loadAgenticConfig, loadAssetRoot } = useSettingsStore()
 
   // 页面加载时加载设置数据
   useEffect(() => {
     loadLLMProviders()
     loadAgenticConfig()
-  }, [loadLLMProviders, loadAgenticConfig])
+    loadAssetRoot()
+  }, [loadLLMProviders, loadAgenticConfig, loadAssetRoot])
 
   // 根据当前选中的分类渲染不同的设置内容
   const renderSettingsContent = () => {
@@ -27,7 +29,8 @@ export const SettingsPage: FC = () => {
         return <SkillSettings />
       case 'knowledge':
         return <KnowledgeSettings />
-      default:
+      case 'asset':
+        return <AssetSourceSettings />
         return <LLMSettings />
     }
   }

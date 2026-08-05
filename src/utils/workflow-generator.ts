@@ -3,6 +3,8 @@
  * 使用 mermaid 流程图语法展示工作流
  */
 
+import { getAssetDirName } from './asset-config'
+
 export const generateWorkflowMdContent = (workflow: any, nodes: any[], edges: any[]): string => {
   // 构建节点和边的映射关系
   const nodeMap = new Map<string, any>()
@@ -159,10 +161,10 @@ export const generateWorkflowMdContent = (workflow: any, nodes: any[], edges: an
     if (!node) return ''
     if (node.type === 'business') {
       const nodeName = node.data?.nodeDefName || node.data?.label || node.id
-      return `.claude/nodes/${nodeName}.md`
+      return `${getAssetDirName()}/nodes/${nodeName}.md`
     } else if (node.type === 'local') {
       const nodeName = node.data?.localNodeName || node.data?.label || node.id
-      return `.claude/workflows/${workflow.name}/nodes/${nodeName}.md`
+      return `${getAssetDirName()}/workflows/${workflow.name}/nodes/${nodeName}.md`
     } else if (node.type === 'process') {
       return node.data?.content || ''
     }

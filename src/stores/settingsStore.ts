@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { LLMProvider, CLIAgent, SettingsCategory, AgenticConfig, AgenticToolType } from '../types'
+import { LLMProvider, CLIAgent, SettingsCategory, AgenticConfig, AgenticToolType, AssetRoot } from '../types'
 import {
   loadLLMProvidersFromFile,
   addLLMProviderToFile,
@@ -11,9 +11,12 @@ import {
   loadAgenticConfig,
   testLLMConnection,
   testExecutablePath,
-  isElectron
+  isElectron,
+  loadAssetRootFromProject,
+  saveAssetRootToProject
 } from '../utils/storage'
 
+import { updateCachedAssetRoot } from '../utils/asset-config'
 // 默认 Agentic 工具配置 - 使用 @mariozechner/pi-coding-agent 提供的工具
 const defaultAgenticTools: { type: AgenticToolType; description: string }[] = [
   { type: 'file-read', description: '读取指定路径的文件内容，支持分段读取' },
@@ -53,6 +56,11 @@ interface SettingsState {
   // 当前选中的设置分类
   currentCategory: SettingsCategory
   setCurrentCategory: (category: SettingsCategory) => void
+
+  // 资产加载来源
+  assetRoot: AssetRoot
+  setAssetRoot: (root: AssetRoot) => Promise<void>
+  loadAssetRoot: () => Promise<void>
 
   // 数据加载状态
   isLoaded: boolean
@@ -331,6 +339,16 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     })
   },
 
+  // 资产加载来源
+  assetRoot: 'claude',
+  setAssetRoot: async (root) => {
+    await saveAssetRootToProject(root)
+    set({ assetRoot: root })
+  },
+  loadAssetRoot: async () => {
+    const root = await loadAssetRootFromProject()
+    set({ assetRoot: root })
+  },
   // 当前选中的设置分类
   currentCategory: 'llm',
   setCurrentCategory: (category) => {

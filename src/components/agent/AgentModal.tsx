@@ -3,7 +3,9 @@ import { useState, useEffect, useRef } from 'react'
 import { Type, Bot, Cpu, Palette, Eye, Edit3, MessageSquare } from 'lucide-react'
 import { Modal, Input, Textarea, Button, ConfirmModal, MarkdownEditor, MarkdownRenderer } from '../ui'
 import { useToastStore } from '../../stores/toastStore'
+import { useSettingsStore } from '../../stores/settingsStore'
 import type { AgentFile } from '../../types'
+import { getAssetDirName } from '../../utils/asset-config'
 
 interface AgentModalProps {
   isOpen: boolean
@@ -40,6 +42,7 @@ export const AgentModal: FC<AgentModalProps> = ({
   existingNames = [],
 }) => {
   const { addToast } = useToastStore()
+  const isPi = useSettingsStore((state) => state.assetRoot) === 'pi'
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [model, setModel] = useState<string>('haiku')
@@ -234,6 +237,13 @@ export const AgentModal: FC<AgentModalProps> = ({
               <Cpu size={16} className="text-macos-text-secondary" />
               模型选择
             </label>
+            {isPi ? (
+              <Input
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+                placeholder="如 Alibaba/deepseek-v4-flash-0731"
+              />
+            ) : (
             <div className="flex items-center gap-2">
               {modelOptions.map((opt) => {
                 const isSelected = model === opt.id
@@ -242,14 +252,12 @@ export const AgentModal: FC<AgentModalProps> = ({
                     key={opt.id}
                     type="button"
                     onClick={() => setModel(opt.id)}
-                    className={`
-                      flex items-center gap-1.5 px-3 py-2 rounded-lg border text-sm transition-all
-                      ${
-                        isSelected
-                          ? 'border-gray-400 bg-gray-100 text-gray-800'
-                          : 'border-macos-border hover:border-gray-300 hover:bg-gray-50 text-macos-text-secondary'
-                      }
-                    `}
+                    className={[
+                      'flex items-center gap-1.5 px-3 py-2 rounded-lg border text-sm transition-all',
+                      isSelected
+                        ? 'border-gray-400 bg-gray-100 text-gray-800'
+                        : 'border-macos-border hover:border-gray-300 hover:bg-gray-50 text-macos-text-secondary'
+                    ].join(' ')}
                   >
                     <span
                       className="w-2 h-2 rounded-full"
@@ -260,9 +268,10 @@ export const AgentModal: FC<AgentModalProps> = ({
                 )
               })}
             </div>
+            )}
           </div>
-
-          {/* 颜色选择 */}
+          {/* 颜色选择（仅 Claude 模式） */}
+          {!isPi && (
           <div>
             <label className="flex items-center gap-2 text-sm font-medium text-macos-text mb-2">
               <Palette size={16} className="text-macos-text-secondary" />
@@ -295,6 +304,7 @@ export const AgentModal: FC<AgentModalProps> = ({
               })}
             </div>
           </div>
+          )}
 
           {/* 智能体内容 */}
           <div>
@@ -344,7 +354,7 @@ export const AgentModal: FC<AgentModalProps> = ({
                 rows={12}
                 invalid={invalidFields.has('content')}
                 className="font-mono text-sm"
-                excludePath={mode === 'edit' && initialData ? `.claude/agents/${initialData.name}.md` : undefined}
+                excludePath={mode === 'edit' && initialData ? `${getAssetDirName()}/agents/${initialData.name}.md` : undefined}
               />
             )}
 

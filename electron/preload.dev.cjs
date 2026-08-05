@@ -79,6 +79,10 @@ const electronAPI = {
   loadKnowledgeGraphConfig: () => ipcRenderer.invoke('load-knowledge-graph-config'),
   saveKnowledgeGraphConfig: (config) => ipcRenderer.invoke('save-knowledge-graph-config', config),
 
+  // 资产加载来源 API（存储在 .ocean/asset-root.json）
+  loadAssetRoot: () => ipcRenderer.invoke('load-asset-root'),
+  saveAssetRoot: (assetRoot) => ipcRenderer.invoke('save-asset-root', assetRoot),
+
   // 设置模块 API
   testLLMConnection: (provider) => ipcRenderer.invoke('test-llm-connection', provider),
   testExecutablePath: (filePath) => ipcRenderer.invoke('test-executable-path', filePath),

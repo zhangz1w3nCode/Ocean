@@ -1,6 +1,7 @@
 import type { FC } from 'react'
 import { Bot, Edit3, Cpu, Palette, FileText } from 'lucide-react'
 import { Modal, Button, MarkdownRenderer } from '../ui'
+import { useSettingsStore } from '../../stores/settingsStore'
 import type { AgentFile } from '../../types'
 
 interface AgentDetailModalProps {
@@ -33,10 +34,13 @@ export const AgentDetailModal: FC<AgentDetailModalProps> = ({
   onEdit,
   agent,
 }) => {
+  const isPi = useSettingsStore((state) => state.assetRoot) === 'pi'
   if (!agent) return null
 
   const colorCfg = colorConfig[agent.color] || colorConfig.blue
-  const modelCfg = modelConfig[agent.model] || modelConfig.haiku
+  const modelCfg = isPi
+    ? { label: agent.model, color: '#6B7280', bgColor: '#F3F4F6' }
+    : modelConfig[agent.model] || modelConfig.haiku
 
   // 格式化日期
   const formatDate = (dateStr: string) => {
@@ -137,39 +141,6 @@ export const AgentDetailModal: FC<AgentDetailModalProps> = ({
           </div>
         )}
 
-        {/* 模型和颜色信息 */}
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="flex items-center gap-2 text-sm font-medium text-macos-text mb-1.5">
-              <Cpu size={16} className="text-macos-text-secondary" />
-              模型
-            </label>
-            <div className="bg-gray-50 rounded-lg p-3 flex items-center h-11">
-              <span
-                className="inline-flex items-center px-2.5 py-1 rounded-lg text-sm font-medium"
-                style={{
-                  backgroundColor: modelCfg.bgColor,
-                  color: modelCfg.color,
-                }}
-              >
-                {modelCfg.label}
-              </span>
-            </div>
-          </div>
-          <div>
-            <label className="flex items-center gap-2 text-sm font-medium text-macos-text mb-1.5">
-              <Palette size={16} className="text-macos-text-secondary" />
-              图标颜色
-            </label>
-            <div className="bg-gray-50 rounded-lg p-3 flex items-center gap-2 h-11">
-              <span
-                className="w-4 h-4 rounded-full"
-                style={{ backgroundColor: colorCfg.color }}
-              />
-              <span className="text-sm text-macos-text-secondary">{colorCfg.label}</span>
-            </div>
-          </div>
-        </div>
 
         {/* 内容 */}
         <div>

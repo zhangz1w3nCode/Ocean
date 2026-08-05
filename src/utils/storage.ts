@@ -1,7 +1,9 @@
 // Electron 本地存储工具
 
-import type { AppConfig, KnowledgeGraphConfig, AgenticConfig, AgenticToolConfig, Usage, AgentLoopEvent } from '../types'
+import type { AppConfig, KnowledgeGraphConfig, AgenticConfig, AgenticToolConfig, Usage, AgentLoopEvent, AssetRoot } from '../types'
 import { generateWorkflowMdContent } from './workflow-generator'
+import { updateCachedAssetRoot, getAssetDirName } from './asset-config'
+import { parse, stringify } from 'yaml'
 
 // 重新导出工作流生成器函数
 export { generateWorkflowMdContent }
@@ -78,6 +80,9 @@ declare global {
       // 知识图谱配置 API（存储在 .ocean 目录）
       loadKnowledgeGraphConfig: () => Promise<{ success: boolean; config: KnowledgeGraphConfig | null; error?: string }>
       saveKnowledgeGraphConfig: (config: KnowledgeGraphConfig) => Promise<{ success: boolean; error?: string }>
+      // 资产加载来源 API（存储在 .ocean/asset-root.json）
+      loadAssetRoot: () => Promise<{ success: boolean; assetRoot: AssetRoot; error?: string }>
+      saveAssetRoot: (assetRoot: AssetRoot) => Promise<{ success: boolean; error?: string }>
       // 设置模块 API
       testLLMConnection: (provider: any) => Promise<{ success: boolean; status?: number; statusText?: string; body?: string; json?: any; usage?: Usage; error?: string }>
       testExecutablePath: (filePath: string) => Promise<{ success: boolean; exists?: boolean; isExecutable?: boolean; path?: string; error?: string }>
@@ -467,12 +472,12 @@ const buildWorkflowStages = (nodes: any[], edges: any[], workflowName: string): 
 
     if (targetNode.type === 'business') {
       // 业务节点：始终引用节点文件路径（使用相对路径）
-      branch.nodeRef = `.claude/nodes/${targetNode.data?.nodeDefName || targetNode.data?.label}.md`
+      branch.nodeRef = `${getAssetDirName()}/nodes/${targetNode.data?.nodeDefName || targetNode.data?.label}.md`
       branch.nodeName = targetNode.data?.nodeDefName || targetNode.data?.label
     } else if (targetNode.type === 'local') {
       // 局部节点：引用工作流nodes目录下的文件（使用相对路径）
       const localNodeName = targetNode.data?.localNodeName || targetNode.data?.label
-      branch.nodeRef = `.claude/workflows/${workflowName}/nodes/${localNodeName}.md`
+      branch.nodeRef = `${getAssetDirName()}/workflows/${workflowName}/nodes/${localNodeName}.md`
       branch.nodeName = localNodeName
     } else if (targetNode.type === 'process') {
       // 处理节点：直接存储节点内容（不引用节点文件）
@@ -580,12 +585,12 @@ const buildWorkflowStages = (nodes: any[], edges: any[], workflowName: string): 
       stage.condition = node.data?.condition
     } else if (node.type === 'business') {
       // 业务节点：始终引用节点文件路径（使用相对路径）
-      stage.nodeRef = `.claude/nodes/${node.data?.nodeDefName || node.data?.label}.md`
+      stage.nodeRef = `${getAssetDirName()}/nodes/${node.data?.nodeDefName || node.data?.label}.md`
       stage.nodeName = node.data?.nodeDefName || node.data?.label
     } else if (node.type === 'local') {
       // 局部节点：引用工作流nodes目录下的文件（使用相对路径）
       const localNodeName = node.data?.localNodeName || node.data?.label
-      stage.nodeRef = `.claude/workflows/${workflowName}/nodes/${localNodeName}.md`
+      stage.nodeRef = `${getAssetDirName()}/workflows/${workflowName}/nodes/${localNodeName}.md`
       stage.nodeName = localNodeName
     } else if (node.type === 'process') {
       // 处理节点：直接存储节点内容（不引用节点文件）
@@ -1038,7 +1043,7 @@ export const generateFlowJson = (nodes: any[], edges: any[]): string => {
       // 删除content字段，改为引用路径
       delete cleanNode.data.content
       // 添加节点引用路径
-      cleanNode.data.nodeRefPath = `.claude/nodes/${node.data.nodeDefName}.md`
+      cleanNode.data.nodeRefPath = `${getAssetDirName()}/nodes/${node.data.nodeDefName}.md`
     }
 
     return cleanNode
@@ -1781,42 +1786,48 @@ export const loadResourceFilesFromLocal = async (): Promise<any[]> => {
 // ===== 智能体文件存储方法 =====
 const AGENT_FILES_KEY = 'flow-editor-agent-files'
 
-// 解析 sub-agent 特殊的 frontmatter（包含 name, description, model, color）
+// 解析 sub-agent frontmatter（支持 Claude Code 和 Pi 两种格式）
 const parseSubAgentFrontmatter = (content: string): { metadata: Record<string, any>; body: string } => {
   const frontmatterRegex = /^---\n([\s\S]*?)\n---\n([\s\S]*)$/
   const match = content.match(frontmatterRegex)
 
   if (match) {
-    const frontmatterLines = match[1].split('\n')
-    const metadata: Record<string, any> = {}
-
-    for (const line of frontmatterLines) {
-      const colonIndex = line.indexOf(':')
-      if (colonIndex > 0) {
-        const key = line.slice(0, colonIndex).trim()
-        const value = line.slice(colonIndex + 1).trim()
-        metadata[key] = value
-      }
+    try {
+      const metadata = parse(match[1]) || {}
+      return { metadata, body: match[2] }
+    } catch (error) {
+      console.error('解析 frontmatter 失败:', error)
+      return { metadata: {}, body: match[2] }
     }
-
-    return { metadata, body: match[2] }
   }
 
   return { metadata: {}, body: content }
 }
 
-// 生成 sub-agent 格式的 Markdown
+// 生成 sub-agent Markdown（以原始 frontmatter 为基础，只更新被编辑的字段，不覆盖其他 key）
 const generateSubAgentMarkdown = (
-  metadata: { name: string; description: string; model: string; color: string },
-  content: string
+  edited: { name: string; description: string; model: string; color: string },
+  rawFrontmatter: Record<string, any> | undefined,
+  content: string,
+  isPi: boolean
 ): string => {
-  return `---
-name: ${metadata.name}
-description: ${metadata.description}
-model: ${metadata.model}
-color: ${metadata.color}
----
-${content}`
+  const frontmatter: Record<string, any> = { ...(rawFrontmatter || {}) }
+
+  // 只更新被编辑的字段
+  frontmatter.name = edited.name
+  frontmatter.description = edited.description
+  frontmatter.model = edited.model
+
+  // color：Claude 格式为必有字段（新建默认 blue）；Pi 格式不主动写，仅原有才更新
+  if (isPi) {
+    if ('color' in frontmatter) {
+      frontmatter.color = edited.color
+    }
+  } else {
+    frontmatter.color = edited.color || 'blue'
+  }
+
+  return `---\n${stringify(frontmatter).trim()}\n---\n${content}`
 }
 
 // 保存智能体文件列表（每个智能体保存为独立的 Markdown 文件）
@@ -1847,6 +1858,10 @@ export const saveAgentFilesToLocal = async (agents: any[]): Promise<boolean> => 
       }
     }
 
+    // 实时读取资产来源（不依赖缓存），保证序列化格式与当前项目配置一致
+    const freshRoot = await window.electronAPI!.loadAssetRoot()
+    const isPi = (freshRoot.success ? freshRoot.assetRoot : 'claude') === 'pi'
+
     // 保存每个智能体的 Markdown 文件
     for (const agent of agents) {
       const metadata = {
@@ -1855,7 +1870,7 @@ export const saveAgentFilesToLocal = async (agents: any[]): Promise<boolean> => 
         model: agent.model || 'haiku',
         color: agent.color || 'blue',
       }
-      const mdContent = generateSubAgentMarkdown(metadata, agent.content || '')
+      const mdContent = generateSubAgentMarkdown(metadata, agent.rawFrontmatter, agent.content || '', isPi)
 
       const saveResult = await window.electronAPI!.saveAgentFile(agent.name, mdContent)
       if (!saveResult.success) {
@@ -1904,6 +1919,7 @@ export const loadAgentFilesFromLocal = async (): Promise<any[]> => {
             description: metadata.description || '',
             model: metadata.model || 'haiku',
             color: metadata.color || 'blue',
+            rawFrontmatter: metadata,
             content: body,
             createdAt: contentResult.mtime || new Date().toISOString(),
             updatedAt: contentResult.mtime || new Date().toISOString(),
@@ -2255,6 +2271,7 @@ export const deleteKnowledgeFileFromLocal = async (filepath: string): Promise<bo
 }
 
 // ===== 应用配置存储方法 =====
+
 const APP_CONFIG_KEY = 'flow-editor-app-config'
 
 // 默认应用配置
@@ -2263,6 +2280,12 @@ const DEFAULT_APP_CONFIG: AppConfig = {
   lastProjectPath: null,
   maxRecentProjects: 10,
   sidebarNavOrder: ['agents', 'knowledges', 'workflows', 'nodes', 'resources'],
+  assetRoot: 'claude',
+}
+
+// 同步资产加载来源缓存
+const syncAssetRootCache = (config: AppConfig) => {
+  updateCachedAssetRoot(config.assetRoot ?? 'claude')
 }
 
 // 加载应用配置
@@ -2271,10 +2294,16 @@ export const loadAppConfig = async (): Promise<AppConfig> => {
     // 浏览器环境：使用 localStorage
     try {
       const data = localStorage.getItem(APP_CONFIG_KEY)
-      if (!data) return DEFAULT_APP_CONFIG
-      return JSON.parse(data)
+      if (!data) {
+        syncAssetRootCache(DEFAULT_APP_CONFIG)
+        return DEFAULT_APP_CONFIG
+      }
+      const parsed = JSON.parse(data)
+      syncAssetRootCache(parsed)
+      return parsed
     } catch (error) {
       console.error('从 localStorage 加载应用配置失败:', error)
+      syncAssetRootCache(DEFAULT_APP_CONFIG)
       return DEFAULT_APP_CONFIG
     }
   }
@@ -2283,11 +2312,14 @@ export const loadAppConfig = async (): Promise<AppConfig> => {
   try {
     const result = await window.electronAPI!.loadAppConfig()
     if (result.success) {
+      syncAssetRootCache(result.config)
       return result.config
     }
+    syncAssetRootCache(DEFAULT_APP_CONFIG)
     return DEFAULT_APP_CONFIG
   } catch (error) {
     console.error('加载应用配置失败:', error)
+    syncAssetRootCache(DEFAULT_APP_CONFIG)
     return DEFAULT_APP_CONFIG
   }
 }
@@ -2912,7 +2944,7 @@ const DEFAULT_AGENTIC_OPTIMIZE_PROMPT_TEMPLATE = `请帮我优化现有的能力
 ## 任务要求
 
 1. 使用 read 工具读取当前能力文档
-2. 读取 .claude/abilities/ 目录下的其他能力文档作为参考
+2. 读取资产根目录 abilities/ 目录下的其他能力文档作为参考
 3. 根据优化目标，改进能力文档的内容
 4. 使用 edit 工具更新文件内容
 
@@ -3713,4 +3745,38 @@ export const saveKnowledgeTemplateFile = async (templateType: 'agentic-create', 
  */
 export const getDefaultKnowledgeAgenticCreatePromptTemplate = (): string => {
   return DEFAULT_KNOWLEDGE_AGENTIC_CREATE_PROMPT_TEMPLATE
+}
+
+// ===== 资产加载来源（项目级 .ocean/asset-root.json） =====
+
+export const loadAssetRootFromProject = async (): Promise<AssetRoot> => {
+  if (!isElectron()) {
+    return 'claude'
+  }
+  try {
+    const result = await window.electronAPI!.loadAssetRoot()
+    if (result.success) {
+      updateCachedAssetRoot(result.assetRoot)
+      return result.assetRoot
+    }
+  } catch (error) {
+    console.error('加载资产加载来源失败:', error)
+  }
+  return 'claude'
+}
+
+export const saveAssetRootToProject = async (assetRoot: AssetRoot): Promise<boolean> => {
+  if (!isElectron()) {
+    return false
+  }
+  try {
+    const result = await window.electronAPI!.saveAssetRoot(assetRoot)
+    if (result.success) {
+      updateCachedAssetRoot(assetRoot)
+      return true
+    }
+  } catch (error) {
+    console.error('保存资产加载来源失败:', error)
+  }
+  return false
 }

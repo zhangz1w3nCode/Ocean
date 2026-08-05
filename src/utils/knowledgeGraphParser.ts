@@ -12,7 +12,7 @@
  * - [[知识A.md|引用]] - 带关系名称
  * - [[知识A.md]] - 不带关系名称，默认"关联"
  * - [[./知识A.md|引用]] - 带相对路径前缀
- * - [[.claude/knowledges/知识A.md|引用]] - 带完整路径前缀
+ * - [[{资产根目录}/knowledges/知识A.md|引用]] - 带完整路径前缀
  * - [[`xxx.md`|引用]] - 路径包含反引号的混合格式
  */
 const WIKI_LINK_REGEX = /\[\[([^\]|]+\.(?:md|mdx)`?)(?:\|([^\]]+))?\]\]/g
@@ -32,8 +32,8 @@ function cleanBackticks(path: string): string {
  * 支持以下情况：
  * - `知识A.md` - 简单文件名
  * - `./知识A.md` - 相对路径
- * - `.claude/knowledges/知识A.md` - 完整路径
- * - `.claude/agents/xxx.md` - 其他业务模块引用（知识图谱只处理 knowledges 目录）
+ * - `{资产根目录}/knowledges/知识A.md` - 完整路径（.claude/ 或 .pi/）
+ * - `{资产根目录}/agents/xxx.md` - 其他业务模块引用（知识图谱只处理 knowledges 目录）
  */
 const BACKTICK_LINK_REGEX = /`([^`]+\.(?:md|mdx))`/g
 
@@ -51,7 +51,7 @@ export interface KnowledgeLink {
 
 /**
  * 从链接路径中提取知识目标名称（支持子目录路径）
- * - .claude/knowledges/backend/api.md -> backend/api
+ * - {资产根目录}/knowledges/backend/api.md -> backend/api
  * - ./backend/api.md -> backend/api
  * - backend/api.md -> backend/api
  * - api.md -> api
@@ -59,7 +59,7 @@ export interface KnowledgeLink {
 const extractTargetName = (cleanedPath: string): string => {
   const pathWithoutExt = cleanedPath.replace(/\.(md|mdx)$/, '')
 
-  // 处理完整路径：.claude/knowledges/backend/api -> backend/api
+  // 处理完整路径：{资产根目录}/knowledges/backend/api -> backend/api
   const knowledgesIdx = pathWithoutExt.indexOf('/knowledges/')
   if (knowledgesIdx >= 0) {
     return pathWithoutExt.substring(knowledgesIdx + '/knowledges/'.length)
@@ -160,7 +160,7 @@ export function parseKnowledgeLinks(content: string): KnowledgeLink[] {
 
 /**
  * 从链接路径中提取知识名称（支持子目录路径）
- * @param linkPath 链接路径，如 `./知识A.md`、`.claude/knowledges/知识A.md` 或 `backend/api.md`
+ * @param linkPath 链接路径，如 `./知识A.md`、`{资产根目录}/knowledges/知识A.md` 或 `backend/api.md`
  * @returns 知识名称（含子目录路径，如 "backend/api" 或 "知识A"）
  */
 export function extractKnowledgeName(linkPath: string): string {

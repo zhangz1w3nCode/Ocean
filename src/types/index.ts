@@ -26,6 +26,9 @@ export interface KnowledgeGraphConfig {
   chargeStrength: number     // 节点互斥力 (0-200)
 }
 
+// 资产加载来源（加载根目录）
+export type AssetRoot = 'claude' | 'pi'
+
 // 应用配置
 export interface AppConfig {
   recentProjects: Project[]     // 最近打开的项目列表
@@ -33,6 +36,7 @@ export interface AppConfig {
   maxRecentProjects: number     // 最大最近项目数
   sidebarNavOrder?: string[]    // 侧边栏导航项顺序（存储 PageType 的 id）
   knowledgeGraphConfig?: KnowledgeGraphConfig  // 知识图谱配置
+  assetRoot?: AssetRoot          // 资产加载来源（claude=加载 .claude/，pi=加载 .pi/）
 }
 
 // 导入 React Flow 类型用于 Workflow
@@ -50,7 +54,7 @@ export interface Workflow {
   nodeCount?: number
   thumbnail?: string
   // 新增字段：支持文件夹结构
-  folderPath?: string // 工作流文件夹路径（相对于.claude/workflows/）
+  folderPath?: string // 工作流文件夹路径（相对于资产根目录 workflows/）
   hasMetadata?: boolean // 是否有meta-data目录
   inputs?: string[] // 输入物料
   outputs?: string[] // 输出产物
@@ -151,12 +155,12 @@ export interface AgentFile {
   type: AgentFileType // 固定为 'sub-agent'
   description: string // 从 frontmatter 的 description 字段读取
   model: string // 从 frontmatter 的 model 字段读取
-  color: string // 从 frontmatter 的 color 字段读取
+  color: string // 从 frontmatter 的 color 字段读取（Pi 格式无此字段，默认 blue）
+  rawFrontmatter?: Record<string, any> // 原始 frontmatter 全量快照（保存时以它为基础只更新编辑过的字段，不覆盖未编辑的 key）
   content: string // frontmatter 后的内容
   createdAt: string
   updatedAt: string // 从文件系统获取
 }
-
 // 知识库文件类型
 export type KnowledgeFileType = 'knowledge'
 
@@ -182,7 +186,7 @@ export interface ReferenceItem {
   id: string
   name: string
   category: ReferenceCategory
-  path: string  // 相对路径，如 ".claude/agents/智能体名.md" 或 ".claude/agents/"
+  path: string  // 相对路径，如 ".claude/agents/智能体名.md"、".pi/agents/智能体名.md" 或 "agents/"
   description?: string
   isLibrary?: boolean  // 是否引用整个库
 }
@@ -255,7 +259,7 @@ export interface CLIAgent {
 }
 
 // 设置分类
-export type SettingsCategory = 'llm' | 'agentic' | 'skill' | 'knowledge'
+export type SettingsCategory = 'llm' | 'agentic' | 'skill' | 'knowledge' | 'asset'
 
 // 设置项接口
 export interface SettingsItem {
