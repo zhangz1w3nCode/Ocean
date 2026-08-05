@@ -60,3 +60,6 @@ Thumbs.db
 .worktrees/
 .tasks/
 .claude/
+.experiences/
+.timelines/
+.knowledges/
