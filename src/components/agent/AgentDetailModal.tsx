@@ -1,5 +1,5 @@
 import type { FC } from 'react'
-import { Bot, Edit3, Cpu, Palette, FileText } from 'lucide-react'
+import { Bot, Edit3, FileText } from 'lucide-react'
 import { Modal, Button, MarkdownRenderer } from '../ui'
 import { useSettingsStore } from '../../stores/settingsStore'
 import type { AgentFile } from '../../types'
