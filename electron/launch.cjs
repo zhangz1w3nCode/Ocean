@@ -885,11 +885,11 @@ ipcMain.handle('init-project-dir', (_, projectPath) => {
     setProjectPath(projectPath)
 
     // 创建必要的子目录
-    const claudeDir = path.join(projectPath, getAssetDir())
+    const assetDir = path.join(projectPath, getAssetDir())
     const subDirs = ['workflows', 'nodes', 'resources', 'agents', 'knowledges']
 
     for (const subDir of subDirs) {
-      const dirPath = path.join(claudeDir, subDir)
+      const dirPath = path.join(assetDir, subDir)
       if (!fs.existsSync(dirPath)) {
         fs.mkdirSync(dirPath, { recursive: true })
       }
