@@ -1,5 +1,5 @@
 import type { FC } from 'react'
-import { Cpu, Bot, Wand2, BookOpen, LucideIcon } from 'lucide-react'
+import { Cpu, Bot, Wand2, BookOpen, Layers, LucideIcon } from 'lucide-react'
 import { useSettingsStore } from '../../stores/settingsStore'
 import type { SettingsCategory } from '../../types'
 
@@ -11,7 +11,7 @@ interface SettingsItemProps {
   onClick: () => void
 }
 
-const SettingsItem: FC<SettingsItemProps> = ({ id: label, icon: Icon, isActive, onClick }) => {
+const SettingsItem: FC<SettingsItemProps> = ({ label, icon: Icon, isActive, onClick }) => {
   return (
     <button
       onClick={onClick}
@@ -61,6 +61,11 @@ export const SettingsSidebar: FC = () => {
       id: 'knowledge' as SettingsCategory,
       label: '知识',
       icon: BookOpen,
+    },
+    {
+      id: 'asset' as SettingsCategory,
+      label: '资产来源',
+      icon: Layers,
     }
   ]
 

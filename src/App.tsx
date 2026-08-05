@@ -12,6 +12,7 @@ import { useResourceStore } from './stores/resourceStore'
 import { useAgentStore } from './stores/agentStore'
 import { useKnowledgeStore } from './stores/knowledgeStore'
 import { useSkillStore } from './stores/skillStore'
+import { useSettingsStore } from './stores/settingsStore'
 
 const App: FC = () => {
   const { loadNodeDefinitions } = useNodeStore()
@@ -22,6 +23,7 @@ const App: FC = () => {
   const { loadSkillFiles } = useSkillStore()
   const { isProjectLoaded, loadAppConfigOnStart, currentProject, setCurrentProject } = useProjectStore()
   const { isSwitchingProject, finishSwitchingProject } = useAppStore()
+  const { loadAssetRoot } = useSettingsStore()
 
   // 应用启动时加载应用配置
   useEffect(() => {
@@ -31,6 +33,7 @@ const App: FC = () => {
   // 项目加载后加载数据
   useEffect(() => {
     if (isProjectLoaded && currentProject) {
+      loadAssetRoot()
       loadNodeDefinitions()
       loadWorkflows()
       loadResourceFiles()
@@ -39,7 +42,7 @@ const App: FC = () => {
       loadSkillFiles()
       finishSwitchingProject()
     }
-  }, [isProjectLoaded, currentProject, loadNodeDefinitions, loadWorkflows, loadResourceFiles, loadAgentFiles, loadKnowledgeFiles, loadSkillFiles, finishSwitchingProject])
+  }, [isProjectLoaded, currentProject, loadAssetRoot, loadNodeDefinitions, loadWorkflows, loadResourceFiles, loadAgentFiles, loadKnowledgeFiles, loadSkillFiles, finishSwitchingProject])
 
   // 切换项目时的处理
   useEffect(() => {

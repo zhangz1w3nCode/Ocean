@@ -10,6 +10,7 @@ import { isElectron, loadKnowledgeTemplateFile } from '../../utils/storage'
 import { useAgentLoop } from '../../hooks/useAgentLoop'
 import { AgentLoopLogger } from '../agent/AgentLoopLogger'
 import type { KnowledgeFile } from '../../types'
+import { getAssetDirName } from '../../utils/asset-config'
 
 // 创建模式类型
 type CreateMode = 'select' | 'manual' | 'agentic'
@@ -58,7 +59,7 @@ export const KnowledgeModal: FC<KnowledgeModalProps> = ({
   const tagInputRef = useRef<HTMLInputElement>(null)
 
   // 计算排除路径（编辑模式下排除当前知识库）
-  const excludePath = mode === 'edit' && initialData ? `.claude/knowledges/${initialData.name}.md` : undefined
+  const excludePath = mode === 'edit' && initialData ? `${getAssetDirName()}/knowledges/${initialData.name}.md` : undefined
 
   // 编辑/预览模式
   const [viewMode, setViewMode] = useState<'edit' | 'preview'>('edit')

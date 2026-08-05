@@ -28,7 +28,9 @@
       "target": [
         {
           "target": "dmg",
-          "arch": ["arm64"]
+          "arch": [
+            "arm64"
+          ]
         }
       ]
     },
@@ -50,7 +52,9 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ]
     }
@@ -90,6 +94,7 @@
     "rehype-highlight": "^7.0.2",
     "rehype-raw": "^7.0.0",
     "remark-gfm": "^4.0.1",
+    "yaml": "^2.9.0",
     "zustand": "^5.0.11"
   },
   "devDependencies": {
@@ -109,5 +114,12 @@
     "typescript": "^5.9.3",
     "vite": "^5.4.21",
     "wait-on": "^9.0.4"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "electron",
+      "koffi",
+      "protobufjs"
+    ]
   }
 }

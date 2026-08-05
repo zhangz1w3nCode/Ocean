@@ -13,15 +13,36 @@ const getAppConfigPath = () => {
   return path.join(userDir, 'flow-editor-config.json')
 }
 
+// 获取资产加载来源（从项目级 .ocean/asset-root.json 读取，默认 claude）
+const getAssetRoot = () => {
+  try {
+    const projectRoot = getProjectRoot()
+    const configPath = path.join(projectRoot, '.ocean', 'asset-root.json')
+    if (fs.existsSync(configPath)) {
+      const content = fs.readFileSync(configPath, 'utf-8')
+      const config = JSON.parse(content)
+      if (config.assetRoot === 'pi') return 'pi'
+    }
+  } catch (error) {
+    console.error('读取资产加载来源失败:', error)
+  }
+  return 'claude'
+}
+
+// 获取资产根目录名（.claude 或 .pi）
+const getAssetDir = () => {
+  return getAssetRoot() === 'pi' ? '.pi' : '.claude'
+}
+
 // 生成路径 hash 作为项目 ID
 const generateProjectId = (projectPath) => {
   return crypto.createHash('md5').update(projectPath).digest('hex').slice(0, 16)
 }
 
-// 数据迁移：.workflow-maker -> .claude
+// 数据迁移：.workflow-maker -> 当前资产根目录(.claude/.pi)
 const migrateDataDir = (projectPath) => {
   const oldDir = path.join(projectPath, '.workflow-maker')
-  const newDir = path.join(projectPath, '.claude')
+  const newDir = path.join(projectPath, getAssetDir())
 
   if (fs.existsSync(oldDir) && !fs.existsSync(newDir)) {
     try {
@@ -51,7 +72,7 @@ const setProjectPath = (projectPath) => {
 
 // 工作流数据存储目录
 const getWorkflowsDir = () => {
-  const dataDir = path.join(getProjectRoot(), '.claude', 'workflows')
+  const dataDir = path.join(getProjectRoot(), getAssetDir(), 'workflows')
   if (!fs.existsSync(dataDir)) {
     fs.mkdirSync(dataDir, { recursive: true })
   }
@@ -60,7 +81,7 @@ const getWorkflowsDir = () => {
 
 // 节点数据存储目录
 const getNodesDir = () => {
-  const dataDir = path.join(getProjectRoot(), '.claude', 'nodes')
+  const dataDir = path.join(getProjectRoot(), getAssetDir(), 'nodes')
   if (!fs.existsSync(dataDir)) {
     fs.mkdirSync(dataDir, { recursive: true })
   }
@@ -69,7 +90,7 @@ const getNodesDir = () => {
 
 // 资源文件存储目录
 const getResourcesDir = () => {
-  const dataDir = path.join(getProjectRoot(), '.claude', 'resources')
+  const dataDir = path.join(getProjectRoot(), getAssetDir(), 'resources')
   if (!fs.existsSync(dataDir)) {
     fs.mkdirSync(dataDir, { recursive: true })
   }
@@ -78,7 +99,7 @@ const getResourcesDir = () => {
 
 // 工具文件存储目录（agents）
 const getAgentsDir = () => {
-  const dataDir = path.join(getProjectRoot(), '.claude', 'agents')
+  const dataDir = path.join(getProjectRoot(), getAssetDir(), 'agents')
   if (!fs.existsSync(dataDir)) {
     fs.mkdirSync(dataDir, { recursive: true })
   }
@@ -87,7 +108,7 @@ const getAgentsDir = () => {
 
 // 知识库文件存储目录（knowledges）
 const getKnowledgesDir = () => {
-  const dataDir = path.join(getProjectRoot(), '.claude', 'knowledges')
+  const dataDir = path.join(getProjectRoot(), getAssetDir(), 'knowledges')
   if (!fs.existsSync(dataDir)) {
     fs.mkdirSync(dataDir, { recursive: true })
   }
@@ -96,7 +117,7 @@ const getKnowledgesDir = () => {
 
 // 技能文件存储目录（skills）
 const getSkillsDir = () => {
-  const dataDir = path.join(getProjectRoot(), '.claude', 'skills')
+  const dataDir = path.join(getProjectRoot(), getAssetDir(), 'skills')
   if (!fs.existsSync(dataDir)) {
     fs.mkdirSync(dataDir, { recursive: true })
   }
@@ -864,7 +885,7 @@ ipcMain.handle('init-project-dir', (_, projectPath) => {
     setProjectPath(projectPath)
 
     // 创建必要的子目录
-    const claudeDir = path.join(projectPath, '.claude')
+    const claudeDir = path.join(projectPath, getAssetDir())
     const subDirs = ['workflows', 'nodes', 'resources', 'agents', 'knowledges']
 
     for (const subDir of subDirs) {
@@ -953,6 +974,44 @@ ipcMain.handle('save-knowledge-graph-config', (_, config) => {
     return { success: true }
   } catch (error) {
     console.error('保存知识图谱配置失败:', error)
+    return { success: false, error: String(error) }
+  }
+})
+
+// 加载资产加载来源（项目级）
+ipcMain.handle('load-asset-root', () => {
+  try {
+    if (!currentProjectPath) {
+      return { success: true, assetRoot: 'claude' }
+    }
+    const configPath = path.join(currentProjectPath, '.ocean', 'asset-root.json')
+    if (!fs.existsSync(configPath)) {
+      return { success: true, assetRoot: 'claude' }
+    }
+    const content = fs.readFileSync(configPath, 'utf-8')
+    const config = JSON.parse(content)
+    return { success: true, assetRoot: config.assetRoot || 'claude' }
+  } catch (error) {
+    console.error('加载资产加载来源失败:', error)
+    return { success: true, assetRoot: 'claude' }
+  }
+})
+
+// 保存资产加载来源（项目级）
+ipcMain.handle('save-asset-root', (_, assetRoot) => {
+  try {
+    if (!currentProjectPath) {
+      return { success: false, error: '未设置项目路径' }
+    }
+    const oceanDir = path.join(currentProjectPath, '.ocean')
+    if (!fs.existsSync(oceanDir)) {
+      fs.mkdirSync(oceanDir, { recursive: true })
+    }
+    const configPath = path.join(oceanDir, 'asset-root.json')
+    fs.writeFileSync(configPath, JSON.stringify({ assetRoot }, null, 2), 'utf-8')
+    return { success: true }
+  } catch (error) {
+    console.error('保存资产加载来源失败:', error)
     return { success: false, error: String(error) }
   }
 })

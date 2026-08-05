@@ -22,13 +22,13 @@ export function extractDisplayName(path: string): string {
   // 清理可能存在的反引号
   const cleanedPath = path.replace(/^`+|`+$/g, '')
 
-  // 特殊处理：技能路径 .claude/skills/{name}/SKILL.md
+  // 特殊处理：技能路径 {资产根目录}/skills/{name}/SKILL.md
   if (cleanedPath.includes('/skills/')) {
     const match = cleanedPath.match(/\/skills\/([^/]+)\/SKILL\.md$/i)
     if (match) return match[1]
   }
 
-  // 特殊处理：工作流路径 .claude/workflows/{name}/WORKFLOW.md
+  // 特殊处理：工作流路径 {资产根目录}/workflows/{name}/WORKFLOW.md
   if (cleanedPath.includes('/workflows/')) {
     const match = cleanedPath.match(/\/workflows\/([^/]+)\/WORKFLOW\.md$/i)
     if (match) return match[1]

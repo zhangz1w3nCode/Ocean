@@ -18,7 +18,7 @@ interface MarkdownEditorProps extends Omit<TextareaHTMLAttributes<HTMLTextAreaEl
   label?: string
   error?: string
   invalid?: boolean
-  excludePath?: string  // 排除特定路径（如 ".claude/agents/xxx.md"）
+  excludePath?: string  // 排除特定路径（如 ".claude/agents/xxx.md" 或 ".pi/agents/xxx.md"）
   value?: string
   onChange?: (e: React.ChangeEvent<HTMLTextAreaElement>) => void
 }
