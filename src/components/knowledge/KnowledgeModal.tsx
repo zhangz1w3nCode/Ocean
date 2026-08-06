@@ -10,7 +10,6 @@ import { isElectron, loadKnowledgeTemplateFile } from '../../utils/storage'
 import { useAgentLoop } from '../../hooks/useAgentLoop'
 import { AgentLoopLogger } from '../agent/AgentLoopLogger'
 import type { KnowledgeFile } from '../../types'
-import { getAssetDirName } from '../../utils/asset-config'
 
 // 创建模式类型
 type CreateMode = 'select' | 'manual' | 'agentic'
@@ -58,8 +57,8 @@ export const KnowledgeModal: FC<KnowledgeModalProps> = ({
   const [newTagInput, setNewTagInput] = useState('')
   const tagInputRef = useRef<HTMLInputElement>(null)
 
-  // 计算排除路径（编辑模式下排除当前知识库）
-  const excludePath = mode === 'edit' && initialData ? `${getAssetDirName()}/knowledges/${initialData.name}.md` : undefined
+  // 计算排除路径（编辑模式下排除当前知识库；知识库跨来源共享，固定在项目根 .knowledges）
+  const excludePath = mode === 'edit' && initialData ? `.knowledges/${initialData.filepath || initialData.name}.md` : undefined
 
   // 编辑/预览模式
   const [viewMode, setViewMode] = useState<'edit' | 'preview'>('edit')
@@ -428,7 +427,7 @@ export const KnowledgeModal: FC<KnowledgeModalProps> = ({
           描述你想要创建的知识
         </label>
         <Textarea
-          placeholder="例如：帮我创建一个代码规范的知识文档，包含命名规范、代码风格、注释规范等内容...&#10;&#10;Agentic 模式会：&#10;1. 首先查看 .claude/knowledges/ 目录下已有的知识文档&#10;2. 参考已有文档的格式和风格&#10;3. 根据你的描述创建新的知识文档"
+          placeholder="例如：帮我创建一个代码规范的知识文档，包含命名规范、代码风格、注释规范等内容...&#10;&#10;Agentic 模式会：&#10;1. 首先查看 .knowledges/ 目录下已有的知识文档&#10;2. 参考已有文档的格式和风格&#10;3. 根据你的描述创建新的知识文档"
           value={userDescription}
           onChange={(e) => {
             setUserDescription(e.target.value)

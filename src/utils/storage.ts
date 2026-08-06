@@ -1956,54 +1956,62 @@ export const deleteAgentFileFromLocal = async (name: string): Promise<boolean> =
 // ===== 知识库文件存储方法 =====
 const KNOWLEDGE_FILES_KEY = 'flow-editor-knowledge-files'
 
-// 解析知识库 frontmatter（包含 name, description, tags）
+// 解析知识库 frontmatter（yaml 解析，保留全部字段供合并写回）
 const parseKnowledgeFrontmatter = (content: string): { metadata: Record<string, any>; body: string } => {
   const frontmatterRegex = /^---\n([\s\S]*?)\n---\n([\s\S]*)$/
   const match = content.match(frontmatterRegex)
 
   if (match) {
-    const frontmatterLines = match[1].split('\n')
-    const metadata: Record<string, any> = {}
-
-    for (const line of frontmatterLines) {
-      const colonIndex = line.indexOf(':')
-      if (colonIndex > 0) {
-        const key = line.slice(0, colonIndex).trim()
-        const value = line.slice(colonIndex + 1).trim()
-        // 解析数组格式 [tag1, tag2]
-        if (value.startsWith('[') && value.endsWith(']')) {
-          metadata[key] = value
-            .slice(1, -1)
-            .split(',')
-            .map((item: string) => item.trim())
-            .filter((item: string) => item)
-        } else {
-          metadata[key] = value
-        }
-      }
+    try {
+      const metadata = parse(match[1]) || {}
+      return { metadata, body: match[2] }
+    } catch (error) {
+      console.error('解析知识 frontmatter 失败:', error)
+      return { metadata: {}, body: match[2] }
     }
-
-    return { metadata, body: match[2] }
   }
 
   return { metadata: {}, body: content }
 }
 
-// 生成知识库格式的 Markdown
+// 生成知识库格式的 Markdown（以原始 frontmatter 为基础合并，只更新本次提供的字段，保留未知字段）
 const generateKnowledgeMarkdown = (
   metadata: { name: string; description: string; tags: string[]; category?: string },
-  content: string
+  content: string,
+  rawFrontmatter?: Record<string, any>
 ): string => {
-  const tagsStr = metadata.tags && metadata.tags.length > 0
-    ? `tags: [${metadata.tags.join(', ')}]`
-    : ''
-  const categoryStr = metadata.category ? `category: ${metadata.category}` : ''
+  const frontmatter: Record<string, any> = { ...(rawFrontmatter || {}) }
 
-  return `---
-name: ${metadata.name}
-description: ${metadata.description}${tagsStr ? `\n${tagsStr}` : ''}${categoryStr ? `\n${categoryStr}` : ''}
----
-${content}`
+  // name 为必有字段，始终更新
+  frontmatter.name = metadata.name
+
+  // description：区分「用户显式编辑」与「summary 回退显示」
+  // 1) 原 frontmatter 已有 description 字段：非空则更新；为空则删除键（用户清空了描述，修复不可清空问题）
+  // 2) 原 frontmatter 无 description（可能只有 summary）：仅写入用户显式输入的非空新值，
+  //    来自 summary 回退显示且未改动的值不写入，避免污染使用 summary 约定的卡片
+  if ('description' in frontmatter) {
+    if (metadata.description) {
+      frontmatter.description = metadata.description
+    } else {
+      delete frontmatter.description
+    }
+  } else if (metadata.description) {
+    const cameFromSummaryFallback = frontmatter.summary === metadata.description
+    if (!cameFromSummaryFallback) {
+      frontmatter.description = metadata.description
+    }
+  }
+
+  // tags：非空则更新；原 frontmatter 有 tags 而本次清空则删除键（修复无法移除全部标签问题）
+  if (metadata.tags && metadata.tags.length > 0) {
+    frontmatter.tags = metadata.tags
+  } else if ('tags' in frontmatter) {
+    delete frontmatter.tags
+  }
+
+  // category 不写入 frontmatter：分类以文件所在子目录为事实来源
+
+  return `---\n${stringify(frontmatter).trim()}\n---\n${content}`
 }
 
 // 保存知识库文件列表（每个知识库保存为独立的 Markdown 文件，支持子目录）
@@ -2045,7 +2053,7 @@ export const saveKnowledgeFilesToLocal = async (knowledges: any[]): Promise<bool
         tags: knowledge.tags || [],
         category: knowledge.category || '',
       }
-      const mdContent = generateKnowledgeMarkdown(metadata, knowledge.content || '')
+      const mdContent = generateKnowledgeMarkdown(metadata, knowledge.content || '', knowledge.rawFrontmatter)
 
       // 根据是否有 category 决定存储路径
       const savePath = knowledge.category
@@ -2089,7 +2097,7 @@ export const saveSingleKnowledgeFileToLocal = async (knowledge: any): Promise<bo
       tags: knowledge.tags || [],
       category: knowledge.category || '',
     }
-    const mdContent = generateKnowledgeMarkdown(metadata, knowledge.content || '')
+    const mdContent = generateKnowledgeMarkdown(metadata, knowledge.content || '', knowledge.rawFrontmatter)
     const savePath = knowledge.category
       ? `${knowledge.category}/${knowledge.name}`
       : knowledge.name
@@ -2146,11 +2154,13 @@ export const loadKnowledgeFilesFromLocal = async (): Promise<any[]> => {
             id: `knowledge-${Date.now()}-${Math.random().toString(36).slice(2)}`,
             name: metadata.name || knowledgePath.substring(lastSlashIndex + 1),
             type: 'knowledge',
-            description: metadata.description || '',
+            // description 回退 summary（akb 知识库卡片使用 summary 字段约定）
+            description: metadata.description || metadata.summary || '',
             content: body,
-            tags: metadata.tags || [],
+            tags: Array.isArray(metadata.tags) ? metadata.tags : [],
             category: category,
             filepath: knowledgePath,
+            rawFrontmatter: metadata,
             createdAt: contentResult.mtime || new Date().toISOString(),
             updatedAt: contentResult.mtime || new Date().toISOString(),
           })

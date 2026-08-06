@@ -58,7 +58,7 @@ export function getReferenceType(path: string): { icon: string; color: string; b
   if (path.includes('/skills/')) {
     return { icon: '技能', color: '#7C3AED', bgColor: '#EDE9FE' } // 紫罗兰色
   }
-  if (path.includes('/knowledges/')) {
+  if (path.includes('/knowledges/') || path.includes('.knowledges/')) {
     return { icon: '知识', color: '#2563EB', bgColor: '#DBEAFE' } // 蓝色
   }
   // 默认样式
