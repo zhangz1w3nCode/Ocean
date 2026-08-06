@@ -23,26 +23,33 @@ const App: FC = () => {
   const { loadSkillFiles } = useSkillStore()
   const { isProjectLoaded, loadAppConfigOnStart, currentProject, setCurrentProject } = useProjectStore()
   const { isSwitchingProject, finishSwitchingProject } = useAppStore()
-  const { loadAssetRoot } = useSettingsStore()
+  const { loadAssetRoot, assetRoot } = useSettingsStore()
 
   // 应用启动时加载应用配置
   useEffect(() => {
     loadAppConfigOnStart()
   }, [loadAppConfigOnStart])
 
-  // 项目加载后加载数据
+  // 项目加载后初始化资产来源并结束项目切换状态
   useEffect(() => {
     if (isProjectLoaded && currentProject) {
       loadAssetRoot()
+      finishSwitchingProject()
+    }
+  }, [isProjectLoaded, currentProject, loadAssetRoot, finishSwitchingProject])
+
+  // 项目加载后以及资产来源切换时（重新）加载全部资产列表，
+  // 保证资产页面与 @ / % 引用弹窗的数据来源跟随 assetRoot
+  useEffect(() => {
+    if (isProjectLoaded && currentProject) {
       loadNodeDefinitions()
       loadWorkflows()
       loadResourceFiles()
       loadAgentFiles()
       loadKnowledgeFiles()
       loadSkillFiles()
-      finishSwitchingProject()
     }
-  }, [isProjectLoaded, currentProject, loadAssetRoot, loadNodeDefinitions, loadWorkflows, loadResourceFiles, loadAgentFiles, loadKnowledgeFiles, loadSkillFiles, finishSwitchingProject])
+  }, [isProjectLoaded, currentProject, assetRoot, loadNodeDefinitions, loadWorkflows, loadResourceFiles, loadAgentFiles, loadKnowledgeFiles, loadSkillFiles])
 
   // 切换项目时的处理
   useEffect(() => {
