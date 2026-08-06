@@ -1985,18 +1985,28 @@ const generateKnowledgeMarkdown = (
   // name 为必有字段，始终更新
   frontmatter.name = metadata.name
 
-  // description：仅在非空时更新；若原 frontmatter 无 description 且本次值来自 summary 回退显示，
-  // 则不写入，避免给使用 summary 约定的卡片重复增加 description 字段
-  if (metadata.description) {
-    const cameFromSummaryFallback = !('description' in frontmatter) && frontmatter.summary === metadata.description
+  // description：区分「用户显式编辑」与「summary 回退显示」
+  // 1) 原 frontmatter 已有 description 字段：非空则更新；为空则删除键（用户清空了描述，修复不可清空问题）
+  // 2) 原 frontmatter 无 description（可能只有 summary）：仅写入用户显式输入的非空新值，
+  //    来自 summary 回退显示且未改动的值不写入，避免污染使用 summary 约定的卡片
+  if ('description' in frontmatter) {
+    if (metadata.description) {
+      frontmatter.description = metadata.description
+    } else {
+      delete frontmatter.description
+    }
+  } else if (metadata.description) {
+    const cameFromSummaryFallback = frontmatter.summary === metadata.description
     if (!cameFromSummaryFallback) {
       frontmatter.description = metadata.description
     }
   }
 
-  // tags：仅在非空时更新，不覆盖为空
+  // tags：非空则更新；原 frontmatter 有 tags 而本次清空则删除键（修复无法移除全部标签问题）
   if (metadata.tags && metadata.tags.length > 0) {
     frontmatter.tags = metadata.tags
+  } else if ('tags' in frontmatter) {
+    delete frontmatter.tags
   }
 
   // category 不写入 frontmatter：分类以文件所在子目录为事实来源
