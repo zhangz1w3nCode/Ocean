@@ -111,19 +111,19 @@ export function useReferenceItems(options: UseReferenceItemsOptions = {}): Refer
       }
     })
 
-    // 资源文件 - 先添加库引用，再添加具体文件
+    // 资源文件 - 先添加库引用，再添加具体文件（资源文件跨资产来源共享，固定在项目根 .resources）
     const resourceLibrary = libraryConfig.find(c => c.category === 'resources')!
-    if (`${assetDir}/${resourceLibrary.subDir}` !== excludePath) {
+    if (`.resources/` !== excludePath) {
       items.push({
         id: 'library-resources',
         name: resourceLibrary.name,
         category: 'resources',
-        path: `${assetDir}/${resourceLibrary.subDir}`,
+        path: '.resources/',
         isLibrary: true,
       })
     }
     resourceFiles.forEach((resource) => {
-      const path = `${assetDir}/resources/${resource.name}.md`
+      const path = `.resources/${resource.name}.md`
       if (path !== excludePath) {
         items.push({
           id: resource.id,

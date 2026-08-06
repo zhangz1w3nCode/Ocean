@@ -146,7 +146,7 @@ export function parseKnowledgeLinks(content: string): KnowledgeLink[] {
         relation = '引用工作流'
       } else if (rawPath.includes('/commands/')) {
         relation = '引用命令'
-      } else if (rawPath.includes('/resources/')) {
+      } else if (rawPath.includes('/resources/') || rawPath.includes('.resources/')) {
         relation = '引用资源'
       } else if (rawPath.includes('/abilities/')) {
         relation = '引用能力'
