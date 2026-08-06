@@ -12,7 +12,8 @@
  * - [[知识A.md|引用]] - 带关系名称
  * - [[知识A.md]] - 不带关系名称，默认"关联"
  * - [[./知识A.md|引用]] - 带相对路径前缀
- * - [[{资产根目录}/knowledges/知识A.md|引用]] - 带完整路径前缀
+ * - [[.knowledges/知识A.md|引用]] - 项目根共享知识库路径
+ * - [[{资产根目录}/knowledges/知识A.md|引用]] - 带完整路径前缀（历史格式兼容）
  * - [[`xxx.md`|引用]] - 路径包含反引号的混合格式
  */
 const WIKI_LINK_REGEX = /\[\[([^\]|]+\.(?:md|mdx)`?)(?:\|([^\]]+))?\]\]/g
@@ -32,7 +33,8 @@ function cleanBackticks(path: string): string {
  * 支持以下情况：
  * - `知识A.md` - 简单文件名
  * - `./知识A.md` - 相对路径
- * - `{资产根目录}/knowledges/知识A.md` - 完整路径（.claude/ 或 .pi/）
+ * - `.knowledges/知识A.md` - 项目根共享知识库路径
+ * - `{资产根目录}/knowledges/知识A.md` - 完整路径（历史格式兼容）
  * - `{资产根目录}/agents/xxx.md` - 其他业务模块引用（知识图谱只处理 knowledges 目录）
  */
 const BACKTICK_LINK_REGEX = /`([^`]+\.(?:md|mdx))`/g
@@ -51,7 +53,8 @@ export interface KnowledgeLink {
 
 /**
  * 从链接路径中提取知识目标名称（支持子目录路径）
- * - {资产根目录}/knowledges/backend/api.md -> backend/api
+ * - .knowledges/ocean/backend/api.md -> ocean/backend/api
+ * - {资产根目录}/knowledges/backend/api.md -> backend/api（历史格式兼容）
  * - ./backend/api.md -> backend/api
  * - backend/api.md -> backend/api
  * - api.md -> api
@@ -59,7 +62,13 @@ export interface KnowledgeLink {
 const extractTargetName = (cleanedPath: string): string => {
   const pathWithoutExt = cleanedPath.replace(/\.(md|mdx)$/, '')
 
-  // 处理完整路径：{资产根目录}/knowledges/backend/api -> backend/api
+  // 处理项目根共享知识库路径：.knowledges/ocean/xxx -> ocean/xxx
+  const sharedKnowledgesIdx = pathWithoutExt.indexOf('.knowledges/')
+  if (sharedKnowledgesIdx >= 0) {
+    return pathWithoutExt.substring(sharedKnowledgesIdx + '.knowledges/'.length)
+  }
+
+  // 处理历史格式完整路径：{资产根目录}/knowledges/backend/api -> backend/api
   const knowledgesIdx = pathWithoutExt.indexOf('/knowledges/')
   if (knowledgesIdx >= 0) {
     return pathWithoutExt.substring(knowledgesIdx + '/knowledges/'.length)
@@ -143,7 +152,7 @@ export function parseKnowledgeLinks(content: string): KnowledgeLink[] {
         relation = '引用能力'
       } else if (rawPath.includes('/skills/')) {
         relation = '引用技能'
-      } else if (rawPath.includes('/knowledges/')) {
+      } else if (rawPath.includes('/knowledges/') || rawPath.includes('.knowledges/')) {
         relation = '引用知识'
       }
 

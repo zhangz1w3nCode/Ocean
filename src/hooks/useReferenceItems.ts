@@ -161,20 +161,20 @@ export function useReferenceItems(options: UseReferenceItemsOptions = {}): Refer
       }
     })
 
-    // 知识库 - 先添加库引用，再添加具体文件
+    // 知识库 - 先添加库引用，再添加具体文件（知识库跨资产来源共享，固定在项目根 .knowledges）
     const knowledgeLibrary = libraryConfig.find(c => c.category === 'knowledges')!
-    if (`${assetDir}/${knowledgeLibrary.subDir}` !== excludePath) {
+    if (`.knowledges/` !== excludePath) {
       items.push({
         id: 'library-knowledges',
         name: knowledgeLibrary.name,
         category: 'knowledges',
-        path: `${assetDir}/${knowledgeLibrary.subDir}`,
+        path: `.knowledges/`,
         isLibrary: true,
       })
     }
     knowledgeFiles.forEach((knowledge) => {
       const knowledgePath = knowledge.filepath || (knowledge.category ? `${knowledge.category}/${knowledge.name}` : knowledge.name)
-      const path = `${assetDir}/knowledges/${knowledgePath}.md`
+      const path = `.knowledges/${knowledgePath}.md`
       if (path !== excludePath) {
         items.push({
           id: knowledge.id,
