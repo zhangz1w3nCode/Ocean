@@ -174,6 +174,7 @@ export interface KnowledgeFile {
   tags: string[] // 标签数组
   category?: string // 分类路径（如 "backend" 或 "backend/v2"），对应子目录结构
   filepath?: string // 完整文件相对路径（如 "backend/api"），用于文件系统操作
+  rawFrontmatter?: Record<string, any> // 解析出的完整 frontmatter 快照，保存时用于合并保留未知字段
   createdAt: string
   updatedAt: string // 从文件系统获取
 }
