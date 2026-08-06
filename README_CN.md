@@ -6,6 +6,12 @@
 
 基于 `Electron` + `React` + `TypeScript` 构建的桌面应用，以 Markdown 文件为核心数据载体，完全本地存储，专为 Claude Code 打造，提供智能体、命令、能力、技能、知识库、工作流等资产的统一管理与可视化编排。
 
+<p align="center">
+  <a href="https://opensource.org/licenses/MIT"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-yellow.svg"></a>
+  <a href="https://github.com/zhangz1w3nCode/Ocean/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/zhangz1w3nCode/Ocean?style=social"></a>
+  <a href="https://github.com/zhangz1w3nCode/Ocean"><img alt="Last commit" src="https://img.shields.io/github/last-commit/zhangz1w3nCode/Ocean"></a>
+</p>
+
 [English](./README.md) | [中文](./README_CN.md)
 
 </div>

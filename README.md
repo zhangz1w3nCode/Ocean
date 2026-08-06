@@ -6,6 +6,12 @@
 
 A desktop application built with `Electron` + `React` + `TypeScript` that uses Markdown files as the core data carrier. All data is stored locally, providing unified management and visual orchestration for Claude Code assets including agents, commands, abilities, skills, knowledge bases, workflows, and more.
 
+<p align="center">
+  <a href="https://opensource.org/licenses/MIT"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-yellow.svg"></a>
+  <a href="https://github.com/zhangz1w3nCode/Ocean/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/zhangz1w3nCode/Ocean?style=social"></a>
+  <a href="https://github.com/zhangz1w3nCode/Ocean"><img alt="Last commit" src="https://img.shields.io/github/last-commit/zhangz1w3nCode/Ocean"></a>
+</p>
+
 [English](./README.md) | [中文](./README_CN.md)
 
 </div>
