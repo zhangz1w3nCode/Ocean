@@ -38,9 +38,9 @@ Ocean manages 6 types of Claude Code assets, each with full CRUD operations, Mar
 |--------|-----------------|-------------|
 | Agents | `.claude/agents/` | Define AI agent profiles with model selection, role instructions, and icon customization |
 | Skills | `.claude/skills/` | Package complex skills with scripts, references, and examples in a directory structure |
-| Knowledge | `.claude/knowledges/` | Manage business knowledge with tags, categories, WikiLink references, and a visual knowledge graph |
-| Nodes | `.claude/nodes/` | Define reusable workflow building blocks |
-| Resources | `.claude/resources/` | Manage reference resource files |
+| Knowledge | `.knowledges/` | Manage business knowledge with tags, categories, WikiLink references, and a visual knowledge graph |
+| Nodes | `.nodes/` | Define reusable workflow building blocks |
+| Resources | `.resources/` | Manage reference resource files |
 | Workflows | `.claude/workflows/` | Design and manage workflow definitions |
 
 ### Visual Workflow Editor

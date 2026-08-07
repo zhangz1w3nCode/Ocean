@@ -472,7 +472,7 @@ const buildWorkflowStages = (nodes: any[], edges: any[], workflowName: string): 
 
     if (targetNode.type === 'business') {
       // 业务节点：始终引用节点文件路径（使用相对路径）
-      branch.nodeRef = `${getAssetDirName()}/nodes/${targetNode.data?.nodeDefName || targetNode.data?.label}.md`
+      branch.nodeRef = `.nodes/${targetNode.data?.nodeDefName || targetNode.data?.label}.md`
       branch.nodeName = targetNode.data?.nodeDefName || targetNode.data?.label
     } else if (targetNode.type === 'local') {
       // 局部节点：引用工作流nodes目录下的文件（使用相对路径）
@@ -585,7 +585,7 @@ const buildWorkflowStages = (nodes: any[], edges: any[], workflowName: string): 
       stage.condition = node.data?.condition
     } else if (node.type === 'business') {
       // 业务节点：始终引用节点文件路径（使用相对路径）
-      stage.nodeRef = `${getAssetDirName()}/nodes/${node.data?.nodeDefName || node.data?.label}.md`
+      stage.nodeRef = `.nodes/${node.data?.nodeDefName || node.data?.label}.md`
       stage.nodeName = node.data?.nodeDefName || node.data?.label
     } else if (node.type === 'local') {
       // 局部节点：引用工作流nodes目录下的文件（使用相对路径）
@@ -873,7 +873,7 @@ export const buildNodesAndEdgesFromWorkflow = (workflow: any): { nodes: any[]; e
       // 创建分支节点
       stage.branches.forEach((branch: any, branchIdx: number) => {
         if (branch.nodeRef) {
-          const nodeName = branch.nodeRef.replace('nodes/', '').replace('.md', '')
+          const nodeName = branch.nodeRef.split('/').pop()?.replace('.md', '') || ''
           const businessId = `business-${index + 1}-${branchIdx + 1}`
           const branchY = yOffset + (branchIdx - (stage.branches!.length - 1) / 2) * ySpacing
 
@@ -900,7 +900,7 @@ export const buildNodesAndEdgesFromWorkflow = (workflow: any): { nodes: any[]; e
       prevNodeId = decisionId
     } else if (stage.nodeRef) {
       // 创建业务节点
-      const nodeName = stage.nodeRef.replace('nodes/', '').replace('.md', '')
+      const nodeName = stage.nodeRef.split('/').pop()?.replace('.md', '') || ''
       const businessId = `business-${index + 1}`
 
       nodes.push({
@@ -1043,7 +1043,7 @@ export const generateFlowJson = (nodes: any[], edges: any[]): string => {
       // 删除content字段，改为引用路径
       delete cleanNode.data.content
       // 添加节点引用路径
-      cleanNode.data.nodeRefPath = `${getAssetDirName()}/nodes/${node.data.nodeDefName}.md`
+      cleanNode.data.nodeRefPath = `.nodes/${node.data.nodeDefName}.md`
     }
 
     return cleanNode

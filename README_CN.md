@@ -38,9 +38,9 @@ Ocean 管理 6 种 Claude Code 资产，每种资产均支持完整的增删改�
 |------|---------|------|
 | 智能体 (Agents) | `.claude/agents/` | 定义 AI 智能体配置，支持模型选择、角色指令、图标自定义 |
 | 技能 (Skills) | `.claude/skills/` | 以目录结构打包复杂技能，包含脚本、参考文档和示例 |
-| 知识库 (Knowledge) | `.claude/knowledges/` | 管理业务知识，支持标签、分类、WikiLink 引用和可视化知识图谱 |
-| 节点 (Nodes) | `.claude/nodes/` | 定义可复用的工作流构建块 |
-| 资源 (Resources) | `.claude/resources/` | 管理参考资源文件 |
+| 知识库 (Knowledge) | `.knowledges/` | 管理业务知识，支持标签、分类、WikiLink 引用和可视化知识图谱 |
+| 节点 (Nodes) | `.nodes/` | 定义可复用的工作流构建块 |
+| 资源 (Resources) | `.resources/` | 管理参考资源文件 |
 | 工作流 (Workflows) | `.claude/workflows/` | 设计和管理工作流定义 |
 
 ### 可视化工作流编辑器

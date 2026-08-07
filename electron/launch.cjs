@@ -79,9 +79,9 @@ const getWorkflowsDir = () => {
   return dataDir
 }
 
-// 节点数据存储目录
+// 节点数据存储目录（项目根 .nodes，跨资产来源共享，不随 assetRoot 变化）
 const getNodesDir = () => {
-  const dataDir = path.join(getProjectRoot(), getAssetDir(), 'nodes')
+  const dataDir = path.join(getProjectRoot(), '.nodes')
   if (!fs.existsSync(dataDir)) {
     fs.mkdirSync(dataDir, { recursive: true })
   }
@@ -886,7 +886,7 @@ ipcMain.handle('init-project-dir', (_, projectPath) => {
 
     // 创建必要的子目录
     const assetDir = path.join(projectPath, getAssetDir())
-    const subDirs = ['workflows', 'nodes', 'agents']
+    const subDirs = ['workflows', 'agents']
 
     for (const subDir of subDirs) {
       const dirPath = path.join(assetDir, subDir)
@@ -905,6 +905,12 @@ ipcMain.handle('init-project-dir', (_, projectPath) => {
     const resourcesDir = path.join(projectPath, '.resources')
     if (!fs.existsSync(resourcesDir)) {
       fs.mkdirSync(resourcesDir, { recursive: true })
+    }
+
+    // 节点文件为跨资产来源共享资产，存储在项目根 .nodes 目录
+    const nodesDir = path.join(projectPath, '.nodes')
+    if (!fs.existsSync(nodesDir)) {
+      fs.mkdirSync(nodesDir, { recursive: true })
     }
 
     // 创建 .ocean 目录用于存放项目级配置

@@ -62,18 +62,19 @@ export function useReferenceItems(options: UseReferenceItemsOptions = {}): Refer
     })
 
     // 节点 - 先添加库引用，再添加具体文件
+    // 节点为跨资产来源共享资产，路径为 .nodes/
     const nodeLibrary = libraryConfig.find(c => c.category === 'nodes')!
-    if (`${assetDir}/${nodeLibrary.subDir}` !== excludePath) {
+    if (`.nodes/` !== excludePath) {
       items.push({
         id: 'library-nodes',
         name: nodeLibrary.name,
         category: 'nodes',
-        path: `${assetDir}/${nodeLibrary.subDir}`,
+        path: '.nodes/',
         isLibrary: true,
       })
     }
     nodeDefinitions.forEach((node) => {
-      const path = `${assetDir}/nodes/${node.name}.md`
+      const path = `.nodes/${node.name}.md`
       if (path !== excludePath) {
         items.push({
           id: node.id,

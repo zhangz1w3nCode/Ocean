@@ -140,7 +140,7 @@ export function parseKnowledgeLinks(content: string): KnowledgeLink[] {
       let relation = '引用'
       if (rawPath.includes('/agents/')) {
         relation = '引用智能体'
-      } else if (rawPath.includes('/nodes/')) {
+      } else if (rawPath.includes('/nodes/') || rawPath.includes('.nodes/')) {
         relation = '引用节点'
       } else if (rawPath.includes('/workflows/')) {
         relation = '引用工作流'
