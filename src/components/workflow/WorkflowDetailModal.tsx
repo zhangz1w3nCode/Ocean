@@ -160,7 +160,7 @@ export const WorkflowDetailModal: FC<WorkflowDetailModalProps> = ({
       </div>
 
       {/* 内容区域 - 固定高度，超出滚动 */}
-      <div className="max-h-[400px] overflow-y-auto pr-2 space-y-4">
+      <div className="flex-1 min-h-0 overflow-y-auto pr-2 space-y-4">
         {/* 工作流描述 */}
         {workflow.description && (
           <div>
