@@ -7,7 +7,7 @@ interface ReferenceTextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElem
   label?: string
   error?: string
   invalid?: boolean
-  excludePath?: string  // 排除特定路径（如 ".claude/nodes/xxx.md" 或 ".pi/nodes/xxx.md"）
+  excludePath?: string  // 排除特定路径（如 ".nodes/xxx.md"）
 }
 
 // 引用路径的正则匹配：`xxx/xxx.md` 或 `xxx/`（库引用）

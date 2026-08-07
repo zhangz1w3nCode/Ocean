@@ -161,7 +161,7 @@ export const generateWorkflowMdContent = (workflow: any, nodes: any[], edges: an
     if (!node) return ''
     if (node.type === 'business') {
       const nodeName = node.data?.nodeDefName || node.data?.label || node.id
-      return `${getAssetDirName()}/nodes/${nodeName}.md`
+      return `.nodes/${nodeName}.md`
     } else if (node.type === 'local') {
       const nodeName = node.data?.localNodeName || node.data?.label || node.id
       return `${getAssetDirName()}/workflows/${workflow.name}/nodes/${nodeName}.md`

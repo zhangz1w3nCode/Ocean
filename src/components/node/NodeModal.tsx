@@ -4,7 +4,6 @@ import { Type, Layers, MessageSquare, Eye, Edit3 } from 'lucide-react'
 import { Modal, Input, Textarea, Button, ConfirmModal, MarkdownEditor, MarkdownRenderer } from '../ui'
 import { useToastStore } from '../../stores/toastStore'
 import type { NodeDefinition } from '../../types'
-import { getAssetDirName } from '../../utils/asset-config'
 
 type NodeType = 'process' | 'business'
 
@@ -37,7 +36,8 @@ export const NodeModal: FC<NodeModalProps> = ({
   const [content, setContent] = useState('')
 
   // 计算排除路径（编辑模式下排除当前节点）
-  const excludePath = mode === 'edit' && initialData ? `${getAssetDirName()}/nodes/${initialData.name}.md` : undefined
+  // 节点为跨资产来源共享资产，路径为 .nodes/
+  const excludePath = mode === 'edit' && initialData ? `.nodes/${initialData.name}.md` : undefined
 
   // 编辑/预览模式
   const [viewMode, setViewMode] = useState<'edit' | 'preview'>('edit')
