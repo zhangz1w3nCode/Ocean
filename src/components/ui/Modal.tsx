@@ -1,5 +1,5 @@
 import type { FC, ReactNode } from 'react'
-import { useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback, useLayoutEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X } from 'lucide-react'
 
@@ -13,6 +13,29 @@ interface ModalProps {
   headerLeft?: ReactNode
 }
 
+type ResizeDirection = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw'
+
+const MIN_WIDTH = 360
+const MIN_HEIGHT = 280
+
+const sizeWidths: Record<NonNullable<ModalProps['size']>, number> = {
+  sm: 384,
+  md: 448,
+  lg: 512,
+  xl: 672,
+}
+
+const resizeCursors: Record<ResizeDirection, string> = {
+  n: 'ns-resize',
+  s: 'ns-resize',
+  e: 'ew-resize',
+  w: 'ew-resize',
+  ne: 'nesw-resize',
+  sw: 'nesw-resize',
+  nw: 'nwse-resize',
+  se: 'nwse-resize',
+}
+
 export const Modal: FC<ModalProps> = ({
   isOpen,
   onClose,
@@ -22,6 +45,34 @@ export const Modal: FC<ModalProps> = ({
   size = 'md',
   headerLeft,
 }) => {
+  const [position, setPosition] = useState(() => {
+    const w = Math.min(sizeWidths[size], window.innerWidth - 32)
+    const h = Math.min(600, Math.round(window.innerHeight * 0.7))
+    return {
+      x: Math.max(16, Math.round((window.innerWidth - w) / 2)),
+      y: Math.max(16, Math.round((window.innerHeight - h) / 2)),
+    }
+  })
+  const [dimensions, setDimensions] = useState(() => ({
+    width: Math.min(sizeWidths[size], window.innerWidth - 32),
+    height: Math.min(600, Math.round(window.innerHeight * 0.7)),
+  }))
+  const [isDragging, setIsDragging] = useState(false)
+  const [isResizing, setIsResizing] = useState(false)
+  const [isMaximized, setIsMaximized] = useState(false)
+  const dragData = useRef<{ startX: number; startY: number; posX: number; posY: number } | null>(null)
+  const resizeData = useRef<{
+    direction: ResizeDirection
+    startX: number
+    startY: number
+    startW: number
+    startH: number
+    posX: number
+    posY: number
+  } | null>(null)
+  const prevLayout = useRef<{ pos: { x: number; y: number }; dim: { width: number; height: number } } | null>(null)
+  const cleanupRef = useRef<(() => void) | null>(null)
+
   // 监听 ESC 键关闭弹窗
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -54,12 +105,163 @@ export const Modal: FC<ModalProps> = ({
     }
   }, [isOpen])
 
-  const sizeClasses = {
-    sm: 'max-w-sm',
-    md: 'max-w-md',
-    lg: 'max-w-lg',
-    xl: 'max-w-2xl',
-  }
+  // 弹窗关闭时清理残留的拖拽/缩放监听器（防止 ESC 关闭时泄漏）
+  useEffect(() => {
+    if (!isOpen && cleanupRef.current) {
+      cleanupRef.current()
+      cleanupRef.current = null
+    }
+  }, [isOpen])
+
+  // 每次打开时重置弹窗到屏幕居中
+  useLayoutEffect(() => {
+    if (isOpen) {
+      const w = Math.min(sizeWidths[size], window.innerWidth - 32)
+      const h = Math.min(600, Math.round(window.innerHeight * 0.7))
+      setDimensions({ width: w, height: h })
+      setPosition({
+        x: Math.max(16, Math.round((window.innerWidth - w) / 2)),
+        y: Math.max(16, Math.round((window.innerHeight - h) / 2)),
+      })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen])
+
+  // 拖拽移动：mousedown 头部 → 全局 mousemove 更新位置 → mouseup 结束
+  const handleDragStart = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+      setIsDragging(true)
+      dragData.current = {
+        startX: e.clientX,
+        startY: e.clientY,
+        posX: position.x,
+        posY: position.y,
+      }
+      const prevCursor = document.body.style.cursor
+      const prevUserSelect = document.body.style.userSelect
+      document.body.style.cursor = 'grabbing'
+      document.body.style.userSelect = 'none'
+
+      const handleMove = (ev: MouseEvent) => {
+        if (!dragData.current) return
+        const newX = dragData.current.posX + (ev.clientX - dragData.current.startX)
+        const newY = dragData.current.posY + (ev.clientY - dragData.current.startY)
+        setPosition({
+          x: Math.max(-dimensions.width + 120, Math.min(window.innerWidth - 80, newX)),
+          y: Math.max(40, Math.min(window.innerHeight - 60, newY)),
+        })
+      }
+
+      const handleUp = () => {
+        setIsDragging(false)
+        dragData.current = null
+        document.body.style.cursor = prevCursor
+        document.body.style.userSelect = prevUserSelect
+        document.removeEventListener('mousemove', handleMove)
+        document.removeEventListener('mouseup', handleUp)
+        cleanupRef.current = null
+      }
+
+      cleanupRef.current = handleUp
+      document.addEventListener('mousemove', handleMove)
+      document.addEventListener('mouseup', handleUp)
+    },
+    [position.x, position.y, dimensions.width],
+  )
+
+  // 边缘缩放：mousedown 手柄 → 全局 mousemove 更新尺寸/位置 → mouseup 结束
+  const handleResizeStart = useCallback(
+    (direction: ResizeDirection) => (e: React.MouseEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+      setIsResizing(true)
+      resizeData.current = {
+        direction,
+        startX: e.clientX,
+        startY: e.clientY,
+        startW: dimensions.width,
+        startH: dimensions.height,
+        posX: position.x,
+        posY: position.y,
+      }
+      const prevCursor = document.body.style.cursor
+      const prevUserSelect = document.body.style.userSelect
+      document.body.style.cursor = resizeCursors[direction]
+      document.body.style.userSelect = 'none'
+
+      const handleMove = (ev: MouseEvent) => {
+        if (!resizeData.current) return
+        const d = resizeData.current
+        const deltaX = ev.clientX - d.startX
+        const deltaY = ev.clientY - d.startY
+        const maxW = window.innerWidth - 32
+        const maxH = window.innerHeight - 32
+        let newW = d.startW
+        let newH = d.startH
+        let newX = d.posX
+        let newY = d.posY
+
+        if (d.direction.includes('e')) {
+          newW = Math.min(maxW, Math.max(MIN_WIDTH, d.startW + deltaX))
+        }
+        if (d.direction.includes('w')) {
+          newW = Math.min(maxW, Math.max(MIN_WIDTH, d.startW - deltaX))
+          newX = d.posX + (d.startW - newW)
+        }
+        if (d.direction.includes('s')) {
+          newH = Math.min(window.innerHeight - d.posY - 16, Math.max(MIN_HEIGHT, d.startH + deltaY))
+        }
+        if (d.direction.includes('n')) {
+          newH = Math.min(maxH, Math.max(MIN_HEIGHT, d.startH - deltaY))
+          newY = d.posY + (d.startH - newH)
+          if (newY < 40) {
+            newH = d.posY + d.startH - 40
+            newY = 40
+          }
+        }
+
+        setDimensions({ width: newW, height: newH })
+        setPosition({ x: newX, y: newY })
+      }
+
+      const handleUp = () => {
+        setIsResizing(false)
+        resizeData.current = null
+        document.body.style.cursor = prevCursor
+        document.body.style.userSelect = prevUserSelect
+        document.removeEventListener('mousemove', handleMove)
+        document.removeEventListener('mouseup', handleUp)
+        cleanupRef.current = null
+      }
+
+      cleanupRef.current = handleUp
+      document.addEventListener('mousemove', handleMove)
+      document.addEventListener('mouseup', handleUp)
+    },
+    [dimensions.width, dimensions.height, position.x, position.y],
+  )
+
+  // 双击头部全屏/恢复
+  const handleDoubleClick = useCallback(() => {
+    if (isMaximized) {
+      if (prevLayout.current) {
+        setPosition(prevLayout.current.pos)
+        setDimensions(prevLayout.current.dim)
+      }
+      setIsMaximized(false)
+    } else {
+      prevLayout.current = { pos: { ...position }, dim: { ...dimensions } }
+      const margin = 32
+      setPosition({ x: Math.round(margin / 2), y: 40 })
+      setDimensions({
+        width: window.innerWidth - margin,
+        height: window.innerHeight - 56,
+      })
+      setIsMaximized(true)
+    }
+  }, [isMaximized, position, dimensions])
 
   return (
     <AnimatePresence>
@@ -75,22 +277,34 @@ export const Modal: FC<ModalProps> = ({
           />
 
           {/* 弹窗内容 */}
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+          <div className="fixed inset-0 z-50 pointer-events-none">
             <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 10 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
               transition={{ duration: 0.15 }}
-              className={`w-full ${sizeClasses[size]} bg-white rounded-2xl shadow-xl pointer-events-auto overflow-hidden`}
+              style={{
+                position: 'absolute',
+                left: position.x,
+                top: position.y,
+                width: dimensions.width,
+                height: dimensions.height,
+              }}
+              className="bg-white rounded-2xl shadow-xl pointer-events-auto overflow-hidden flex flex-col select-none"
               onClick={(e) => e.stopPropagation()}
             >
-              {/* 头部 */}
-              <div className="px-6 py-4 flex items-center justify-between">
-                <div className="flex items-center gap-3">
+              {/* 头部 — 拖拽移动区域 */}
+              <div
+                onMouseDown={handleDragStart}
+                onDoubleClick={handleDoubleClick}
+                className={`px-6 py-4 flex items-center justify-between flex-shrink-0 ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
+              >
+                <div className="flex items-center gap-3 pointer-events-none">
                   {headerLeft}
                   <h3 className="text-lg font-semibold text-macos-text">{title}</h3>
                 </div>
                 <button
+                  onMouseDown={(e) => e.stopPropagation()}
                   onClick={onClose}
                   className="p-1.5 rounded-lg hover:bg-gray-100 text-macos-text-secondary transition-colors"
                 >
@@ -99,14 +313,52 @@ export const Modal: FC<ModalProps> = ({
               </div>
 
               {/* 内容 */}
-              <div className="px-6 py-5">{children}</div>
+              <div className="px-6 py-5 flex-1 min-h-0 flex flex-col overflow-hidden select-text">
+                {children}
+              </div>
 
               {/* 底部 */}
               {footer && (
-                <div className="px-6 py-4 bg-gray-50/50">
+                <div className="px-6 py-4 bg-gray-50/50 flex-shrink-0">
                   {footer}
                 </div>
               )}
+
+              {/* 缩放手柄 — 四边 */}
+              <div
+                onMouseDown={handleResizeStart('n')}
+                className="absolute top-0 left-3 right-3 h-1.5 cursor-ns-resize z-20 hover:bg-gray-300"
+              />
+              <div
+                onMouseDown={handleResizeStart('s')}
+                className="absolute bottom-0 left-3 right-3 h-1.5 cursor-ns-resize z-20 hover:bg-gray-300"
+              />
+              <div
+                onMouseDown={handleResizeStart('w')}
+                className="absolute left-0 top-3 bottom-3 w-1.5 cursor-ew-resize z-20 hover:bg-gray-300"
+              />
+              <div
+                onMouseDown={handleResizeStart('e')}
+                className="absolute right-0 top-3 bottom-3 w-1.5 cursor-ew-resize z-20 hover:bg-gray-300"
+              />
+
+              {/* 缩放手柄 — 四角 */}
+              <div
+                onMouseDown={handleResizeStart('nw')}
+                className="absolute top-0 left-0 w-3 h-3 cursor-nwse-resize z-30"
+              />
+              <div
+                onMouseDown={handleResizeStart('ne')}
+                className="absolute top-0 right-0 w-3 h-3 cursor-nesw-resize z-30"
+              />
+              <div
+                onMouseDown={handleResizeStart('sw')}
+                className="absolute bottom-0 left-0 w-3 h-3 cursor-nesw-resize z-30"
+              />
+              <div
+                onMouseDown={handleResizeStart('se')}
+                className="absolute bottom-0 right-0 w-3 h-3 cursor-nwse-resize z-30"
+              />
             </motion.div>
           </div>
         </>
