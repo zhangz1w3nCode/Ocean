@@ -11,13 +11,13 @@ interface KnowledgeState {
   knowledgeFiles: KnowledgeFile[]
   isLoaded: boolean
   setKnowledgeFiles: (knowledges: KnowledgeFile[]) => void
-  addKnowledgeFile: (knowledge: KnowledgeFile) => void
-  updateKnowledgeFile: (id: string, updates: Partial<KnowledgeFile>) => void
-  deleteKnowledgeFile: (id: string) => void
+  addKnowledgeFile: (knowledge: KnowledgeFile) => Promise<boolean>
+  updateKnowledgeFile: (id: string, updates: Partial<KnowledgeFile>) => Promise<boolean>
+  deleteKnowledgeFile: (id: string) => Promise<boolean>
   loadKnowledgeFiles: () => Promise<void>
 }
 
-export const useKnowledgeStore = create<KnowledgeState>((set) => ({
+export const useKnowledgeStore = create<KnowledgeState>((set, get) => ({
   knowledgeFiles: [],
   isLoaded: false,
 
@@ -27,41 +27,42 @@ export const useKnowledgeStore = create<KnowledgeState>((set) => ({
     saveKnowledgeFilesToLocal(knowledgeFiles)
   },
 
-  addKnowledgeFile: (knowledge) =>
-    set((state) => {
-      const newKnowledges = [knowledge, ...state.knowledgeFiles]
-      // 只保存新增的单个文件，避免全量保存
-      saveSingleKnowledgeFileToLocal(knowledge)
-      return { knowledgeFiles: newKnowledges }
-    }),
+  addKnowledgeFile: async (knowledge) => {
+    const success = await saveSingleKnowledgeFileToLocal(knowledge)
+    if (success) {
+      set({ knowledgeFiles: [knowledge, ...get().knowledgeFiles] })
+    }
+    return success
+  },
 
-  updateKnowledgeFile: (id, updates) =>
-    set((state) => {
-      const newKnowledges = state.knowledgeFiles.map((knowledge) =>
-        knowledge.id === id ? { ...knowledge, ...updates } : knowledge
-      )
-      // 只保存更新的单个文件，避免全量保存
-      const updated = newKnowledges.find((k) => k.id === id)
-      if (updated) {
-        saveSingleKnowledgeFileToLocal(updated)
-      }
-      return { knowledgeFiles: newKnowledges }
-    }),
+  updateKnowledgeFile: async (id, updates) => {
+    const newKnowledges = get().knowledgeFiles.map((knowledge) =>
+      knowledge.id === id ? { ...knowledge, ...updates } : knowledge
+    )
+    const updated = newKnowledges.find((k) => k.id === id)
+    let success = true
+    if (updated) {
+      success = await saveSingleKnowledgeFileToLocal(updated)
+    }
+    if (success) {
+      set({ knowledgeFiles: newKnowledges })
+    }
+    return success
+  },
 
-  deleteKnowledgeFile: (id) =>
-    set((state) => {
-      const knowledgeToDelete = state.knowledgeFiles.find((knowledge) => knowledge.id === id)
-      const newKnowledges = state.knowledgeFiles.filter((knowledge) => knowledge.id !== id)
-      // 异步删除文件并保存列表（使用 filepath 支持子目录路径）
-      if (knowledgeToDelete) {
-        const deletePath = knowledgeToDelete.filepath ||
-          (knowledgeToDelete.category
-            ? `${knowledgeToDelete.category}/${knowledgeToDelete.name}`
-            : knowledgeToDelete.name)
-        deleteKnowledgeFileFromLocal(deletePath)
-      }
-      return { knowledgeFiles: newKnowledges }
-    }),
+  deleteKnowledgeFile: async (id) => {
+    const knowledgeToDelete = get().knowledgeFiles.find((knowledge) => knowledge.id === id)
+    if (!knowledgeToDelete) return true
+    const deletePath = knowledgeToDelete.filepath ||
+      (knowledgeToDelete.category
+        ? `${knowledgeToDelete.category}/${knowledgeToDelete.name}`
+        : knowledgeToDelete.name)
+    const success = await deleteKnowledgeFileFromLocal(deletePath)
+    if (success) {
+      set({ knowledgeFiles: get().knowledgeFiles.filter((knowledge) => knowledge.id !== id) })
+    }
+    return success
+  },
 
   loadKnowledgeFiles: async () => {
     // 从本地加载

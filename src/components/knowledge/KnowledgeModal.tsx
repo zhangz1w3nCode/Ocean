@@ -17,7 +17,7 @@ type CreateMode = 'select' | 'manual' | 'agentic'
 interface KnowledgeModalProps {
   isOpen: boolean
   onClose: () => void
-  onConfirm: (knowledge: Omit<KnowledgeFile, 'id' | 'createdAt' | 'updatedAt' | 'type'>) => void
+  onConfirm: (knowledge: Omit<KnowledgeFile, 'id' | 'createdAt' | 'updatedAt' | 'type'>) => Promise<boolean>
   mode: 'create' | 'edit'
   initialData?: KnowledgeFile
   existingNames?: string[]
@@ -300,7 +300,7 @@ export const KnowledgeModal: FC<KnowledgeModalProps> = ({
     }
   }
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     // 验证知识名称
     if (!name.trim()) {
       setInvalidFields(new Set(['name']))
@@ -327,7 +327,7 @@ export const KnowledgeModal: FC<KnowledgeModalProps> = ({
     setInvalidFields(new Set())
 
     // 提交
-    onConfirm({
+    const success = await onConfirm({
       name: name.trim(),
       description: description.trim(),
       content: content.trim(),
@@ -336,10 +336,12 @@ export const KnowledgeModal: FC<KnowledgeModalProps> = ({
       filepath: category.trim() ? `${category.trim()}/${name.trim()}` : name.trim(),
     })
 
-    // 显示成功提示
-    addToast(mode === 'create' ? '知识创建成功' : '知识更新成功', 'success')
-
-    handleClose(true)
+    if (success) {
+      addToast(mode === 'create' ? '知识创建成功' : '知识更新成功', 'success')
+      handleClose(true)
+    } else {
+      addToast(mode === 'create' ? '知识创建失败，请重试' : '知识更新失败，请重试', 'error')
+    }
   }
 
   const handleClose = (skipConfirm = false) => {

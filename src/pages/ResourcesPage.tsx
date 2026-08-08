@@ -5,10 +5,12 @@ import { ResourceCard, ResourceModal, ResourceDetailModal } from '../components/
 import { useResourceStore } from '../stores/resourceStore'
 import { useState, useEffect } from 'react'
 import type { ResourceFile } from '../types'
+import { useToastStore } from '../stores/toastStore'
 
 export const ResourcesPage: FC = () => {
   const { resourceFiles, addResourceFile, updateResourceFile, deleteResourceFile, loadResourceFiles } =
     useResourceStore()
+  const { addToast } = useToastStore()
   const [searchQuery, setSearchQuery] = useState('')
 
   // 详情弹窗状态
@@ -72,7 +74,7 @@ export const ResourcesPage: FC = () => {
   }
 
   // 确认创建/编辑
-  const handleModalConfirm = (resourceData: Omit<ResourceFile, 'id' | 'createdAt' | 'updatedAt'>) => {
+  const handleModalConfirm = async (resourceData: Omit<ResourceFile, 'id' | 'createdAt' | 'updatedAt'>) => {
     const now = new Date().toISOString()
 
     if (modalMode === 'create') {
@@ -83,14 +85,15 @@ export const ResourcesPage: FC = () => {
         createdAt: now,
         updatedAt: now,
       }
-      addResourceFile(newResource)
+      return await addResourceFile(newResource)
     } else if (modalMode === 'edit' && editingResource) {
       // 更新资源
-      updateResourceFile(editingResource.id, {
+      return await updateResourceFile(editingResource.id, {
         ...resourceData,
         updatedAt: now,
       })
     }
+    return false
   }
 
   // 点击删除
@@ -100,9 +103,14 @@ export const ResourcesPage: FC = () => {
   }
 
   // 确认删除
-  const handleConfirmDelete = () => {
+  const handleConfirmDelete = async () => {
     if (deletingResourceId) {
-      deleteResourceFile(deletingResourceId)
+      const success = await deleteResourceFile(deletingResourceId)
+      if (success) {
+        addToast('资源删除成功', 'success')
+      } else {
+        addToast('资源删除失败，请重试', 'error')
+      }
     }
     setDeleteConfirmOpen(false)
     setDeletingResourceId(null)

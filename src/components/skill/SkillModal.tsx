@@ -19,7 +19,7 @@ type CreateMode = 'select' | 'manual' | 'smart' | 'agentic'
 interface SkillModalProps {
   isOpen: boolean
   onClose: () => void
-  onConfirm: (skill: Omit<SkillFile, 'id' | 'createdAt' | 'updatedAt' | 'type' | 'scripts' | 'references' | 'examples'>) => void
+  onConfirm: (skill: Omit<SkillFile, 'id' | 'createdAt' | 'updatedAt' | 'type' | 'scripts' | 'references' | 'examples'>) => Promise<boolean>
   mode: 'create' | 'edit'
   initialData?: SkillFile
   existingNames?: string[]
@@ -381,7 +381,7 @@ export const SkillModal: FC<SkillModalProps> = ({
     }
   }
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     // 验证技能名称
     if (!name.trim()) {
       setInvalidFields(new Set(['name']))
@@ -418,16 +418,18 @@ export const SkillModal: FC<SkillModalProps> = ({
     setInvalidFields(new Set())
 
     // 提交
-    onConfirm({
+    const success = await onConfirm({
       name: name.trim(),
       description: description.trim(),
       content: content.trim(),
     })
 
-    // 显示成功提示
-    addToast(mode === 'create' ? '技能创建成功' : '技能更新成功', 'success')
-
-    handleClose(true)
+    if (success) {
+      addToast(mode === 'create' ? '技能创建成功' : '技能更新成功', 'success')
+      handleClose(true)
+    } else {
+      addToast(mode === 'create' ? '技能创建失败，请重试' : '技能更新失败，请重试', 'error')
+    }
   }
 
   const handleClose = (skipConfirm = false) => {

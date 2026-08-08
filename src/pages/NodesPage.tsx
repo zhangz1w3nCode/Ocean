@@ -5,9 +5,11 @@ import { NodeCard, NodeModal, NodeDetailModal } from '../components/node'
 import { useNodeStore } from '../stores/nodeStore'
 import { useState, useEffect } from 'react'
 import type { NodeDefinition } from '../types'
+import { useToastStore } from '../stores/toastStore'
 
 export const NodesPage: FC = () => {
   const { nodeDefinitions, addNodeDefinition, updateNodeDefinition, deleteNodeDefinition, loadNodeDefinitions } = useNodeStore()
+  const { addToast } = useToastStore()
   const [searchQuery, setSearchQuery] = useState('')
 
   // 弹窗状态
@@ -71,7 +73,7 @@ export const NodesPage: FC = () => {
   }
 
   // 确认创建/编辑
-  const handleModalConfirm = (nodeData: Omit<NodeDefinition, 'id' | 'createdAt' | 'updatedAt'>) => {
+  const handleModalConfirm = async (nodeData: Omit<NodeDefinition, 'id' | 'createdAt' | 'updatedAt'>) => {
     if (modalMode === 'create') {
       // 创建新节点
       const newNode: NodeDefinition = {
@@ -80,14 +82,15 @@ export const NodesPage: FC = () => {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       }
-      addNodeDefinition(newNode)
+      return await addNodeDefinition(newNode)
     } else if (modalMode === 'edit' && editingNode) {
       // 更新节点
-      updateNodeDefinition(editingNode.id, {
+      return await updateNodeDefinition(editingNode.id, {
         ...nodeData,
         updatedAt: new Date().toISOString(),
       })
     }
+    return false
   }
 
   // 点击删除
@@ -97,9 +100,14 @@ export const NodesPage: FC = () => {
   }
 
   // 确认删除
-  const handleConfirmDelete = () => {
+  const handleConfirmDelete = async () => {
     if (deletingNodeId) {
-      deleteNodeDefinition(deletingNodeId)
+      const success = await deleteNodeDefinition(deletingNodeId)
+      if (success) {
+        addToast('节点删除成功', 'success')
+      } else {
+        addToast('节点删除失败，请重试', 'error')
+      }
     }
     setDeleteConfirmOpen(false)
     setDeletingNodeId(null)

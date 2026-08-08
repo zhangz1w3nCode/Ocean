@@ -2,6 +2,8 @@ import { create } from 'zustand'
 import type { NodeDefinition } from '../types'
 import {
   saveNodeFilesToLocal,
+  saveSingleNodeFileToLocal,
+  loadSingleNodeFileFromLocal,
   loadNodeFilesFromLocal,
   deleteNodeFileFromLocal,
 } from '../utils/storage'
@@ -10,13 +12,13 @@ interface NodeState {
   nodeDefinitions: NodeDefinition[]
   isLoaded: boolean
   setNodeDefinitions: (nodes: NodeDefinition[]) => void
-  addNodeDefinition: (node: NodeDefinition) => void
-  updateNodeDefinition: (id: string, updates: Partial<NodeDefinition>) => void
-  deleteNodeDefinition: (id: string) => void
+  addNodeDefinition: (node: NodeDefinition) => Promise<boolean>
+  updateNodeDefinition: (id: string, updates: Partial<NodeDefinition>) => Promise<boolean>
+  deleteNodeDefinition: (id: string) => Promise<boolean>
   loadNodeDefinitions: () => Promise<void>
 }
 
-export const useNodeStore = create<NodeState>((set) => ({
+export const useNodeStore = create<NodeState>((set, get) => ({
   nodeDefinitions: [],
   isLoaded: false,
 
@@ -26,36 +28,44 @@ export const useNodeStore = create<NodeState>((set) => ({
     saveNodeFilesToLocal(nodeDefinitions)
   },
 
-  addNodeDefinition: (node) =>
-    set((state) => {
-      const newDefinitions = [node, ...state.nodeDefinitions]
-      // 异步保存到本地（Markdown 格式）
-      saveNodeFilesToLocal(newDefinitions)
-      return { nodeDefinitions: newDefinitions }
-    }),
-
-  updateNodeDefinition: (id, updates) =>
-    set((state) => {
-      const newDefinitions = state.nodeDefinitions.map((node) =>
-        node.id === id ? { ...node, ...updates } : node
-      )
-      // 异步保存到本地（Markdown 格式）
-      saveNodeFilesToLocal(newDefinitions)
-      return { nodeDefinitions: newDefinitions }
-    }),
-
-  deleteNodeDefinition: (id) =>
-    set((state) => {
-      const nodeToDelete = state.nodeDefinitions.find((node) => node.id === id)
-      const newDefinitions = state.nodeDefinitions.filter((node) => node.id !== id)
-      // 异步保存到本地（Markdown 格式）
-      saveNodeFilesToLocal(newDefinitions)
-      // 删除对应的 MD 文件
-      if (nodeToDelete) {
-        deleteNodeFileFromLocal(nodeToDelete.name)
+  addNodeDefinition: async (node) => {
+    const success = await saveSingleNodeFileToLocal(node)
+    if (success) {
+      const diskNode = await loadSingleNodeFileFromLocal(node.name)
+      if (diskNode) {
+        set({ nodeDefinitions: [{ ...diskNode, id: node.id }, ...get().nodeDefinitions] })
+      } else {
+        set({ nodeDefinitions: [node, ...get().nodeDefinitions] })
       }
-      return { nodeDefinitions: newDefinitions }
-    }),
+    }
+    return success
+  },
+
+  updateNodeDefinition: async (id, updates) => {
+    const node = get().nodeDefinitions.find(n => n.id === id)
+    if (!node) return false
+    const updatedNode = { ...node, ...updates }
+    const success = await saveSingleNodeFileToLocal(updatedNode)
+    if (success) {
+      const diskNode = await loadSingleNodeFileFromLocal(node.name)
+      if (diskNode) {
+        set({ nodeDefinitions: get().nodeDefinitions.map(n => n.id === id ? { ...diskNode, id: n.id, createdAt: n.createdAt } : n) })
+      } else {
+        set({ nodeDefinitions: get().nodeDefinitions.map(n => n.id === id ? updatedNode : n) })
+      }
+    }
+    return success
+  },
+
+  deleteNodeDefinition: async (id) => {
+    const nodeToDelete = get().nodeDefinitions.find((node) => node.id === id)
+    if (!nodeToDelete) return true
+    const success = await deleteNodeFileFromLocal(nodeToDelete.name)
+    if (success) {
+      set({ nodeDefinitions: get().nodeDefinitions.filter((node) => node.id !== id) })
+    }
+    return success
+  },
 
   loadNodeDefinitions: async () => {
     // 从本地加载（Markdown 格式）

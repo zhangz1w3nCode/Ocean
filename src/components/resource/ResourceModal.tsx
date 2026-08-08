@@ -8,7 +8,7 @@ import type { ResourceFile, ResourceFileType } from '../../types'
 interface ResourceModalProps {
   isOpen: boolean
   onClose: () => void
-  onConfirm: (resource: Omit<ResourceFile, 'id' | 'createdAt' | 'updatedAt'>) => void
+  onConfirm: (resource: Omit<ResourceFile, 'id' | 'createdAt' | 'updatedAt'>) => Promise<boolean>
   mode: 'create' | 'edit'
   initialData?: ResourceFile
   existingNames?: string[]
@@ -87,7 +87,7 @@ export const ResourceModal: FC<ResourceModalProps> = ({
     }
   }, [isOpen, mode, initialData])
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     // 验证资源名称
     if (!name.trim()) {
       setInvalidFields(new Set(['name']))
@@ -114,17 +114,19 @@ export const ResourceModal: FC<ResourceModalProps> = ({
     setInvalidFields(new Set())
 
     // 提交
-    onConfirm({
+    const success = await onConfirm({
       name: name.trim(),
       type: resourceType,
       description: description.trim() || undefined,
       content: content.trim(),
     })
 
-    // 显示成功提示
-    addToast(mode === 'create' ? '资源创建成功' : '资源更新成功', 'success')
-
-    handleClose(true)
+    if (success) {
+      addToast(mode === 'create' ? '资源创建成功' : '资源更新成功', 'success')
+      handleClose(true)
+    } else {
+      addToast(mode === 'create' ? '资源创建失败，请重试' : '资源更新失败，请重试', 'error')
+    }
   }
 
   const handleClose = (skipConfirm = false) => {

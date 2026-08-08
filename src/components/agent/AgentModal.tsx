@@ -10,7 +10,7 @@ import { getAssetDirName } from '../../utils/asset-config'
 interface AgentModalProps {
   isOpen: boolean
   onClose: () => void
-  onConfirm: (agent: Omit<AgentFile, 'id' | 'createdAt' | 'updatedAt' | 'type'>) => void
+  onConfirm: (agent: Omit<AgentFile, 'id' | 'createdAt' | 'updatedAt' | 'type'>) => Promise<boolean>
   mode: 'create' | 'edit'
   initialData?: AgentFile
   existingNames?: string[]
@@ -103,7 +103,7 @@ export const AgentModal: FC<AgentModalProps> = ({
     }
   }, [isOpen, mode, initialData])
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     // 验证智能体名称
     if (!name.trim()) {
       setInvalidFields(new Set(['name']))
@@ -130,7 +130,7 @@ export const AgentModal: FC<AgentModalProps> = ({
     setInvalidFields(new Set())
 
     // 提交
-    onConfirm({
+    const success = await onConfirm({
       name: name.trim(),
       description: description.trim(),
       model: model,
@@ -138,10 +138,12 @@ export const AgentModal: FC<AgentModalProps> = ({
       content: content.trim(),
     })
 
-    // 显示成功提示
-    addToast(mode === 'create' ? '智能体创建成功' : '智能体更新成功', 'success')
-
-    handleClose(true)
+    if (success) {
+      addToast(mode === 'create' ? '智能体创建成功' : '智能体更新成功', 'success')
+      handleClose(true)
+    } else {
+      addToast(mode === 'create' ? '智能体创建失败，请重试' : '智能体更新失败，请重试', 'error')
+    }
   }
 
   const handleClose = (skipConfirm = false) => {

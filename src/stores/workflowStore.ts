@@ -19,7 +19,7 @@ interface WorkflowState {
   setWorkflows: (workflows: Workflow[]) => void
   addWorkflow: (workflow: Workflow) => void
   updateWorkflow: (id: string, updates: Partial<Workflow>) => void
-  deleteWorkflow: (id: string) => void
+  deleteWorkflow: (id: string) => Promise<boolean>
   getWorkflowById: (id: string) => Workflow | undefined
   getWorkflowByName: (name: string) => Workflow | undefined
   saveWorkflowData: (id: string, nodes: ReactFlowNode[], edges: ReactFlowEdge[]) => Promise<boolean>
@@ -56,22 +56,20 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
       return { workflows: newWorkflows }
     }),
 
-  deleteWorkflow: (id) =>
-    set((state) => {
-      const workflow = state.workflows.find((wf) => wf.id === id)
-      const newWorkflows = state.workflows.filter((wf) => wf.id !== id)
-      // 删除对应的文件或文件夹
-      if (workflow) {
-        if (workflow.hasMetadata) {
-          // 使用文件夹结构
-          deleteWorkflowFolder(workflow.name)
-        } else {
-          // 使用旧的 MD 文件
-          deleteWorkflowFileFromLocal(workflow.name)
-        }
-      }
-      return { workflows: newWorkflows }
-    }),
+  deleteWorkflow: async (id) => {
+    const workflow = get().workflows.find((wf) => wf.id === id)
+    if (!workflow) return false
+    let success = true
+    if (workflow.hasMetadata) {
+      success = await deleteWorkflowFolder(workflow.name)
+    } else {
+      success = await deleteWorkflowFileFromLocal(workflow.name)
+    }
+    if (success) {
+      set({ workflows: get().workflows.filter((wf) => wf.id !== id) })
+    }
+    return success
+  },
 
   getWorkflowById: (id) => get().workflows.find((wf) => wf.id === id),
 

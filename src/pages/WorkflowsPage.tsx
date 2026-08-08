@@ -72,10 +72,14 @@ export const WorkflowsPage: FC = () => {
   }
 
   // 确认删除
-  const handleConfirmDelete = () => {
+  const handleConfirmDelete = async () => {
     if (deletingWorkflowId) {
-      deleteWorkflow(deletingWorkflowId)
-      addToast('工作流删除成功', 'success')
+      const success = await deleteWorkflow(deletingWorkflowId)
+      if (success) {
+        addToast('工作流删除成功', 'success')
+      } else {
+        addToast('工作流删除失败，请重试', 'error')
+      }
     }
     setDeleteConfirmOpen(false)
     setDeletingWorkflowId(null)

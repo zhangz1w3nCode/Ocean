@@ -5,9 +5,11 @@ import { SkillCard, SkillModal, SkillDetailModal } from '../components/skill'
 import { useSkillStore } from '../stores/skillStore'
 import { useState, useEffect } from 'react'
 import type { SkillFile } from '../types'
+import { useToastStore } from '../stores/toastStore'
 
 export const SkillsPage: FC = () => {
   const { skillFiles, addSkillFile, updateSkillFile, deleteSkillFile, loadSkillFiles } = useSkillStore()
+  const { addToast } = useToastStore()
   const [searchQuery, setSearchQuery] = useState('')
 
   // 详情弹窗状态
@@ -86,14 +88,15 @@ export const SkillsPage: FC = () => {
         createdAt: now,
         updatedAt: now,
       }
-      addSkillFile(newSkill)
+      return await addSkillFile(newSkill)
     } else if (modalMode === 'edit' && editingSkill) {
       // 更新技能
-      updateSkillFile(editingSkill.id, {
+      return await updateSkillFile(editingSkill.id, {
         ...skillData,
         updatedAt: now,
       })
     }
+    return false
   }
 
   // 点击删除
@@ -103,9 +106,14 @@ export const SkillsPage: FC = () => {
   }
 
   // 确认删除
-  const handleConfirmDelete = () => {
+  const handleConfirmDelete = async () => {
     if (deletingSkillId) {
-      deleteSkillFile(deletingSkillId)
+      const success = await deleteSkillFile(deletingSkillId)
+      if (success) {
+        addToast('技能删除成功', 'success')
+      } else {
+        addToast('技能删除失败，请重试', 'error')
+      }
     }
     setDeleteConfirmOpen(false)
     setDeletingSkillId(null)

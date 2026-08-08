@@ -1541,6 +1541,7 @@ export const saveNodeFilesToLocal = async (nodes: any[]): Promise<boolean> => {
     }
 
     // 保存每个节点的 Markdown 文件（排除系统节点）
+    let allSuccess = true
     for (const node of nodes) {
       // 排除系统节点
       if (node.type === 'start' || node.type === 'end' || node.type === 'decision') {
@@ -1551,10 +1552,11 @@ export const saveNodeFilesToLocal = async (nodes: any[]): Promise<boolean> => {
       const saveResult = await window.electronAPI!.saveNodeFile(node.name, mdContent)
       if (!saveResult.success) {
         console.error(`保存节点文件 ${node.name} 失败:`, saveResult.error)
+        allSuccess = false
       }
     }
 
-    return true
+    return allSuccess
   } catch (error) {
     console.error('保存节点文件失败:', error)
     return false
@@ -1710,6 +1712,7 @@ export const saveResourceFilesToLocal = async (resources: any[]): Promise<boolea
     }
 
     // 保存每个资源的 Markdown 文件
+    let allSuccess = true
     for (const resource of resources) {
       const metadata = {
         id: resource.id,
@@ -1724,10 +1727,11 @@ export const saveResourceFilesToLocal = async (resources: any[]): Promise<boolea
       )
       if (!saveResult.success) {
         console.error(`保存资源文件 ${resource.name} 失败:`, saveResult.error)
+        allSuccess = false
       }
     }
 
-    return true
+    return allSuccess
   } catch (error) {
     console.error('保存资源文件失败:', error)
     return false
@@ -1863,6 +1867,7 @@ export const saveAgentFilesToLocal = async (agents: any[]): Promise<boolean> => 
     const isPi = (freshRoot.success ? freshRoot.assetRoot : 'claude') === 'pi'
 
     // 保存每个智能体的 Markdown 文件
+    let allSuccess = true
     for (const agent of agents) {
       const metadata = {
         name: agent.name,
@@ -1875,10 +1880,11 @@ export const saveAgentFilesToLocal = async (agents: any[]): Promise<boolean> => 
       const saveResult = await window.electronAPI!.saveAgentFile(agent.name, mdContent)
       if (!saveResult.success) {
         console.error(`保存智能体文件 ${agent.name} 失败:`, saveResult.error)
+        allSuccess = false
       }
     }
 
-    return true
+    return allSuccess
   } catch (error) {
     console.error('保存智能体文件失败:', error)
     return false
@@ -2046,6 +2052,7 @@ export const saveKnowledgeFilesToLocal = async (knowledges: any[]): Promise<bool
     }
 
     // 保存每个知识库的 Markdown 文件
+    let allSuccess = true
     for (const knowledge of knowledges) {
       const metadata = {
         name: knowledge.name,
@@ -2063,10 +2070,11 @@ export const saveKnowledgeFilesToLocal = async (knowledges: any[]): Promise<bool
       const saveResult = await window.electronAPI!.saveKnowledgeFile(savePath, mdContent)
       if (!saveResult.success) {
         console.error(`保存知识库文件 ${savePath} 失败:`, saveResult.error)
+        allSuccess = false
       }
     }
 
-    return true
+    return allSuccess
   } catch (error) {
     console.error('保存知识库文件失败:', error)
     return false
@@ -3455,6 +3463,7 @@ export const saveSkillFilesToLocal = async (skills: any[]): Promise<boolean> => 
     }
 
     // 保存每个技能的 SKILL.md 文件
+    let allSuccess = true
     for (const skill of skills) {
       const metadata = {
         name: skill.name,
@@ -3465,10 +3474,11 @@ export const saveSkillFilesToLocal = async (skills: any[]): Promise<boolean> => 
       const saveResult = await window.electronAPI!.saveSkillFile(skill.name, mdContent)
       if (!saveResult.success) {
         console.error(`保存技能文件 ${skill.name} 失败:`, saveResult.error)
+        allSuccess = false
       }
     }
 
-    return true
+    return allSuccess
   } catch (error) {
     console.error('保存技能文件失败:', error)
     return false
@@ -3792,4 +3802,256 @@ export const saveAssetRootToProject = async (assetRoot: AssetRoot): Promise<bool
     console.error('保存资产加载来源失败:', error)
   }
   return false
+}
+
+// ===== 单文件保存与读取（避免全量覆盖）=====
+
+// 保存单个智能体文件
+export const saveSingleAgentFileToLocal = async (agent: any): Promise<boolean> => {
+  if (!isElectron()) {
+    try {
+      const stored = localStorage.getItem(AGENT_FILES_KEY)
+      const agents = stored ? JSON.parse(stored) : []
+      const idx = agents.findIndex((a: any) => a.id === agent.id)
+      if (idx >= 0) agents[idx] = agent
+      else agents.unshift(agent)
+      localStorage.setItem(AGENT_FILES_KEY, JSON.stringify(agents))
+      return true
+    } catch (error) {
+      console.error('保存智能体文件到 localStorage 失败:', error)
+      return false
+    }
+  }
+
+  try {
+    const freshRoot = await window.electronAPI!.loadAssetRoot()
+    const isPi = (freshRoot.success ? freshRoot.assetRoot : 'claude') === 'pi'
+    const metadata = {
+      name: agent.name,
+      description: agent.description || '',
+      model: agent.model || 'haiku',
+      color: agent.color || 'blue',
+    }
+    const mdContent = generateSubAgentMarkdown(metadata, agent.rawFrontmatter, agent.content || '', isPi)
+    const saveResult = await window.electronAPI!.saveAgentFile(agent.name, mdContent)
+    if (!saveResult.success) {
+      console.error(`保存智能体文件 ${agent.name} 失败:`, saveResult.error)
+      return false
+    }
+    return true
+  } catch (error) {
+    console.error('保存智能体文件失败:', error)
+    return false
+  }
+}
+
+// 加载单个智能体文件
+export const loadSingleAgentFileFromLocal = async (agentName: string): Promise<any | null> => {
+  if (!isElectron()) {
+    try {
+      const data = localStorage.getItem(AGENT_FILES_KEY)
+      if (!data) return null
+      const agents = JSON.parse(data)
+      return agents.find((a: any) => a.name === agentName) || null
+    } catch { return null }
+  }
+
+  try {
+    const contentResult = await window.electronAPI!.loadAgentFile(agentName)
+    if (!contentResult.success || !contentResult.content) return null
+    const { metadata, body } = parseSubAgentFrontmatter(contentResult.content)
+    return {
+      id: `agent-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      name: metadata.name || agentName,
+      type: 'sub-agent',
+      description: metadata.description || '',
+      model: metadata.model || 'haiku',
+      color: metadata.color || 'blue',
+      rawFrontmatter: metadata,
+      content: body,
+      createdAt: contentResult.mtime || new Date().toISOString(),
+      updatedAt: contentResult.mtime || new Date().toISOString(),
+    }
+  } catch (error) {
+    console.error('加载智能体文件失败:', error)
+    return null
+  }
+}
+
+// 保存单个技能文件
+export const saveSingleSkillFileToLocal = async (skill: any): Promise<boolean> => {
+  if (!isElectron()) {
+    try {
+      const stored = localStorage.getItem(SKILL_FILES_KEY)
+      const skills = stored ? JSON.parse(stored) : []
+      const idx = skills.findIndex((s: any) => s.id === skill.id)
+      if (idx >= 0) skills[idx] = skill
+      else skills.unshift(skill)
+      localStorage.setItem(SKILL_FILES_KEY, JSON.stringify(skills))
+      return true
+    } catch (error) {
+      console.error('保存技能文件到 localStorage 失败:', error)
+      return false
+    }
+  }
+
+  try {
+    const metadata = {
+      name: skill.name,
+      description: skill.description || '',
+    }
+    const mdContent = generateSkillMarkdown(metadata, skill.content || '')
+    const saveResult = await window.electronAPI!.saveSkillFile(skill.name, mdContent)
+    if (!saveResult.success) {
+      console.error(`保存技能文件 ${skill.name} 失败:`, saveResult.error)
+      return false
+    }
+    return true
+  } catch (error) {
+    console.error('保存技能文件失败:', error)
+    return false
+  }
+}
+
+// 加载单个技能文件
+export const loadSingleSkillFileFromLocal = async (skillName: string): Promise<any | null> => {
+  if (!isElectron()) {
+    try {
+      const data = localStorage.getItem(SKILL_FILES_KEY)
+      if (!data) return null
+      const skills = JSON.parse(data)
+      return skills.find((s: any) => s.name === skillName) || null
+    } catch { return null }
+  }
+
+  try {
+    const contentResult = await window.electronAPI!.loadSkillFile(skillName)
+    if (!contentResult.success || !contentResult.content) return null
+    const { metadata, body } = parseSkillFrontmatter(contentResult.content)
+    const scripts = await loadResourceList(skillName, 'scripts')
+    const references = await loadResourceList(skillName, 'references')
+    const examples = await loadResourceList(skillName, 'examples')
+    return {
+      id: `skill-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      name: metadata.name || skillName,
+      type: 'skill',
+      description: metadata.description || '',
+      content: body,
+      scripts,
+      references,
+      examples,
+      createdAt: contentResult.mtime || new Date().toISOString(),
+      updatedAt: contentResult.mtime || new Date().toISOString(),
+    }
+  } catch (error) {
+    console.error('加载技能文件失败:', error)
+    return null
+  }
+}
+
+// 保存单个资源文件
+export const saveSingleResourceFileToLocal = async (resource: any): Promise<boolean> => {
+  if (!isElectron()) {
+    try {
+      const stored = localStorage.getItem(RESOURCE_FILES_KEY)
+      const resources = stored ? JSON.parse(stored) : []
+      const idx = resources.findIndex((r: any) => r.id === resource.id)
+      if (idx >= 0) resources[idx] = resource
+      else resources.unshift(resource)
+      localStorage.setItem(RESOURCE_FILES_KEY, JSON.stringify(resources))
+      return true
+    } catch (error) {
+      console.error('保存资源文件到 localStorage 失败:', error)
+      return false
+    }
+  }
+
+  try {
+    const metadata = {
+      id: resource.id,
+      type: resource.type,
+      description: resource.description,
+    }
+    const mdContent = generateMarkdownWithFrontmatter(metadata, resource.content || '')
+    const saveResult = await window.electronAPI!.saveResourceFile(resource.name, mdContent)
+    if (!saveResult.success) {
+      console.error(`保存资源文件 ${resource.name} 失败:`, saveResult.error)
+      return false
+    }
+    return true
+  } catch (error) {
+    console.error('保存资源文件失败:', error)
+    return false
+  }
+}
+
+// 加载单个资源文件
+export const loadSingleResourceFileFromLocal = async (resourceName: string): Promise<any | null> => {
+  if (!isElectron()) {
+    try {
+      const data = localStorage.getItem(RESOURCE_FILES_KEY)
+      if (!data) return null
+      const resources = JSON.parse(data)
+      return resources.find((r: any) => r.name === resourceName) || null
+    } catch { return null }
+  }
+
+  try {
+    const contentResult = await window.electronAPI!.loadResourceFile(resourceName)
+    if (!contentResult.success || !contentResult.content) return null
+    const { metadata, body } = parseFrontmatter(contentResult.content)
+    return {
+      id: metadata.id || `resource-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      name: resourceName,
+      type: metadata.type || 'rule',
+      description: metadata.description || '',
+      content: body,
+      createdAt: contentResult.mtime || new Date().toISOString(),
+      updatedAt: contentResult.mtime || new Date().toISOString(),
+    }
+  } catch (error) {
+    console.error('加载资源文件失败:', error)
+    return null
+  }
+}
+
+// 删除单个资源文件
+export const deleteResourceFileFromLocal = async (name: string): Promise<boolean> => {
+  if (!isElectron()) {
+    return true
+  }
+
+  try {
+    const result = await window.electronAPI!.deleteResourceFile(name)
+    return result.success
+  } catch (error) {
+    console.error('删除资源文件失败:', error)
+    return false
+  }
+}
+
+// 加载单个节点文件
+export const loadSingleNodeFileFromLocal = async (nodeName: string): Promise<any | null> => {
+  if (!isElectron()) {
+    try {
+      const data = localStorage.getItem(NODE_FILES_KEY)
+      if (!data) return null
+      const nodes = JSON.parse(data)
+      return nodes.find((n: any) => n.name === nodeName) || null
+    } catch { return null }
+  }
+
+  try {
+    const contentResult = await window.electronAPI!.loadNodeFile(nodeName)
+    if (!contentResult.success || !contentResult.content) return null
+    const node = parseNodeMarkdown(contentResult.content, `${nodeName}.md`)
+    return {
+      ...node,
+      createdAt: contentResult.mtime || new Date().toISOString(),
+      updatedAt: contentResult.mtime || new Date().toISOString(),
+    }
+  } catch (error) {
+    console.error('加载节点文件失败:', error)
+    return null
+  }
 }
