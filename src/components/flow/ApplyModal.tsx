@@ -5,6 +5,7 @@ import { Modal, Button, MarkdownEditor, MarkdownRenderer, Input, Textarea } from
 import { useToastStore } from '../../stores/toastStore'
 import { useSkillStore } from '../../stores/skillStore'
 import { getAssetDirName } from '../../utils/asset-config'
+import { loadAssetRootFromProject } from '../../utils/storage'
 
 interface ApplyModalProps {
   isOpen: boolean
@@ -109,11 +110,22 @@ export const ApplyModal: FC<ApplyModalProps> = ({
     setIsCreating(true)
 
     try {
+      // 实时读取资产来源并刷新缓存，保证技能内容中引用的工作流路径与主进程实际目录一致
+      await loadAssetRootFromProject()
+      const freshDirName = getAssetDirName()
+      // 内容中可能残留任意旧前缀（.pi 或 .claude），统一替换为实时值，不影响用户其他编辑内容
+      let finalContent = skillContent
+      if (freshDirName !== '.pi') {
+        finalContent = finalContent.split(`.pi/workflows/${workflowName}/WORKFLOW.md`).join(`${freshDirName}/workflows/${workflowName}/WORKFLOW.md`)
+      }
+      if (freshDirName !== '.claude') {
+        finalContent = finalContent.split(`.claude/workflows/${workflowName}/WORKFLOW.md`).join(`${freshDirName}/workflows/${workflowName}/WORKFLOW.md`)
+      }
       // 创建技能
       const result = await createSkill({
         name: skillName.trim(),
         description: skillDescription.trim(),
-        content: skillContent,
+        content: finalContent,
       })
 
       if (result) {

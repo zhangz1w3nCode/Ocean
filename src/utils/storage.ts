@@ -992,6 +992,8 @@ export const saveWorkflowFileToLocal = async (workflow: any, nodes: any[], edges
 
   // Electron 环境：保存为 Markdown 文件
   try {
+    // 实时读取资产来源并刷新缓存（不依赖缓存），保证局部节点引用路径与主进程实际目录一致
+    await loadAssetRootFromProject()
     const mdContent = generateWorkflowMd(workflow, nodes, validEdges)
     const result = await window.electronAPI!.saveWorkflowFile(workflow.name, mdContent)
     return result.success
@@ -1101,6 +1103,8 @@ export const saveWorkflowToFolder = async (workflow: any, nodes: any[], edges: a
     }
 
     // 2. 保存 WORKFLOW.md
+    // 实时读取资产来源并刷新缓存（不依赖缓存），保证局部节点引用路径与主进程实际目录一致
+    await loadAssetRootFromProject()
     const mdContent = generateWorkflowMdContent(workflow, nodes, validEdges)
     const mdResult = await window.electronAPI!.saveWorkflowMd(workflow.name, mdContent)
     if (!mdResult.success) {
@@ -3757,6 +3761,7 @@ export const getDefaultKnowledgeAgenticCreatePromptTemplate = (): string => {
 
 export const loadAssetRootFromProject = async (): Promise<AssetRoot> => {
   if (!isElectron()) {
+    updateCachedAssetRoot('claude')
     return 'claude'
   }
   try {
@@ -3768,6 +3773,8 @@ export const loadAssetRootFromProject = async (): Promise<AssetRoot> => {
   } catch (error) {
     console.error('加载资产加载来源失败:', error)
   }
+  // 读取失败时缓存同步回退默认值，避免与主进程默认行为（claude）不一致
+  updateCachedAssetRoot('claude')
   return 'claude'
 }
 
