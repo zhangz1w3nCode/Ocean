@@ -131,7 +131,7 @@ export const KnowledgesPage: FC = () => {
   }
 
   // 确认创建/编辑
-  const handleModalConfirm = (knowledgeData: Omit<KnowledgeFile, 'id' | 'createdAt' | 'updatedAt' | 'type'>) => {
+  const handleModalConfirm = async (knowledgeData: Omit<KnowledgeFile, 'id' | 'createdAt' | 'updatedAt' | 'type'>) => {
     const now = new Date().toISOString()
 
     if (modalMode === 'create') {
@@ -143,14 +143,15 @@ export const KnowledgesPage: FC = () => {
         createdAt: now,
         updatedAt: now,
       }
-      addKnowledgeFile(newKnowledge)
+      return await addKnowledgeFile(newKnowledge)
     } else if (modalMode === 'edit' && editingKnowledge) {
       // 更新知识
-      updateKnowledgeFile(editingKnowledge.id, {
+      return await updateKnowledgeFile(editingKnowledge.id, {
         ...knowledgeData,
         updatedAt: now,
       })
     }
+    return false
   }
 
   // 点击删除
@@ -160,9 +161,14 @@ export const KnowledgesPage: FC = () => {
   }
 
   // 确认删除
-  const handleConfirmDelete = () => {
+  const handleConfirmDelete = async () => {
     if (deletingKnowledgeId) {
-      deleteKnowledgeFile(deletingKnowledgeId)
+      const success = await deleteKnowledgeFile(deletingKnowledgeId)
+      if (success) {
+        addToast('知识删除成功', 'success')
+      } else {
+        addToast('知识删除失败，请重试', 'error')
+      }
     }
     setDeleteConfirmOpen(false)
     setDeletingKnowledgeId(null)
@@ -175,10 +181,11 @@ export const KnowledgesPage: FC = () => {
   }
 
   // 保存全局索引（将动态生成的内容直接保存为 INDEX.md）
-  const handleSaveGlobalIndex = () => {
+  const handleSaveGlobalIndex = async () => {
+    let success = false
     if (globalIndexKnowledge) {
       // 已存在则覆盖更新
-      updateKnowledgeFile(globalIndexKnowledge.id, {
+      success = await updateKnowledgeFile(globalIndexKnowledge.id, {
         content: generatedIndexContent || '',
         updatedAt: new Date().toISOString(),
       })
@@ -195,10 +202,14 @@ export const KnowledgesPage: FC = () => {
         createdAt: now,
         updatedAt: now,
       }
-      addKnowledgeFile(newKnowledge)
+      success = await addKnowledgeFile(newKnowledge)
     }
-    setIsGlobalIndexOpen(false)
-    addToast('保存成功', 'success')
+    if (success) {
+      setIsGlobalIndexOpen(false)
+      addToast('保存成功', 'success')
+    } else {
+      addToast('保存失败，请重试', 'error')
+    }
   }
 
   // 刷新全局索引（从磁盘重新加载后再生成目录结构）

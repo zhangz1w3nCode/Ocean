@@ -2,6 +2,8 @@ import { create } from 'zustand'
 import type { SkillFile, CreateSkillInput, SkillResource } from '../types'
 import {
   saveSkillFilesToLocal,
+  saveSingleSkillFileToLocal,
+  loadSingleSkillFileFromLocal,
   loadSkillFilesFromLocal,
   deleteSkillFromLocal,
   createSkillDirectory,
@@ -14,9 +16,9 @@ interface SkillState {
   skillFiles: SkillFile[]
   isLoaded: boolean
   setSkillFiles: (skills: SkillFile[]) => void
-  addSkillFile: (skill: SkillFile) => void
-  updateSkillFile: (id: string, updates: Partial<SkillFile>) => void
-  deleteSkillFile: (id: string) => void
+  addSkillFile: (skill: SkillFile) => Promise<boolean>
+  updateSkillFile: (id: string, updates: Partial<SkillFile>) => Promise<boolean>
+  deleteSkillFile: (id: string) => Promise<boolean>
   loadSkillFiles: () => Promise<void>
   createSkill: (input: CreateSkillInput) => Promise<SkillFile | null>
   // 资源文件管理
@@ -35,34 +37,44 @@ export const useSkillStore = create<SkillState>((set, get) => ({
     saveSkillFilesToLocal(skillFiles)
   },
 
-  addSkillFile: (skill) =>
-    set((state) => {
-      const newSkills = [skill, ...state.skillFiles]
-      // 异步保存到本地
-      saveSkillFilesToLocal(newSkills)
-      return { skillFiles: newSkills }
-    }),
-
-  updateSkillFile: (id, updates) =>
-    set((state) => {
-      const newSkills = state.skillFiles.map((skill) =>
-        skill.id === id ? { ...skill, ...updates } : skill
-      )
-      // 异步保存到本地
-      saveSkillFilesToLocal(newSkills)
-      return { skillFiles: newSkills }
-    }),
-
-  deleteSkillFile: (id) =>
-    set((state) => {
-      const skillToDelete = state.skillFiles.find((skill) => skill.id === id)
-      const newSkills = state.skillFiles.filter((skill) => skill.id !== id)
-      // 异步删除目录并保存列表
-      if (skillToDelete) {
-        deleteSkillFromLocal(skillToDelete.name)
+  addSkillFile: async (skill) => {
+    const success = await saveSingleSkillFileToLocal(skill)
+    if (success) {
+      const diskSkill = await loadSingleSkillFileFromLocal(skill.name)
+      if (diskSkill) {
+        set({ skillFiles: [{ ...diskSkill, id: skill.id }, ...get().skillFiles] })
+      } else {
+        set({ skillFiles: [skill, ...get().skillFiles] })
       }
-      return { skillFiles: newSkills }
-    }),
+    }
+    return success
+  },
+
+  updateSkillFile: async (id, updates) => {
+    const skill = get().skillFiles.find(s => s.id === id)
+    if (!skill) return false
+    const updatedSkill = { ...skill, ...updates }
+    const success = await saveSingleSkillFileToLocal(updatedSkill)
+    if (success) {
+      const diskSkill = await loadSingleSkillFileFromLocal(skill.name)
+      if (diskSkill) {
+        set({ skillFiles: get().skillFiles.map(s => s.id === id ? { ...diskSkill, id: s.id, createdAt: s.createdAt } : s) })
+      } else {
+        set({ skillFiles: get().skillFiles.map(s => s.id === id ? updatedSkill : s) })
+      }
+    }
+    return success
+  },
+
+  deleteSkillFile: async (id) => {
+    const skillToDelete = get().skillFiles.find((skill) => skill.id === id)
+    if (!skillToDelete) return true
+    const success = await deleteSkillFromLocal(skillToDelete.name)
+    if (success) {
+      set({ skillFiles: get().skillFiles.filter((skill) => skill.id !== id) })
+    }
+    return success
+  },
 
   loadSkillFiles: async () => {
     // 从本地加载

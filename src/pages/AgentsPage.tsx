@@ -5,10 +5,12 @@ import { AgentCard, AgentModal, AgentDetailModal } from '../components/agent'
 import { useAgentStore } from '../stores/agentStore'
 import { useState, useEffect } from 'react'
 import type { AgentFile } from '../types'
+import { useToastStore } from '../stores/toastStore'
 
 export const AgentsPage: FC = () => {
   const { agentFiles, addAgentFile, updateAgentFile, deleteAgentFile, loadAgentFiles } =
     useAgentStore()
+  const { addToast } = useToastStore()
   const [searchQuery, setSearchQuery] = useState('')
 
   // 详情弹窗状态
@@ -72,7 +74,7 @@ export const AgentsPage: FC = () => {
   }
 
   // 确认创建/编辑
-  const handleModalConfirm = (agentData: Omit<AgentFile, 'id' | 'createdAt' | 'updatedAt' | 'type'>) => {
+  const handleModalConfirm = async (agentData: Omit<AgentFile, 'id' | 'createdAt' | 'updatedAt' | 'type'>) => {
     const now = new Date().toISOString()
 
     if (modalMode === 'create') {
@@ -84,14 +86,15 @@ export const AgentsPage: FC = () => {
         createdAt: now,
         updatedAt: now,
       }
-      addAgentFile(newAgent)
+      return await addAgentFile(newAgent)
     } else if (modalMode === 'edit' && editingAgent) {
       // 更新智能体
-      updateAgentFile(editingAgent.id, {
+      return await updateAgentFile(editingAgent.id, {
         ...agentData,
         updatedAt: now,
       })
     }
+    return false
   }
 
   // 点击删除
@@ -101,9 +104,14 @@ export const AgentsPage: FC = () => {
   }
 
   // 确认删除
-  const handleConfirmDelete = () => {
+  const handleConfirmDelete = async () => {
     if (deletingAgentId) {
-      deleteAgentFile(deletingAgentId)
+      const success = await deleteAgentFile(deletingAgentId)
+      if (success) {
+        addToast('智能体删除成功', 'success')
+      } else {
+        addToast('智能体删除失败，请重试', 'error')
+      }
     }
     setDeleteConfirmOpen(false)
     setDeletingAgentId(null)

@@ -10,7 +10,7 @@ type NodeType = 'process' | 'business'
 interface NodeModalProps {
   isOpen: boolean
   onClose: () => void
-  onConfirm: (node: Omit<NodeDefinition, 'id' | 'createdAt' | 'updatedAt'>) => void
+  onConfirm: (node: Omit<NodeDefinition, 'id' | 'createdAt' | 'updatedAt'>) => Promise<boolean>
   mode: 'create' | 'edit'
   initialData?: NodeDefinition
   existingNames?: string[]
@@ -90,7 +90,7 @@ export const NodeModal: FC<NodeModalProps> = ({
     }
   }, [isOpen, mode, initialData])
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     // 验证节点名称
     if (!name.trim()) {
       setInvalidFields(new Set(['name']))
@@ -117,17 +117,19 @@ export const NodeModal: FC<NodeModalProps> = ({
     setInvalidFields(new Set())
 
     // 提交
-    onConfirm({
+    const success = await onConfirm({
       name: name.trim(),
       type: nodeType,
       description: description.trim(),
       content: content.trim(),
     })
 
-    // 显示成功提示
-    addToast(mode === 'create' ? '节点创建成功' : '节点更新成功', 'success')
-
-    handleClose(true)
+    if (success) {
+      addToast(mode === 'create' ? '节点创建成功' : '节点更新成功', 'success')
+      handleClose(true)
+    } else {
+      addToast(mode === 'create' ? '节点创建失败，请重试' : '节点更新失败，请重试', 'error')
+    }
   }
 
   const handleClose = (skipConfirm = false) => {

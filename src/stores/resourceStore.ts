@@ -2,20 +2,23 @@ import { create } from 'zustand'
 import type { ResourceFile } from '../types'
 import {
   saveResourceFilesToLocal,
+  saveSingleResourceFileToLocal,
+  loadSingleResourceFileFromLocal,
   loadResourceFilesFromLocal,
+  deleteResourceFileFromLocal,
 } from '../utils/storage'
 
 interface ResourceState {
   resourceFiles: ResourceFile[]
   isLoaded: boolean
   setResourceFiles: (resources: ResourceFile[]) => void
-  addResourceFile: (resource: ResourceFile) => void
-  updateResourceFile: (id: string, updates: Partial<ResourceFile>) => void
-  deleteResourceFile: (id: string) => void
+  addResourceFile: (resource: ResourceFile) => Promise<boolean>
+  updateResourceFile: (id: string, updates: Partial<ResourceFile>) => Promise<boolean>
+  deleteResourceFile: (id: string) => Promise<boolean>
   loadResourceFiles: () => Promise<void>
 }
 
-export const useResourceStore = create<ResourceState>((set) => ({
+export const useResourceStore = create<ResourceState>((set, get) => ({
   resourceFiles: [],
   isLoaded: false,
 
@@ -25,31 +28,44 @@ export const useResourceStore = create<ResourceState>((set) => ({
     saveResourceFilesToLocal(resourceFiles)
   },
 
-  addResourceFile: (resource) =>
-    set((state) => {
-      const newResources = [resource, ...state.resourceFiles]
-      // 异步保存到本地
-      saveResourceFilesToLocal(newResources)
-      return { resourceFiles: newResources }
-    }),
+  addResourceFile: async (resource) => {
+    const success = await saveSingleResourceFileToLocal(resource)
+    if (success) {
+      const diskResource = await loadSingleResourceFileFromLocal(resource.name)
+      if (diskResource) {
+        set({ resourceFiles: [{ ...diskResource, id: resource.id }, ...get().resourceFiles] })
+      } else {
+        set({ resourceFiles: [resource, ...get().resourceFiles] })
+      }
+    }
+    return success
+  },
 
-  updateResourceFile: (id, updates) =>
-    set((state) => {
-      const newResources = state.resourceFiles.map((resource) =>
-        resource.id === id ? { ...resource, ...updates } : resource
-      )
-      // 异步保存到本地
-      saveResourceFilesToLocal(newResources)
-      return { resourceFiles: newResources }
-    }),
+  updateResourceFile: async (id, updates) => {
+    const resource = get().resourceFiles.find(r => r.id === id)
+    if (!resource) return false
+    const updatedResource = { ...resource, ...updates }
+    const success = await saveSingleResourceFileToLocal(updatedResource)
+    if (success) {
+      const diskResource = await loadSingleResourceFileFromLocal(resource.name)
+      if (diskResource) {
+        set({ resourceFiles: get().resourceFiles.map(r => r.id === id ? { ...diskResource, id: r.id, createdAt: r.createdAt } : r) })
+      } else {
+        set({ resourceFiles: get().resourceFiles.map(r => r.id === id ? updatedResource : r) })
+      }
+    }
+    return success
+  },
 
-  deleteResourceFile: (id) =>
-    set((state) => {
-      const newResources = state.resourceFiles.filter((resource) => resource.id !== id)
-      // 异步保存到本地
-      saveResourceFilesToLocal(newResources)
-      return { resourceFiles: newResources }
-    }),
+  deleteResourceFile: async (id) => {
+    const resourceToDelete = get().resourceFiles.find(r => r.id === id)
+    if (!resourceToDelete) return true
+    const success = await deleteResourceFileFromLocal(resourceToDelete.name)
+    if (success) {
+      set({ resourceFiles: get().resourceFiles.filter(r => r.id !== id) })
+    }
+    return success
+  },
 
   loadResourceFiles: async () => {
     // 从本地加载
