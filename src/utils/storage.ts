@@ -136,10 +136,6 @@ declare global {
       // 知识模块模板文件 API
       saveKnowledgeTemplateFile: (templateType: 'agentic-create', content: string) => Promise<{ success: boolean; error?: string }>
       loadKnowledgeTemplateFile: (templateType: 'agentic-create') => Promise<{ success: boolean; content: string | null; error?: string }>
-      // Claude Code CLI API
-      runClaudeCode: (config: import('../types').ClaudeCodeExecuteConfig) => Promise<import('../types').ClaudeCodeExecuteResult>
-      abortClaudeCode: () => Promise<{ success: boolean; error?: string }>
-      onClaudeCodeEvent: (callback: (event: import('../types').ClaudeCodeEvent) => void) => () => void
     }
   }
 }

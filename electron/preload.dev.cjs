@@ -119,14 +119,6 @@ const electronAPI = {
   loadKnowledgeTemplateFile: (templateType) =>
     ipcRenderer.invoke('load-knowledge-template-file', templateType),
 
-  // Claude Code CLI API
-  runClaudeCode: (config) => ipcRenderer.invoke('run-claude-code', config),
-  abortClaudeCode: () => ipcRenderer.invoke('abort-claude-code'),
-  onClaudeCodeEvent: (callback) => {
-    const listener = (_event, data) => callback(data)
-    ipcRenderer.on('claude-code-event', listener)
-    return () => ipcRenderer.removeListener('claude-code-event', listener)
-  }
 }
 
 // 通过 window 暴露
