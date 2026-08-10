@@ -36,6 +36,9 @@ const resizeCursors: Record<ResizeDirection, string> = {
   se: 'nwse-resize',
 }
 
+// 持久化弹窗布局（位置+尺寸），在预览↔编辑切换时保持用户的调整
+let persistedLayout: { pos: { x: number; y: number }; dim: { width: number; height: number } } | null = null
+
 export const Modal: FC<ModalProps> = ({
   isOpen,
   onClose,
@@ -113,19 +116,32 @@ export const Modal: FC<ModalProps> = ({
     }
   }, [isOpen])
 
-  // 每次打开时重置弹窗到屏幕居中
+  // 打开弹窗：继承上次持久化的布局（预览↔编辑切换时保持位置与缩放），否则居中
   useLayoutEffect(() => {
     if (isOpen) {
-      const w = Math.min(sizeWidths[size], window.innerWidth - 32)
-      const h = Math.min(600, Math.round(window.innerHeight * 0.7))
-      setDimensions({ width: w, height: h })
-      setPosition({
-        x: Math.max(16, Math.round((window.innerWidth - w) / 2)),
-        y: Math.max(16, Math.round((window.innerHeight - h) / 2)),
-      })
+      if (persistedLayout) {
+        setDimensions(persistedLayout.dim)
+        setPosition(persistedLayout.pos)
+      } else {
+        const w = Math.min(sizeWidths[size], window.innerWidth - 32)
+        const h = Math.min(600, Math.round(window.innerHeight * 0.7))
+        setDimensions({ width: w, height: h })
+        setPosition({
+          x: Math.max(16, Math.round((window.innerWidth - w) / 2)),
+          y: Math.max(16, Math.round((window.innerHeight - h) / 2)),
+        })
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen])
+
+  // 持久化当前布局（非最大化时），供预览↔编辑切换时继承
+  useEffect(() => {
+    if (isOpen && !isMaximized) {
+      persistedLayout = { pos: { ...position }, dim: { ...dimensions } }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [position, dimensions, isOpen, isMaximized])
 
   // 拖拽移动：mousedown 头部 → 全局 mousemove 更新位置 → mouseup 结束
   const handleDragStart = useCallback(
@@ -327,19 +343,19 @@ export const Modal: FC<ModalProps> = ({
               {/* 缩放手柄 — 四边 */}
               <div
                 onMouseDown={handleResizeStart('n')}
-                className="absolute top-0 left-3 right-3 h-1.5 cursor-ns-resize z-20 hover:bg-gray-300"
+                className="absolute top-0 left-3 right-3 h-1.5 cursor-ns-resize z-20"
               />
               <div
                 onMouseDown={handleResizeStart('s')}
-                className="absolute bottom-0 left-3 right-3 h-1.5 cursor-ns-resize z-20 hover:bg-gray-300"
+                className="absolute bottom-0 left-3 right-3 h-1.5 cursor-ns-resize z-20"
               />
               <div
                 onMouseDown={handleResizeStart('w')}
-                className="absolute left-0 top-3 bottom-3 w-1.5 cursor-ew-resize z-20 hover:bg-gray-300"
+                className="absolute left-0 top-3 bottom-3 w-1.5 cursor-ew-resize z-20"
               />
               <div
                 onMouseDown={handleResizeStart('e')}
-                className="absolute right-0 top-3 bottom-3 w-1.5 cursor-ew-resize z-20 hover:bg-gray-300"
+                className="absolute right-0 top-3 bottom-3 w-1.5 cursor-ew-resize z-20"
               />
 
               {/* 缩放手柄 — 四角 */}
