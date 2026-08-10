@@ -25,4 +25,7 @@ export default defineConfig({
     include: ['mermaid'],
     exclude: [],
   },
+  test: {
+    include: ['src/**/*.test.ts'],
+  },
 })

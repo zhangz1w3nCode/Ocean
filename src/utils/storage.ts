@@ -3,7 +3,7 @@
 import type { AppConfig, KnowledgeGraphConfig, AgenticConfig, AgenticToolConfig, Usage, AgentLoopEvent, AssetRoot } from '../types'
 import { generateWorkflowMdContent } from './workflow-generator'
 import { updateCachedAssetRoot, getAssetDirName } from './asset-config'
-import { parse, stringify } from 'yaml'
+import { parse, stringify, Document, isMap, isScalar, isSeq } from 'yaml'
 
 // 重新导出工作流生成器函数
 export { generateWorkflowMdContent }
@@ -1980,8 +1980,11 @@ const parseKnowledgeFrontmatter = (content: string): { metadata: Record<string, 
   return { metadata: {}, body: content }
 }
 
+// 需要使用 flow 风格（[a, b] 单行）序列化的 frontmatter 字段
+const FLOW_STYLE_FIELDS = ['tags']
+
 // 生成知识库格式的 Markdown（以原始 frontmatter 为基础合并，只更新本次提供的字段，保留未知字段）
-const generateKnowledgeMarkdown = (
+export const generateKnowledgeMarkdown = (
   metadata: { name: string; description: string; tags: string[]; category?: string },
   content: string,
   rawFrontmatter?: Record<string, any>
@@ -2017,7 +2020,16 @@ const generateKnowledgeMarkdown = (
 
   // category 不写入 frontmatter：分类以文件所在子目录为事实来源
 
-  return `---\n${stringify(frontmatter).trim()}\n---\n${content}`
+  // 序列化时仅让 FLOW_STYLE_FIELDS 中的字段使用 flow 风格（输出 [a, b]），其余顶层字段保持 block
+  const doc = new Document(frontmatter)
+  if (isMap(doc.contents)) {
+    for (const item of doc.contents.items) {
+      if (isScalar(item.key) && FLOW_STYLE_FIELDS.includes(item.key.value as string) && isSeq(item.value)) {
+        item.value.flow = true
+      }
+    }
+  }
+  return `---\n${String(doc).trim()}\n---\n${content}`
 }
 
 // 保存知识库文件列表（每个知识库保存为独立的 Markdown 文件，支持子目录）
