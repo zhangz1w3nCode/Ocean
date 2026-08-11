@@ -192,8 +192,8 @@ export const SkillsPage: FC = () => {
           ) : (
             /* 空状态 */
             <div className="h-full flex flex-col items-center justify-center text-center">
-              <div className="w-20 h-20 rounded-full bg-violet-100 flex items-center justify-center">
-                <Wand2 size={32} className="text-violet-500" />
+              <div className="w-20 h-20 rounded-full bg-gray-100 flex items-center justify-center">
+                <Wand2 size={32} className="text-macos-text-tertiary" />
               </div>
               <p className="mt-4 text-sm text-macos-text-secondary">还没有技能</p>
               <p className="mt-1 text-xs text-macos-text-tertiary">点击上方「新建技能」创建第一个技能</p>
