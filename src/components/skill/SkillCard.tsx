@@ -29,9 +29,9 @@ export const SkillCard: FC<SkillCardProps> = ({ skill, onClick, onEdit, onDelete
       <div className="px-4 pb-0 pt-4">
         <div className="flex items-start justify-between mb-2">
           <div className="flex items-center gap-2">
-            {/* 魔法棒图标 - 紫罗兰色 */}
-            <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-violet-100">
-              <Wand2 size={18} className="text-violet-600" strokeWidth={1.5} />
+            {/* 魔法棒图标 */}
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-gray-100">
+              <Wand2 size={18} className="text-gray-600" strokeWidth={1.5} />
             </div>
             {/* 名称 */}
             <h3 className="font-bold text-[17px] text-gray-900">
