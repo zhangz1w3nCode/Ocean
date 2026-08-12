@@ -87,20 +87,20 @@ export function useReferenceItems(options: UseReferenceItemsOptions = {}): Refer
     })
 
     // 工作流 - 先添加库引用，再添加具体文件
-    // 注意：工作流已使用新的文件夹结构，路径为 .claude/workflows/{name}/WORKFLOW.md
+    // 工作流为跨资产来源共享资产，路径为 .workflows/
     const workflowLibrary = libraryConfig.find(c => c.category === 'workflows')!
-    if (`${assetDir}/${workflowLibrary.subDir}` !== excludePath) {
+    if (`.workflows/` !== excludePath) {
       items.push({
         id: 'library-workflows',
         name: workflowLibrary.name,
         category: 'workflows',
-        path: `${assetDir}/${workflowLibrary.subDir}`,
+        path: '.workflows/',
         isLibrary: true,
       })
     }
     workflows.forEach((workflow) => {
-      // 工作流使用新的文件夹结构，路径为 .claude/workflows/{name}/WORKFLOW.md
-      const path = `${assetDir}/workflows/${workflow.name}/WORKFLOW.md`
+      // 工作流使用新的文件夹结构，路径为 .workflows/{name}/WORKFLOW.md
+      const path = `.workflows/${workflow.name}/WORKFLOW.md`
       if (path !== excludePath) {
         items.push({
           id: workflow.id,

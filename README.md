@@ -41,7 +41,7 @@ Ocean manages 6 types of Claude Code assets, each with full CRUD operations, Mar
 | Knowledge | `.knowledges/` | Manage business knowledge with tags, categories, WikiLink references, and a visual knowledge graph |
 | Nodes | `.nodes/` | Define reusable workflow building blocks |
 | Resources | `.resources/` | Manage reference resource files |
-| Workflows | `.claude/workflows/` | Design and manage workflow definitions |
+| Workflows | `.workflows/` | Design and manage workflow definitions |
 
 ### Visual Workflow Editor
 

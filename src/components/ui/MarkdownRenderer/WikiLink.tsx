@@ -28,10 +28,10 @@ export function extractDisplayName(path: string): string {
     if (match) return match[1]
   }
 
-  // 特殊处理：工作流路径 {资产根目录}/workflows/{name}/WORKFLOW.md
-  if (cleanedPath.includes('/workflows/')) {
-    const match = cleanedPath.match(/\/workflows\/([^/]+)\/WORKFLOW\.md$/i)
-    if (match) return match[1]
+  // 特殊处理：工作流路径 {资产根目录}/workflows/{name}/WORKFLOW.md 或 .workflows/{name}/WORKFLOW.md
+  if (cleanedPath.includes('/workflows/') || cleanedPath.includes('.workflows/')) {
+    const match = cleanedPath.match(/(^|[\/.])workflows\/([^/]+)\/WORKFLOW\.md$/i)
+    if (match) return match[2]
   }
 
   // 默认处理：提取文件名（去除路径前缀和扩展名）
@@ -49,7 +49,7 @@ export function getReferenceType(path: string): { icon: string; color: string; b
   if (path.includes('/nodes/') || path.includes('.nodes/')) {
     return { icon: '节点', color: '#2563EB', bgColor: '#DBEAFE' } // 蓝色
   }
-  if (path.includes('/workflows/')) {
+  if (path.includes('/workflows/') || path.includes('.workflows/')) {
     return { icon: '工作流', color: '#DC2626', bgColor: '#FEE2E2' } // 红色
   }
   if (path.includes('/resources/') || path.includes('.resources/')) {
