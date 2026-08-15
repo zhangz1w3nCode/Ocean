@@ -54,7 +54,7 @@ export interface Workflow {
   nodeCount?: number
   thumbnail?: string
   // 新增字段：支持文件夹结构
-  folderPath?: string // 工作流文件夹路径（相对于资产根目录 workflows/）
+  folderPath?: string // 工作流文件夹路径（相对于项目根 .workflows/）
   hasMetadata?: boolean // 是否有meta-data目录
   inputs?: string[] // 输入物料
   outputs?: string[] // 输出产物

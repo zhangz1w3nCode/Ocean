@@ -2,7 +2,7 @@
 
 import type { AppConfig, KnowledgeGraphConfig, AgenticConfig, AgenticToolConfig, Usage, AgentLoopEvent, AssetRoot } from '../types'
 import { generateWorkflowMdContent } from './workflow-generator'
-import { updateCachedAssetRoot, getAssetDirName } from './asset-config'
+import { updateCachedAssetRoot } from './asset-config'
 import { parse, stringify, Document, isMap, isScalar, isSeq } from 'yaml'
 
 // 重新导出工作流生成器函数
@@ -473,7 +473,7 @@ const buildWorkflowStages = (nodes: any[], edges: any[], workflowName: string): 
     } else if (targetNode.type === 'local') {
       // 局部节点：引用工作流nodes目录下的文件（使用相对路径）
       const localNodeName = targetNode.data?.localNodeName || targetNode.data?.label
-      branch.nodeRef = `${getAssetDirName()}/workflows/${workflowName}/nodes/${localNodeName}.md`
+      branch.nodeRef = `.workflows/${workflowName}/nodes/${localNodeName}.md`
       branch.nodeName = localNodeName
     } else if (targetNode.type === 'process') {
       // 处理节点：直接存储节点内容（不引用节点文件）
@@ -586,7 +586,7 @@ const buildWorkflowStages = (nodes: any[], edges: any[], workflowName: string): 
     } else if (node.type === 'local') {
       // 局部节点：引用工作流nodes目录下的文件（使用相对路径）
       const localNodeName = node.data?.localNodeName || node.data?.label
-      stage.nodeRef = `${getAssetDirName()}/workflows/${workflowName}/nodes/${localNodeName}.md`
+      stage.nodeRef = `.workflows/${workflowName}/nodes/${localNodeName}.md`
       stage.nodeName = localNodeName
     } else if (node.type === 'process') {
       // 处理节点：直接存储节点内容（不引用节点文件）
