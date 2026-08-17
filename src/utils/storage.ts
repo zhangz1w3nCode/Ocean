@@ -1,6 +1,6 @@
 // Electron 本地存储工具
 
-import type { AppConfig, KnowledgeGraphConfig, AgenticConfig, AgenticToolConfig, Usage, AgentLoopEvent, AssetRoot } from '../types'
+import type { AppConfig, KnowledgeGraphConfig, AgenticConfig, AgenticToolConfig, Usage, AgentLoopEvent, AssetRoot, TrashItem } from '../types'
 import { generateWorkflowMdContent } from './workflow-generator'
 import { updateCachedAssetRoot } from './asset-config'
 import { parse, stringify, Document, isMap, isScalar, isSeq } from 'yaml'
@@ -136,6 +136,11 @@ declare global {
       // 知识模块模板文件 API
       saveKnowledgeTemplateFile: (templateType: 'agentic-create', content: string) => Promise<{ success: boolean; error?: string }>
       loadKnowledgeTemplateFile: (templateType: 'agentic-create') => Promise<{ success: boolean; content: string | null; error?: string }>
+      // 回收站（trashbox）API
+      listTrash: () => Promise<{ success: boolean; items?: TrashItem[]; error?: string }>
+      restoreTrash: (id: string) => Promise<{ success: boolean; error?: string }>
+      deleteTrashPermanent: (id: string) => Promise<{ success: boolean; error?: string }>
+      clearTrash: () => Promise<{ success: boolean; error?: string }>
     }
   }
 }
@@ -1314,9 +1319,14 @@ export const deleteWorkflowFolder = async (name: string): Promise<boolean> => {
   if (!isElectron()) {
     // 浏览器环境：从 localStorage 删除
     try {
-      localStorage.removeItem(`workflow-folder-${name}-workflow-md`)
-      localStorage.removeItem(`workflow-folder-${name}-flow-json`)
-      localStorage.removeItem(`workflow-folder-${name}-meta`)
+      const keys = [
+        `workflow-folder-${name}-workflow-md`,
+        `workflow-folder-${name}-flow-json`,
+        `workflow-folder-${name}-meta`,
+      ]
+      const entries = keys.map((key) => ({ key, value: localStorage.getItem(key) }))
+      keys.forEach((key) => localStorage.removeItem(key))
+      browserMoveToTrash('workflows', 'workflow', name, entries)
       return true
     } catch (error) {
       console.error('从 localStorage 删除工作流失败:', error)
@@ -1460,7 +1470,10 @@ export const deleteWorkflowFileFromLocal = async (name: string): Promise<boolean
   if (!isElectron()) {
     // 浏览器环境
     try {
-      localStorage.removeItem(`flow-editor-workflow-${name}`)
+      const key = `flow-editor-workflow-${name}`
+      const value = localStorage.getItem(key)
+      localStorage.removeItem(key)
+      browserMoveToTrash('workflows', 'workflow', name, [{ key, value }])
       return true
     } catch (error) {
       console.error('从 localStorage 删除工作流文件失败:', error)
@@ -2309,7 +2322,7 @@ const DEFAULT_APP_CONFIG: AppConfig = {
   recentProjects: [],
   lastProjectPath: null,
   maxRecentProjects: 10,
-  sidebarNavOrder: ['agents', 'knowledges', 'workflows', 'nodes', 'resources'],
+  sidebarNavOrder: ['agents', 'skills', 'knowledges', 'workflows', 'nodes', 'resources', 'settings', 'trash'],
   assetRoot: 'claude',
 }
 
@@ -2694,15 +2707,20 @@ export const deleteLocalNodeFromWorkflow = async (workflowName: string, nodeName
     // 浏览器环境
     try {
       const key = `local-node-${workflowName}-${nodeName}`
-      localStorage.removeItem(key)
-      // 更新节点列表
       const listKey = `local-nodes-${workflowName}`
-      const nodeList = JSON.parse(localStorage.getItem(listKey) || '[]')
+      const nodeData = localStorage.getItem(key)
+      const originalList = localStorage.getItem(listKey) || '[]'
+      const nodeList = JSON.parse(originalList)
+      localStorage.removeItem(key)
       const index = nodeList.indexOf(nodeName)
       if (index > -1) {
         nodeList.splice(index, 1)
         localStorage.setItem(listKey, JSON.stringify(nodeList))
       }
+      browserMoveToTrash('workflows', 'local-node', nodeName, [
+        { key, value: nodeData },
+        { key: listKey, value: originalList },
+      ])
       return true
     } catch (error) {
       console.error('从 localStorage 删除局部节点失败:', error)
@@ -3673,6 +3691,7 @@ export const deleteSkillResource = async (
       const resources = JSON.parse(data)
       const filtered = resources.filter((r: any) => r.name !== fileName)
       localStorage.setItem(key, JSON.stringify(filtered))
+      browserMoveToTrash('skills', 'skill-resource', fileName, [{ key, value: data }])
       return true
     } catch (error) {
       console.error('删除技能资源文件失败:', error)
@@ -4065,5 +4084,124 @@ export const loadSingleNodeFileFromLocal = async (nodeName: string): Promise<any
   } catch (error) {
     console.error('加载节点文件失败:', error)
     return null
+  }
+}
+
+// ===== 回收站存储方法 =====
+
+const TRASH_ITEMS_KEY = 'flow-editor-trash-items'
+
+// 浏览器兜底的回收站条目（附带需要恢复的 localStorage 键值对）
+interface BrowserTrashEntry extends TrashItem {
+  storageEntries?: { key: string; value: string }[]
+}
+
+const readBrowserTrash = (): BrowserTrashEntry[] => {
+  try {
+    const data = localStorage.getItem(TRASH_ITEMS_KEY)
+    return data ? JSON.parse(data) : []
+  } catch {
+    return []
+  }
+}
+
+const writeBrowserTrash = (items: BrowserTrashEntry[]) => {
+  try {
+    localStorage.setItem(TRASH_ITEMS_KEY, JSON.stringify(items))
+  } catch (error) {
+    console.error('写入回收站失败:', error)
+  }
+}
+
+// 浏览器兜底软删除：归档 key/value 到回收站
+const browserMoveToTrash = (
+  module: TrashItem['module'],
+  type: string,
+  name: string,
+  storageEntries: { key: string; value: string | null }[]
+) => {
+  const entries = storageEntries.filter((e) => e.value !== null) as { key: string; value: string }[]
+  const items = readBrowserTrash()
+  items.push({
+    id: `trash-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    module,
+    type,
+    name,
+    originalRelativePath: storageEntries.map((e) => e.key).join(', '),
+    deletedAt: new Date().toISOString(),
+    storageEntries: entries,
+  })
+  writeBrowserTrash(items)
+}
+
+// 加载回收站列表
+export const loadTrashItems = async (): Promise<TrashItem[]> => {
+  if (!isElectron()) {
+    return readBrowserTrash()
+  }
+  try {
+    const result = await window.electronAPI!.listTrash()
+    return result.success ? (result.items || []) : []
+  } catch (error) {
+    console.error('加载回收站失败:', error)
+    return []
+  }
+}
+
+// 恢复回收站条目
+export const restoreTrashItem = async (id: string): Promise<{ success: boolean; error?: string }> => {
+  if (!isElectron()) {
+    try {
+      const items = readBrowserTrash()
+      const item = items.find((it) => it.id === id)
+      if (!item) return { success: false, error: '回收站条目不存在' }
+      if (item.storageEntries) {
+        for (const entry of item.storageEntries) {
+          localStorage.setItem(entry.key, entry.value)
+        }
+      }
+      writeBrowserTrash(items.filter((it) => it.id !== id))
+      return { success: true }
+    } catch (error) {
+      console.error('恢复回收站条目失败:', error)
+      return { success: false, error: String(error) }
+    }
+  }
+  try {
+    const result = await window.electronAPI!.restoreTrash(id)
+    return { success: result.success, error: result.error }
+  } catch (error) {
+    console.error('恢复回收站条目失败:', error)
+    return { success: false, error: String(error) }
+  }
+}
+
+// 彻底删除回收站条目
+export const deleteTrashItemPermanently = async (id: string): Promise<boolean> => {
+  if (!isElectron()) {
+    writeBrowserTrash(readBrowserTrash().filter((it) => it.id !== id))
+    return true
+  }
+  try {
+    const result = await window.electronAPI!.deleteTrashPermanent(id)
+    return result.success
+  } catch (error) {
+    console.error('彻底删除回收站条目失败:', error)
+    return false
+  }
+}
+
+// 清空回收站
+export const clearTrash = async (): Promise<boolean> => {
+  if (!isElectron()) {
+    writeBrowserTrash([])
+    return true
+  }
+  try {
+    const result = await window.electronAPI!.clearTrash()
+    return result.success
+  } catch (error) {
+    console.error('清空回收站失败:', error)
+    return false
   }
 }

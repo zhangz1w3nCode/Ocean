@@ -216,7 +216,7 @@ export const SkillsPage: FC = () => {
       <ConfirmModal
         isOpen={deleteConfirmOpen}
         title="确认删除"
-        message="确定要删除这个技能吗？此操作将删除技能目录及其所有资源文件，且不可恢复。"
+        message="确定要删除这个技能吗？删除后可在回收站恢复。"
         confirmText="删除"
         cancelText="取消"
         onConfirm={handleConfirmDelete}

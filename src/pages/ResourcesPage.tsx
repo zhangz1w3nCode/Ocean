@@ -211,7 +211,7 @@ export const ResourcesPage: FC = () => {
       <ConfirmModal
         isOpen={deleteConfirmOpen}
         title="确认删除"
-        message="确定要删除这个资源文件吗？此操作不可恢复。"
+        message="确定要删除这个资源文件吗？删除后可在回收站恢复。"
         confirmText="删除"
         cancelText="取消"
         onConfirm={handleConfirmDelete}

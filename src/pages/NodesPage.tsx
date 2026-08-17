@@ -208,7 +208,7 @@ export const NodesPage: FC = () => {
       <ConfirmModal
         isOpen={deleteConfirmOpen}
         title="确认删除"
-        message="确定要删除这个节点吗？此操作不可恢复。"
+        message="确定要删除这个节点吗？删除后可在回收站恢复。"
         confirmText="删除"
         cancelText="取消"
         onConfirm={handleConfirmDelete}

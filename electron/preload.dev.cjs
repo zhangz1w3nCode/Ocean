@@ -119,6 +119,11 @@ const electronAPI = {
   loadKnowledgeTemplateFile: (templateType) =>
     ipcRenderer.invoke('load-knowledge-template-file', templateType),
 
+  // 回收站（trashbox）API
+  listTrash: () => ipcRenderer.invoke('list-trash'),
+  restoreTrash: (id) => ipcRenderer.invoke('restore-trash', id),
+  deleteTrashPermanent: (id) => ipcRenderer.invoke('delete-trash-permanent', id),
+  clearTrash: () => ipcRenderer.invoke('clear-trash'),
 }
 
 // 通过 window 暴露

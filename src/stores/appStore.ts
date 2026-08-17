@@ -2,10 +2,10 @@ import { create } from 'zustand'
 import { saveAppConfig } from '../utils/storage'
 import type { AppConfig } from '../types'
 
-export type PageType = 'project' | 'agents' | 'workflows' | 'nodes' | 'resources' | 'knowledges' | 'skills' | 'settings'
+export type PageType = 'project' | 'agents' | 'workflows' | 'nodes' | 'resources' | 'knowledges' | 'skills' | 'settings' | 'trash'
 
 // 默认导航顺序
-const DEFAULT_NAV_ORDER: PageType[] = ['agents', 'skills', 'knowledges', 'workflows', 'nodes', 'resources', 'settings']
+const DEFAULT_NAV_ORDER: PageType[] = ['agents', 'skills', 'knowledges', 'workflows', 'nodes', 'resources', 'settings', 'trash']
 
 interface AppState {
   currentPage: PageType

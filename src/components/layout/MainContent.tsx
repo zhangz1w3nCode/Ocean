@@ -8,6 +8,7 @@ import { ResourcesPage } from '../../pages/ResourcesPage'
 import { KnowledgesPage } from '../../pages/KnowledgesPage'
 import { SkillsPage } from '../../pages/SkillsPage'
 import { SettingsPage } from '../../pages/SettingsPage'
+import { TrashPage } from '../../pages/TrashPage'
 import { WorkflowEditorModal } from '../workflow'
 
 // 空白页面组件（用于 project 类型，实际项目选择页面在 App.tsx 中处理）
@@ -22,6 +23,7 @@ const pageComponents: Record<PageType, FC> = {
   knowledges: KnowledgesPage,
   skills: SkillsPage,
   settings: SettingsPage,
+  trash: TrashPage,
 }
 
 export const MainContent: FC = () => {

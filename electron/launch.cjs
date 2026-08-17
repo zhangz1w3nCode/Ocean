@@ -134,6 +134,87 @@ const getSkillSubDir = (skillName, subDir) => {
   return subDirPath
 }
 
+// ===== 回收站（trashbox）相关 =====
+
+// 回收站根目录（.ocean/.trashbox）
+const getTrashboxDir = () => {
+  const oceanDir = path.join(getProjectRoot(), '.ocean')
+  if (!fs.existsSync(oceanDir)) {
+    fs.mkdirSync(oceanDir, { recursive: true })
+  }
+  const trashboxDir = path.join(oceanDir, '.trashbox')
+  if (!fs.existsSync(trashboxDir)) {
+    fs.mkdirSync(trashboxDir, { recursive: true })
+  }
+  return trashboxDir
+}
+
+// 回收站索引文件路径
+const getTrashIndexPath = () => path.join(getTrashboxDir(), 'index.json')
+
+// 读取回收站索引
+const readTrashIndex = () => {
+  try {
+    const indexPath = getTrashIndexPath()
+    if (!fs.existsSync(indexPath)) return []
+    const content = fs.readFileSync(indexPath, 'utf-8')
+    const parsed = JSON.parse(content)
+    return Array.isArray(parsed) ? parsed : []
+  } catch (error) {
+    console.error('读取回收站索引失败:', error)
+    return []
+  }
+}
+
+// 写入回收站索引
+const writeTrashIndex = (items) => {
+  fs.writeFileSync(getTrashIndexPath(), JSON.stringify(items, null, 2), 'utf-8')
+}
+
+// 生成回收站条目 ID
+const generateTrashId = () => crypto.randomUUID()
+
+// 计算相对项目根的路径（用于展示）
+const toRelativePath = (absPath) => {
+  try {
+    return path.relative(getProjectRoot(), absPath)
+  } catch {
+    return absPath
+  }
+}
+
+// 软删除：移动文件/目录到回收站并写入索引（源不存在时视为成功，等价于原 handler 的存在性判断）
+const softDelete = (module, type, name, sourcePath, meta = {}) => {
+  if (!fs.existsSync(sourcePath)) {
+    return true
+  }
+  const moduleDir = path.join(getTrashboxDir(), module)
+  if (!fs.existsSync(moduleDir)) {
+    fs.mkdirSync(moduleDir, { recursive: true })
+  }
+  const baseName = path.basename(sourcePath)
+  let trashPath = path.join(moduleDir, baseName)
+  if (fs.existsSync(trashPath)) {
+    trashPath = path.join(moduleDir, `${baseName}-${generateTrashId()}`)
+  }
+  fs.renameSync(sourcePath, trashPath)
+  const entry = {
+    id: generateTrashId(),
+    module,
+    type,
+    name,
+    originalPath: sourcePath,
+    originalRelativePath: toRelativePath(sourcePath),
+    trashPath,
+    deletedAt: new Date().toISOString(),
+    meta,
+  }
+  const items = readTrashIndex()
+  items.push(entry)
+  writeTrashIndex(items)
+  return true
+}
+
 // 获取工作流文件路径（详情）
 const getWorkflowFilePath = (id) => {
   return path.join(getWorkflowsDir(), `${id}.json`)
@@ -244,9 +325,7 @@ ipcMain.handle('delete-workflow-file', (_, name) => {
   try {
     const workflowsDir = getWorkflowsDir()
     const filePath = path.join(workflowsDir, `${name}.md`)
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath)
-    }
+    softDelete('workflows', 'workflow', name, filePath)
     return { success: true }
   } catch (error) {
     console.error('删除工作流文件失败:', error)
@@ -393,9 +472,7 @@ ipcMain.handle('load-all-workflow-folders', () => {
 ipcMain.handle('delete-workflow-folder', (_, name) => {
   try {
     const folderPath = getWorkflowFolderPath(name)
-    if (fs.existsSync(folderPath)) {
-      fs.rmSync(folderPath, { recursive: true, force: true })
-    }
+    softDelete('workflows', 'workflow', name, folderPath)
     return { success: true }
   } catch (error) {
     console.error('删除工作流文件夹失败:', error)
@@ -456,9 +533,7 @@ ipcMain.handle('delete-node-file', (_, name) => {
   try {
     const nodesDir = getNodesDir()
     const filePath = path.join(nodesDir, `${name}.md`)
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath)
-    }
+    softDelete('nodes', 'node', name, filePath)
     return { success: true }
   } catch (error) {
     console.error('删除节点文件失败:', error)
@@ -547,9 +622,7 @@ ipcMain.handle('delete-local-node', (_, workflowName, nodeName) => {
   try {
     const nodesDir = getWorkflowLocalNodesPath(workflowName)
     const filePath = path.join(nodesDir, `${nodeName}.md`)
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath)
-    }
+    softDelete('workflows', 'local-node', nodeName, filePath, { workflowName })
     return { success: true }
   } catch (error) {
     console.error('删除局部节点文件失败:', error)
@@ -596,9 +669,7 @@ ipcMain.handle('delete-resource-file', (_, name) => {
   try {
     const resourcesDir = getResourcesDir()
     const filePath = path.join(resourcesDir, `${name}.md`)
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath)
-    }
+    softDelete('resources', 'resource', name, filePath)
     return { success: true }
   } catch (error) {
     console.error('删除资源文件失败:', error)
@@ -661,9 +732,7 @@ ipcMain.handle('delete-agent-file', (_, name) => {
   try {
     const agentsDir = getAgentsDir()
     const filePath = path.join(agentsDir, `${name}.md`)
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath)
-    }
+    softDelete('agents', 'agent', name, filePath)
     return { success: true }
   } catch (error) {
     console.error('删除智能体文件失败:', error)
@@ -751,9 +820,7 @@ ipcMain.handle('delete-knowledge-file', (_, name) => {
   try {
     const knowledgesDir = getKnowledgesDir()
     const filePath = path.join(knowledgesDir, `${name}.md`)
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath)
-    }
+    softDelete('knowledges', 'knowledge', name, filePath)
     return { success: true }
   } catch (error) {
     console.error('删除知识库文件失败:', error)
@@ -2320,14 +2387,12 @@ ipcMain.handle('load-skill-file', (_, name) => {
   }
 })
 
-// 删除技能目录
+// 删除技能目录（软删除：移入回收站）
 ipcMain.handle('delete-skill-directory', (_, name) => {
   try {
     const skillsDir = getSkillsDir()
     const skillDir = path.join(skillsDir, name)
-    if (fs.existsSync(skillDir)) {
-      fs.rmSync(skillDir, { recursive: true, force: true })
-    }
+    softDelete('skills', 'skill', name, skillDir)
     return { success: true }
   } catch (error) {
     console.error('删除技能目录失败:', error)
@@ -2383,14 +2448,12 @@ ipcMain.handle('load-skill-resource', (_, skillName, resourceType, fileName) => 
   }
 })
 
-// 删除技能资源文件
+// 删除技能资源文件（软删除：移入回收站）
 ipcMain.handle('delete-skill-resource', (_, skillName, resourceType, fileName) => {
   try {
     const skillsDir = getSkillsDir()
     const filePath = path.join(skillsDir, skillName, resourceType, fileName)
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath)
-    }
+    softDelete('skills', 'skill-resource', fileName, filePath, { skillName, resourceType })
     return { success: true }
   } catch (error) {
     console.error('删除技能资源文件失败:', error)
@@ -2411,5 +2474,98 @@ ipcMain.handle('list-skill-resources', (_, skillName, resourceType) => {
   } catch (error) {
     console.error('列出技能资源文件失败:', error)
     return { success: false, error: String(error), files: [] }
+  }
+})
+
+// ===== 回收站（trashbox）IPC =====
+
+// 加载回收站列表
+ipcMain.handle('list-trash', () => {
+  try {
+    return { success: true, items: readTrashIndex() }
+  } catch (error) {
+    console.error('加载回收站列表失败:', error)
+    return { success: false, error: String(error), items: [] }
+  }
+})
+
+// 恢复回收站条目（移动到原位置）
+ipcMain.handle('restore-trash', (_, id) => {
+  try {
+    const items = readTrashIndex()
+    const index = items.findIndex((item) => item.id === id)
+    if (index === -1) {
+      return { success: false, error: '回收站条目不存在' }
+    }
+    const item = items[index]
+    const sourcePath = item.trashPath
+    const targetPath = item.originalPath
+    if (!sourcePath || !fs.existsSync(sourcePath)) {
+      items.splice(index, 1)
+      writeTrashIndex(items)
+      return { success: false, error: '回收站中的文件已不存在' }
+    }
+    if (fs.existsSync(targetPath)) {
+      return { success: false, error: '恢复失败：原位置已存在同名资产' }
+    }
+    const parentDir = path.dirname(targetPath)
+    if (!fs.existsSync(parentDir)) {
+      fs.mkdirSync(parentDir, { recursive: true })
+    }
+    fs.renameSync(sourcePath, targetPath)
+    items.splice(index, 1)
+    writeTrashIndex(items)
+    return { success: true }
+  } catch (error) {
+    console.error('恢复回收站条目失败:', error)
+    return { success: false, error: String(error) }
+  }
+})
+
+// 彻底删除回收站条目
+ipcMain.handle('delete-trash-permanent', (_, id) => {
+  try {
+    const items = readTrashIndex()
+    const index = items.findIndex((item) => item.id === id)
+    if (index === -1) {
+      return { success: false, error: '回收站条目不存在' }
+    }
+    const item = items[index]
+    if (item.trashPath && fs.existsSync(item.trashPath)) {
+      const stat = fs.statSync(item.trashPath)
+      if (stat.isDirectory()) {
+        fs.rmSync(item.trashPath, { recursive: true, force: true })
+      } else {
+        fs.unlinkSync(item.trashPath)
+      }
+    }
+    items.splice(index, 1)
+    writeTrashIndex(items)
+    return { success: true }
+  } catch (error) {
+    console.error('彻底删除回收站条目失败:', error)
+    return { success: false, error: String(error) }
+  }
+})
+
+// 清空回收站
+ipcMain.handle('clear-trash', () => {
+  try {
+    const items = readTrashIndex()
+    for (const item of items) {
+      if (item.trashPath && fs.existsSync(item.trashPath)) {
+        const stat = fs.statSync(item.trashPath)
+        if (stat.isDirectory()) {
+          fs.rmSync(item.trashPath, { recursive: true, force: true })
+        } else {
+          fs.unlinkSync(item.trashPath)
+        }
+      }
+    }
+    writeTrashIndex([])
+    return { success: true }
+  } catch (error) {
+    console.error('清空回收站失败:', error)
+    return { success: false, error: String(error) }
   }
 })
