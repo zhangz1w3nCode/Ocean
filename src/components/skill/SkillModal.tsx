@@ -787,7 +787,7 @@ export const SkillModal: FC<SkillModalProps> = ({
 
   // 渲染手动编辑界面
   const renderManualEdit = () => (
-    <div className="space-y-5 max-h-[65vh] overflow-y-auto pr-2">
+    <div className="flex-1 min-h-0 overflow-y-auto pr-2 space-y-5">
       {/* 技能名称 */}
       <div>
         <label className="flex items-center gap-2 text-sm font-medium text-macos-text mb-1.5">
