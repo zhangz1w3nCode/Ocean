@@ -158,7 +158,6 @@ export const NodeModal: FC<NodeModalProps> = ({
     <>
       <Modal
         layoutKey="node"
-        persistLayout={mode === 'edit'}
         isOpen={isOpen}
         onClose={() => handleClose()}
         title={mode === 'create' ? '创建新节点' : '编辑节点'}
