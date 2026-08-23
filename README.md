@@ -1,10 +1,12 @@
 <div align="center">
 
+<img src="./assets/logo.svg" alt="Ocean logo" width="144" />
+
 # Ocean
 
-**Claude Code Asset & Capability Visualization Management Platform**
+**Coding-Agent Asset & Capability Visualization Management Platform**
 
-A desktop application built with `Electron` + `React` + `TypeScript` that uses Markdown files as the core data carrier. All data is stored locally, providing unified management and visual orchestration for Claude Code assets including agents, commands, abilities, skills, knowledge bases, workflows, and more.
+A desktop application built with `Electron` + `React` + `TypeScript` that uses Markdown files as the core data carrier. All data is stored locally, providing unified management and visual orchestration for coding agent assets including agents, skills, knowledge, nodes, resources, workflows, and more.
 
 <p align="center">
   <a href="https://opensource.org/licenses/MIT"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-yellow.svg"></a>
@@ -16,15 +18,19 @@ A desktop application built with `Electron` + `React` + `TypeScript` that uses M
 
 </div>
 
+<p align="center">
+  <img src="./assets/preview.png" alt="Ocean preview" width="800" />
+</p>
+
 ---
 
 ## Why Ocean
 
-Claude Code is a powerful AI coding agent, but managing its assets (agents, commands, abilities, skills, knowledge, workflows) is fragmented across directories and text files. Ocean provides a unified visual management platform purpose-built for Claude Code, turning these scattered Markdown files into a coherent, manageable system.
+Coding agents are powerful AI tools, but managing their assets (agents, skills, knowledge, nodes, resources, workflows) is scattered across directories and text files. Ocean provides a unified visual management platform purpose-built for coding agents, turning these scattered Markdown files into a coherent, manageable system.
 
-- **Reference, not copy** -- Assets are linked through `@` references and `%` WikiLinks instead of being duplicated. A single source of truth means editing an ability or knowledge entry automatically reflects everywhere it is referenced.
+- **Reference, not copy** -- Assets are linked through `@` references and `%` WikiLinks instead of being duplicated. A single source of truth means editing a shared asset or knowledge entry automatically reflects everywhere it is referenced.
 - **Knowledge as a graph** -- Knowledge entries are stored as individual Markdown files and connected via WikiLinks with labeled relationships. The entire knowledge network is rendered as an interactive force-directed graph where you can click any node to view details, and tune physics parameters like centripetal force and node distance.
-- **Zero data lock-in** -- All data is stored as standard Markdown files in the `.claude/` directory. You can edit them with any text editor or use Ocean's visual interface.
+- **Zero data lock-in** -- All data is stored as standard Markdown files in the project's asset directories (`.claude/`, `.pi/`, `.knowledges/`, `.nodes/`, `.resources/`, `.workflows/`). You can edit them with any text editor or use Ocean's visual interface.
 - **Fully local** -- No cloud services, no accounts, no data uploads. Your assets stay on your machine.
 - **Visual orchestration** -- Compose complex workflows by dragging and connecting nodes on a canvas. Each node is interactive -- click to configure, drag to reposition, branch to create decision paths. The visual approach makes multi-step workflows tangible and intuitive to build.
 
@@ -32,12 +38,14 @@ Claude Code is a powerful AI coding agent, but managing its assets (agents, comm
 
 ### Asset Management
 
-Ocean manages 6 types of Claude Code assets, each with full CRUD operations, Markdown preview, and reference linking:
+Ocean manages 6 types of coding agent assets, each with full CRUD operations, Markdown preview, and reference linking:
+
+Agents and skills are loaded from a switchable asset source (Settings > Asset Source); knowledge, nodes, resources, and workflows live in project-level shared directories.
 
 | Module | Storage Location | Description |
 |--------|-----------------|-------------|
-| Agents | `.claude/agents/` | Define AI agent profiles with model selection, role instructions, and icon customization |
-| Skills | `.claude/skills/` | Package complex skills with scripts, references, and examples in a directory structure |
+| Agents | `.claude/agents/` or `.pi/agents/` | Define AI agent profiles with model selection, role instructions, and icon customization |
+| Skills | `.claude/skills/` or `.pi/skills/` | Package complex skills with scripts, references, and examples in a directory structure |
 | Knowledge | `.knowledges/` | Manage business knowledge with tags, categories, WikiLink references, and a visual knowledge graph |
 | Nodes | `.nodes/` | Define reusable workflow building blocks |
 | Resources | `.resources/` | Manage reference resource files |
@@ -76,7 +84,6 @@ Multiple creation modes powered by LLM integration:
 - **Manual creation** -- Write content directly
 - **LLM creation** -- Generate content using AI with customizable prompt templates
 - **Agentic creation** -- AI autonomously creates content using tools and file system access
-- **Claude Code CLI** -- Invoke Claude Code directly for content generation
 
 Additional AI features:
 - Content optimization with git diff-style comparison
@@ -87,7 +94,7 @@ Additional AI features:
 
 Ocean uses a reference-based architecture instead of copying content between assets:
 
-- **`@` reference** -- Type `@` in the Markdown editor to insert a reference to any asset (agents, commands, abilities, skills, knowledge entries, resources, nodes). The referenced content is stored as a file path, not a copy. When the source asset is updated, all references stay in sync.
+- **`@` reference** -- Type `@` in the Markdown editor to insert a reference to any asset (agents, skills, knowledge entries, resources, nodes, workflows). The referenced content is stored as a file path, not a copy. When the source asset is updated, all references stay in sync.
 - **`%` WikiLink** -- Type `%` to insert a WikiLink (`[[file.md|relation]]`) that creates bidirectional links between knowledge entries. These relationships are visualized in the knowledge graph.
 
 This means each piece of content exists in exactly one place. Editing the source automatically reflects across all references -- no version drift, no stale copies. Every improvement to a shared asset compounds across the entire system: the more you reference, the greater the return.
@@ -113,13 +120,15 @@ This means each piece of content exists in exactly one place. Editing the source
 | Icons | Lucide React | 0.563 |
 | State Management | Zustand | 5.0 |
 | Flow Editor | @xyflow/react (React Flow) | 12.10 |
-| Auto Layout | Dagre | 2.0 |
+| Auto Layout | @dagrejs/dagre | 2.0 |
 | Force Graph | D3-force + react-force-graph-2d | 3.0 / 1.29 |
 | Code Editor | CodeMirror 6 (@uiw/react-codemirror) | 4.25 |
 | Markdown Rendering | react-markdown + remark-gfm + rehype-highlight | 10.1 |
 | Diagrams | Mermaid | 11.12 |
-| Drag & Drop | @dnd-kit | 6.3 |
-| AI/LLM | pi-mono SDK (pi-agent-core, pi-ai, pi-coding-agent) | 0.57 |
+| Drag & Drop | @dnd-kit | 6.3 / 10.0 |
+| Frontmatter | yaml | 2.9 |
+| Testing | Vitest | 2.1 |
+| AI/LLM | pi-mono SDK (@mariozechner/pi-agent-core, pi-ai, pi-coding-agent) | 0.57 |
 | Package Manager | pnpm | 10.19 |
 
 ## Getting Started
@@ -176,12 +185,10 @@ ocean/
 │   └── preload.dev.cjs          # Preload script (exposes electronAPI)
 ├── src/
 │   ├── main.tsx                 # Application entry point
-│   ├── App.tsx                  # Root component (routing, layout)
+│   ├── App.tsx                  # Root component (project loading, layout)
 │   ├── pages/                   # Page components
 │   │   ├── ProjectSelectionPage.tsx
 │   │   ├── AgentsPage.tsx
-│   │   ├── CommandsPage.tsx
-│   │   ├── AbilitiesPage.tsx
 │   │   ├── SkillsPage.tsx
 │   │   ├── KnowledgesPage.tsx
 │   │   ├── NodesPage.tsx
@@ -197,25 +204,27 @@ ocean/
 │   │   ├── layout/              # Layout components (Sidebar, MainContent)
 │   │   ├── node/                # Node module components
 │   │   ├── resource/            # Resource module components
-│   │   ├── settings/            # Settings page components
+│   │   ├── settings/            # Settings components (LLM, CLI Agent, Asset Source, Agentic)
 │   │   ├── skill/               # Skill module components
-│   │   ├── ui/                  # Shared UI components
-│   │   │   ├── MarkdownEditor/  # CodeMirror-based Markdown editor
-│   │   │   └── MarkdownRenderer/ # Markdown rendering (Mermaid, WikiLink)
+│   │   ├── ui/                  # Shared UI components (Modal, MarkdownEditor, MarkdownRenderer)
 │   │   └── workflow/            # Workflow module components
 │   ├── hooks/                   # Custom React hooks
 │   │   ├── useAgentLoop.ts      # Agent loop execution hook
-│   │   └── useAgenticExecutor.tsx # Agentic mode executor hook
+│   │   ├── useAgenticExecutor.tsx # Agentic mode executor hook
+│   │   ├── useKnowledgeGraph.ts # Knowledge graph hook
+│   │   └── useReferenceItems.ts # Cross-asset reference hook
 │   ├── services/                # Business logic services
 │   │   ├── llmService.ts        # LLM API integration
 │   │   ├── agentLoopService.ts  # Agent loop execution service
 │   │   └── agenticService.ts    # Agentic creation service
-│   ├── stores/                  # Zustand state stores (13 stores)
+│   ├── stores/                  # Zustand state stores (11 stores)
 │   ├── types/                   # TypeScript type definitions
 │   └── utils/                   # Utility functions
 │       ├── storage.ts           # Storage helpers
+│       ├── asset-config.ts      # Asset source helpers
 │       ├── workflow-generator.ts # Workflow document generator
 │       └── knowledgeGraphParser.ts # Knowledge graph data parser
+├── assets/                      # README images (logo, screenshots)
 ├── build/                       # Build assets (app icons)
 ├── package.json
 ├── vite.config.ts
@@ -226,28 +235,28 @@ ocean/
 
 ## Data Storage
 
-All data is stored as Markdown files within the project's `.claude/` directory:
+All data is stored as plain Markdown files (with optional YAML Frontmatter) inside the project directory:
 
 ```
 your-project/
-└── .claude/
-    ├── agents/                  # Agent definitions (*.md)
-    ├── commands/                # Command definitions (*.md)
-    ├── abilities/               # Ability definitions (*.md)
-    ├── skills/                  # Skill packages (directory per skill)
-    │   └── skill-name/
-    │       ├── SKILL.md
-    │       ├── scripts/
-    │       ├── references/
-    │       └── examples/
-    ├── knowledges/              # Knowledge entries (*.md)
-    ├── nodes/                   # Node definitions (*.md)
-    ├── resources/               # Resource files (*.md)
-    └── workflows/               # Workflow definitions
-        └── workflow-name/
-            ├── flow.json        # Graph structure
-            └── WORKFLOW.md      # Generated workflow document
+├── .claude/  (or .pi/)          # Asset-source root (switchable in Settings)
+│   ├── agents/                  # Agent definitions (*.md)
+│   └── skills/                  # Skill packages (directory per skill)
+│       └── skill-name/
+│           ├── SKILL.md
+│           ├── scripts/
+│           ├── references/
+│           └── examples/
+├── .knowledges/                 # Knowledge entries (*.md) -- shared across asset sources
+├── .nodes/                      # Node definitions (*.md) -- shared
+├── .resources/                  # Resource files (*.md) -- shared
+└── .workflows/                  # Workflow definitions -- shared
+    └── workflow-name/
+        ├── WORKFLOW.md          # Generated workflow document
+        └── flow.json            # Graph structure (nodes & edges)
 ```
+
+Agents and skills are loaded from `.claude/` or `.pi/` depending on the active asset source, which you can switch in Settings. Knowledge, nodes, resources, and workflows are stored in project-level shared directories and shared across both ecosystems.
 
 Each asset is a standard Markdown file with optional YAML Frontmatter metadata. This means you can version-control your assets with Git and edit them with any text editor.
 
