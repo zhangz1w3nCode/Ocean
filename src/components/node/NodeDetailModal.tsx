@@ -32,6 +32,7 @@ export const NodeDetailModal: FC<NodeDetailModalProps> = ({
 
   return (
     <Modal
+      layoutKey="node"
       isOpen={isOpen}
       onClose={onClose}
       title=""

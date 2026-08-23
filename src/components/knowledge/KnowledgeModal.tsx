@@ -395,11 +395,11 @@ export const KnowledgeModal: FC<KnowledgeModalProps> = ({
 
   // 渲染模式选择界面
   const renderModeSelect = () => (
-    <div className="flex flex-col items-center justify-center py-12">
-      <div className="flex gap-4">
+    <div className="flex flex-col items-center justify-center py-8 px-10">
+      <div className="flex gap-6">
         <button
           onClick={() => setCreateMode('manual')}
-          className="flex flex-col items-center gap-3 p-6 w-36 border border-gray-200 rounded-xl hover:border-gray-300 hover:bg-gray-50 transition-all"
+          className="flex flex-col items-center gap-3 p-7 w-40 border border-gray-200 rounded-xl hover:border-gray-300 hover:bg-gray-50 transition-all"
         >
           <div className="w-12 h-12 rounded-full bg-blue-50 flex items-center justify-center">
             <PenLine size={24} className="text-blue-500" />
@@ -408,7 +408,7 @@ export const KnowledgeModal: FC<KnowledgeModalProps> = ({
         </button>
         <button
           onClick={() => setCreateMode('agentic')}
-          className="flex flex-col items-center gap-3 p-6 w-36 border border-gray-200 rounded-xl hover:border-gray-300 hover:bg-gray-50 transition-all"
+          className="flex flex-col items-center gap-3 p-7 w-40 border border-gray-200 rounded-xl hover:border-gray-300 hover:bg-gray-50 transition-all"
         >
           <div className="w-12 h-12 rounded-full bg-purple-50 flex items-center justify-center">
             <Bot size={24} className="text-purple-500" />
@@ -729,10 +729,12 @@ export const KnowledgeModal: FC<KnowledgeModalProps> = ({
   return (
     <>
       <Modal
+        layoutKey="knowledge"
+        persistLayout={mode === 'edit' || createMode !== 'select'}
         isOpen={isOpen}
         onClose={() => handleClose()}
         title={mode === 'create' ? '' : '编辑知识'}
-        size="xl"
+        size={mode === 'create' && createMode === 'select' ? 'sm' : 'xl'}
         footer={
           showFooter ? (
             <div className="flex justify-end gap-3">

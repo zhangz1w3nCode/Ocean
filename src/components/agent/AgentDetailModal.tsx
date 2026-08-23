@@ -56,6 +56,7 @@ export const AgentDetailModal: FC<AgentDetailModalProps> = ({
 
   return (
     <Modal
+      layoutKey="agent"
       isOpen={isOpen}
       onClose={onClose}
       title=""

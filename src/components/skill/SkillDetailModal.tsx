@@ -36,6 +36,7 @@ export const SkillDetailModal: FC<SkillDetailModalProps> = ({
 
   return (
     <Modal
+      layoutKey="skill"
       isOpen={isOpen}
       onClose={onClose}
       title=""

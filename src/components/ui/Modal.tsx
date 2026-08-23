@@ -11,6 +11,8 @@ interface ModalProps {
   footer?: ReactNode
   size?: 'sm' | 'md' | 'lg' | 'xl'
   headerLeft?: ReactNode
+  layoutKey?: string
+  persistLayout?: boolean
 }
 
 type ResizeDirection = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw'
@@ -25,6 +27,13 @@ const sizeWidths: Record<NonNullable<ModalProps['size']>, number> = {
   xl: 672,
 }
 
+const sizeHeights: Record<NonNullable<ModalProps['size']>, number> = {
+  sm: 280,
+  md: 400,
+  lg: 500,
+  xl: 600,
+}
+
 const resizeCursors: Record<ResizeDirection, string> = {
   n: 'ns-resize',
   s: 'ns-resize',
@@ -36,8 +45,19 @@ const resizeCursors: Record<ResizeDirection, string> = {
   se: 'nwse-resize',
 }
 
-// 持久化弹窗布局（位置+尺寸），在预览↔编辑切换时保持用户的调整
-let persistedLayout: { pos: { x: number; y: number }; dim: { width: number; height: number } } | null = null
+// 持久化弹窗布局（按 key 隔离，预览↔编辑切换时保持用户的调整，不同弹窗互不影响）
+const persistedLayoutMap = new Map<string, { pos: { x: number; y: number }; dim: { width: number; height: number } }>()
+
+// 导出 get/set 供其他组件（如 WorkflowEditorModal）共享同一 Map
+export const getLayout = (key: string) => persistedLayoutMap.get(key) ?? null
+export const setLayout = (key: string, layout: { pos: { x: number; y: number }; dim: { width: number; height: number } }) => {
+  // 限制 Map 大小防止无限增长（超过 30 条时清除最旧条目）
+  if (persistedLayoutMap.size >= 30) {
+    const firstKey = persistedLayoutMap.keys().next().value
+    if (firstKey) persistedLayoutMap.delete(firstKey)
+  }
+  persistedLayoutMap.set(key, layout)
+}
 
 export const Modal: FC<ModalProps> = ({
   isOpen,
@@ -47,19 +67,37 @@ export const Modal: FC<ModalProps> = ({
   footer,
   size = 'md',
   headerLeft,
+  layoutKey,
+  persistLayout = true,
 }) => {
+  const _layoutKey = layoutKey || title
+  const shouldPersist = persistLayout !== false
   const [position, setPosition] = useState(() => {
-    const w = Math.min(sizeWidths[size], window.innerWidth - 32)
-    const h = Math.min(600, Math.round(window.innerHeight * 0.7))
+    const pl = shouldPersist ? persistedLayoutMap.get(_layoutKey) : undefined
+    if (pl) return pl.pos
+    const w = shouldPersist
+      ? Math.min(sizeWidths[size], window.innerWidth - 32)
+      : Math.max(360, Math.min(500, Math.round(window.innerWidth * 0.35)))
+    const h = shouldPersist
+      ? Math.min(sizeHeights[size], Math.round(window.innerHeight * 0.7))
+      : Math.max(250, Math.min(400, Math.round(window.innerHeight * 0.32)))
     return {
       x: Math.max(16, Math.round((window.innerWidth - w) / 2)),
       y: Math.max(16, Math.round((window.innerHeight - h) / 2)),
     }
   })
-  const [dimensions, setDimensions] = useState(() => ({
-    width: Math.min(sizeWidths[size], window.innerWidth - 32),
-    height: Math.min(600, Math.round(window.innerHeight * 0.7)),
-  }))
+  const [dimensions, setDimensions] = useState(() => {
+    const pl = shouldPersist ? persistedLayoutMap.get(_layoutKey) : undefined
+    if (pl) return pl.dim
+    return {
+      width: shouldPersist
+        ? Math.min(sizeWidths[size], window.innerWidth - 32)
+        : Math.max(360, Math.min(500, Math.round(window.innerWidth * 0.35))),
+      height: shouldPersist
+        ? Math.min(sizeHeights[size], Math.round(window.innerHeight * 0.7))
+        : Math.max(250, Math.min(400, Math.round(window.innerHeight * 0.32))),
+    }
+  })
   const [isDragging, setIsDragging] = useState(false)
   const [isResizing, setIsResizing] = useState(false)
   const [isMaximized, setIsMaximized] = useState(false)
@@ -119,12 +157,17 @@ export const Modal: FC<ModalProps> = ({
   // 打开弹窗：继承上次持久化的布局（预览↔编辑切换时保持位置与缩放），否则居中
   useLayoutEffect(() => {
     if (isOpen) {
-      if (persistedLayout) {
-        setDimensions(persistedLayout.dim)
-        setPosition(persistedLayout.pos)
+      const pl = shouldPersist ? persistedLayoutMap.get(_layoutKey) : undefined
+      if (pl) {
+        setDimensions(pl.dim)
+        setPosition(pl.pos)
       } else {
-        const w = Math.min(sizeWidths[size], window.innerWidth - 32)
-        const h = Math.min(600, Math.round(window.innerHeight * 0.7))
+        const w = shouldPersist
+          ? Math.min(sizeWidths[size], window.innerWidth - 32)
+          : Math.max(360, Math.min(500, Math.round(window.innerWidth * 0.35)))
+        const h = shouldPersist
+          ? Math.min(sizeHeights[size], Math.round(window.innerHeight * 0.7))
+          : Math.max(250, Math.min(400, Math.round(window.innerHeight * 0.32)))
         setDimensions({ width: w, height: h })
         setPosition({
           x: Math.max(16, Math.round((window.innerWidth - w) / 2)),
@@ -132,13 +175,12 @@ export const Modal: FC<ModalProps> = ({
         })
       }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen])
+  }, [isOpen, shouldPersist, _layoutKey, size])
 
-  // 持久化当前布局（非最大化时），供预览↔编辑切换时继承
+  // 持久化当前布局（含全屏状态），供预览↔编辑切换时继承
   useEffect(() => {
-    if (isOpen && !isMaximized) {
-      persistedLayout = { pos: { ...position }, dim: { ...dimensions } }
+    if (isOpen && shouldPersist) {
+      persistedLayoutMap.set(_layoutKey, { pos: { ...position }, dim: { ...dimensions } })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [position, dimensions, isOpen, isMaximized])
@@ -293,18 +335,17 @@ export const Modal: FC<ModalProps> = ({
           />
 
           {/* 弹窗内容 */}
-          <div className="fixed inset-0 z-50 pointer-events-none">
+          <div className={`fixed inset-0 z-50 pointer-events-none ${shouldPersist ? '' : 'flex items-center justify-center'}`}>
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
               transition={{ duration: 0.15 }}
               style={{
-                position: 'absolute',
-                left: position.x,
-                top: position.y,
-                width: dimensions.width,
-                height: dimensions.height,
+                ...(shouldPersist
+                  ? { position: 'absolute', left: position.x, top: position.y, width: dimensions.width, height: dimensions.height }
+                  : { maxWidth: '600px', maxHeight: '350px' }
+                ),
               }}
               className="bg-white rounded-2xl shadow-xl pointer-events-auto overflow-hidden flex flex-col select-none"
               onClick={(e) => e.stopPropagation()}

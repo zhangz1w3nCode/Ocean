@@ -176,6 +176,8 @@ export const AgentModal: FC<AgentModalProps> = ({
   return (
     <>
       <Modal
+        layoutKey="agent"
+        persistLayout={mode === 'edit'}
         isOpen={isOpen}
         onClose={() => handleClose()}
         title={mode === 'create' ? '创建新智能体' : '编辑智能体'}
