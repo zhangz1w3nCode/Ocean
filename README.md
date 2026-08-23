@@ -2,7 +2,7 @@
 
 <img src="./assets/logo.svg" alt="Ocean logo" width="144" />
 
-# Ocean
+---
 
 **Coding-Agent Asset & Capability Visualization Management Platform**
 

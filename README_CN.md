@@ -2,7 +2,7 @@
 
 <img src="./assets/logo.svg" alt="Ocean logo" width="144" />
 
-# Ocean
+---
 
 **Coding-Agent 资产与能力可视化管理平台**
 
