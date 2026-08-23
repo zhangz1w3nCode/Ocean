@@ -36,6 +36,7 @@ export const KnowledgeDetailModal: FC<KnowledgeDetailModalProps> = ({
 
   return (
     <Modal
+      layoutKey="knowledge"
       isOpen={isOpen}
       onClose={onClose}
       title=""

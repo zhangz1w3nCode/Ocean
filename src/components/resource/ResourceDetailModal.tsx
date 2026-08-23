@@ -45,6 +45,7 @@ export const ResourceDetailModal: FC<ResourceDetailModalProps> = ({
 
   return (
     <Modal
+      layoutKey="resource"
       isOpen={isOpen}
       onClose={onClose}
       title=""
