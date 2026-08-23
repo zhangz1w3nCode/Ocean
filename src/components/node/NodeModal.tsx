@@ -16,10 +16,6 @@ interface NodeModalProps {
   existingNames?: string[]
 }
 
-const nodeTypeOptions: { id: NodeType; label: string; color: string }[] = [
-  { id: 'process', label: '处理节点', color: '#007AFF' },
-  { id: 'business', label: '业务节点', color: '#5856D6' },
-]
 
 export const NodeModal: FC<NodeModalProps> = ({
   isOpen,
@@ -31,7 +27,7 @@ export const NodeModal: FC<NodeModalProps> = ({
 }) => {
   const { addToast } = useToastStore()
   const [name, setName] = useState('')
-  const [nodeType, setNodeType] = useState<NodeType>('process')
+  const [nodeType, setNodeType] = useState<NodeType>('business')
   const [description, setDescription] = useState('')
   const [content, setContent] = useState('')
 
@@ -77,7 +73,7 @@ export const NodeModal: FC<NodeModalProps> = ({
       } else {
         // 创建模式：重置为默认值
         setName('')
-        setNodeType('process')
+        setNodeType('business')
         setDescription('')
         setContent('')
       }
@@ -140,7 +136,7 @@ export const NodeModal: FC<NodeModalProps> = ({
     }
 
     setName('')
-    setNodeType('process')
+    setNodeType('business')
     setDescription('')
     setContent('')
     setInvalidFields(new Set())
@@ -204,39 +200,6 @@ export const NodeModal: FC<NodeModalProps> = ({
             )}
           </div>
 
-          {/* 节点类型 */}
-          <div>
-            <label className="flex items-center gap-2 text-sm font-medium text-macos-text mb-2">
-              <Layers size={16} className="text-macos-text-secondary" />
-              节点类型
-            </label>
-            <div className="flex items-center gap-2">
-              {nodeTypeOptions.map((type) => {
-                const isSelected = nodeType === type.id
-                return (
-                  <button
-                    key={type.id}
-                    type="button"
-                    onClick={() => setNodeType(type.id)}
-                    className={`
-                      flex items-center gap-1.5 px-3 py-2 rounded-lg border text-sm transition-all
-                      ${isSelected
-                        ? 'border-gray-400 bg-gray-100 text-gray-800'
-                        : 'border-macos-border hover:border-gray-300 hover:bg-gray-50 text-macos-text-secondary'
-                      }
-                    `}
-                  >
-                    <Layers
-                      size={16}
-                      style={{ color: isSelected ? type.color : '#6E6E73' }}
-                      strokeWidth={1.5}
-                    />
-                    {type.label}
-                  </button>
-                )
-              })}
-            </div>
-          </div>
 
           {/* 节点描述 */}
           <div>
