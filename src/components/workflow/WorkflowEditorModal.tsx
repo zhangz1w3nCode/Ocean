@@ -9,6 +9,7 @@ import { NodePanel } from '../flow/NodePanel'
 import { useFlowEditorStore } from '../../stores/flowEditorStore'
 import { useWorkflowStore } from '../../stores/workflowStore'
 import { useToastStore } from '../../stores/toastStore'
+import { getLayout, setLayout } from '../ui/Modal'
 
 type ResizeDirection = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw'
 
@@ -26,8 +27,6 @@ const resizeCursors: Record<ResizeDirection, string> = {
   se: 'nwse-resize',
 }
 
-// 持久化弹窗布局（位置+尺寸），在关闭↔重新打开时保持用户的调整
-let persistedLayout: { pos: { x: number; y: number }; dim: { width: number; height: number } } | null = null
 
 interface WorkflowEditorModalProps {
   isOpen: boolean
@@ -41,7 +40,8 @@ export const WorkflowEditorModal: FC<WorkflowEditorModalProps> = ({
   onClose,
 }) => {
   const [position, setPosition] = useState(() => {
-    if (persistedLayout) return persistedLayout.pos
+    const pl = getLayout('workflow-editor')
+    if (pl) return pl.pos
     const w = Math.min(1200, window.innerWidth - 32)
     const h = Math.min(700, window.innerHeight - 32)
     return {
@@ -50,7 +50,8 @@ export const WorkflowEditorModal: FC<WorkflowEditorModalProps> = ({
     }
   })
   const [dimensions, setDimensions] = useState(() => {
-    if (persistedLayout) return persistedLayout.dim
+    const pl = getLayout('workflow-editor')
+    if (pl) return pl.dim
     return {
       width: Math.min(1200, window.innerWidth - 32),
       height: Math.min(700, window.innerHeight - 32),
@@ -141,9 +142,10 @@ export const WorkflowEditorModal: FC<WorkflowEditorModalProps> = ({
   // 打开弹窗：继承上次持久化的布局，否则居中初始化
   useLayoutEffect(() => {
     if (isOpen) {
-      if (persistedLayout) {
-        setDimensions(persistedLayout.dim)
-        setPosition(persistedLayout.pos)
+      const pl = getLayout('workflow-editor')
+      if (pl) {
+        setDimensions(pl.dim)
+        setPosition(pl.pos)
       } else {
         const w = Math.min(1200, window.innerWidth - 32)
         const h = Math.min(700, window.innerHeight - 32)
@@ -160,7 +162,7 @@ export const WorkflowEditorModal: FC<WorkflowEditorModalProps> = ({
   // 持久化当前布局（含全屏状态），供关闭↔重新打开时继承
   useEffect(() => {
     if (isOpen) {
-      persistedLayout = { pos: { ...position }, dim: { ...dimensions } }
+      setLayout('workflow-editor', { pos: { ...position }, dim: { ...dimensions } })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [position, dimensions, isOpen])

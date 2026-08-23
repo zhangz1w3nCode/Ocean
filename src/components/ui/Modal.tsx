@@ -45,8 +45,19 @@ const resizeCursors: Record<ResizeDirection, string> = {
   se: 'nwse-resize',
 }
 
-// 持久化弹窗布局（按 title 隔离，预览↔编辑切换时保持用户的调整，不同弹窗互不影响）
+// 持久化弹窗布局（按 key 隔离，预览↔编辑切换时保持用户的调整，不同弹窗互不影响）
 const persistedLayoutMap = new Map<string, { pos: { x: number; y: number }; dim: { width: number; height: number } }>()
+
+// 导出 get/set 供其他组件（如 WorkflowEditorModal）共享同一 Map
+export const getLayout = (key: string) => persistedLayoutMap.get(key) ?? null
+export const setLayout = (key: string, layout: { pos: { x: number; y: number }; dim: { width: number; height: number } }) => {
+  // 限制 Map 大小防止无限增长（超过 30 条时清除最旧条目）
+  if (persistedLayoutMap.size >= 30) {
+    const firstKey = persistedLayoutMap.keys().next().value
+    if (firstKey) persistedLayoutMap.delete(firstKey)
+  }
+  persistedLayoutMap.set(key, layout)
+}
 
 export const Modal: FC<ModalProps> = ({
   isOpen,
