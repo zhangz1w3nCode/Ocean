@@ -10,6 +10,7 @@ import { useFlowEditorStore } from '../../stores/flowEditorStore'
 import { useWorkflowStore } from '../../stores/workflowStore'
 import { useToastStore } from '../../stores/toastStore'
 import { getLayout, setLayout } from '../ui/Modal'
+import { ConfirmModal } from '../ui/ConfirmModal'
 
 type ResizeDirection = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw'
 
@@ -75,6 +76,9 @@ export const WorkflowEditorModal: FC<WorkflowEditorModalProps> = ({
   const [nodePanelCollapsed, setNodePanelCollapsed] = useState(false)
   const [nodePanelWidth, setNodePanelWidth] = useState(208)
 
+  const [showConfirm, setShowConfirm] = useState(false)
+  const initialSnapshot = useRef<string>('')
+
   const {
     initNewWorkflow,
     reset,
@@ -93,6 +97,112 @@ export const WorkflowEditorModal: FC<WorkflowEditorModalProps> = ({
   const workflow = workflowId ? getWorkflowById(workflowId) : null
   const workflowName = workflow?.name || '未命名工作流'
 
+  const handleClose = useCallback((skipConfirm = false) => {
+    if (!skipConfirm) {
+      const state = useFlowEditorStore.getState()
+      const snapshot = JSON.stringify({ nodes: state.nodes, edges: state.edges })
+      if (snapshot !== initialSnapshot.current) {
+        setShowConfirm(true)
+        return
+      }
+    }
+    setShowConfirm(false)
+    onClose()
+  }, [onClose])
+
+  const handleConfirmClose = useCallback(() => {
+    setShowConfirm(false)
+    onClose()
+  }, [onClose])
+
+  const handleCancelClose = useCallback(() => {
+    setShowConfirm(false)
+  }, [])
+
+  const validateWorkflow = (): string | null => {
+    const state = useFlowEditorStore.getState()
+    const wfNodes = state.nodes
+    const wfEdges = state.edges
+
+    if (wfNodes.length === 0) {
+      return '工作流不能为空，请添加节点'
+    }
+
+    const startNodes = wfNodes.filter(n => n.type === 'start')
+    const endNodes = wfNodes.filter(n => n.type === 'end')
+
+    if (startNodes.length === 0) {
+      return '缺少起始节点，请添加一个起始节点'
+    }
+    if (endNodes.length === 0) {
+      return '缺少结束节点，请添加一个结束节点'
+    }
+
+    for (const startNode of startNodes) {
+      if (!wfEdges.some(e => e.source === startNode.id)) {
+        return '起始节点没有连接到其他节点'
+      }
+    }
+
+    for (const endNode of endNodes) {
+      if (!wfEdges.some(e => e.target === endNode.id)) {
+        return '结束节点没有连接到其他节点'
+      }
+    }
+
+    for (const node of wfNodes) {
+      if (node.type === 'start' || node.type === 'end') continue
+      const hasOut = wfEdges.some(e => e.source === node.id)
+      const hasIn = wfEdges.some(e => e.target === node.id)
+      if (!hasOut && !hasIn) {
+        return '存在没有连接到任何其他节点的孤立节点'
+      }
+    }
+
+    // Check decision node branches are all connected
+    for (const node of wfNodes) {
+      if (node.type !== 'decision') continue
+      const branches = (node.data?.branches || []) as { id: string }[]
+      if (branches.length === 0) continue
+
+      for (const branch of branches) {
+        if (!wfEdges.some(e => e.source === node.id && e.sourceHandle === branch.id)) {
+          return '存在分支节点的分支未连接，请检查分支连线'
+        }
+      }
+    }
+
+    const adjacency = new Map<string, string[]>()
+    for (const node of wfNodes) {
+      adjacency.set(node.id, [])
+    }
+    for (const edge of wfEdges) {
+      if (adjacency.has(edge.source)) {
+        adjacency.get(edge.source)!.push(edge.target)
+      }
+    }
+
+    const visited = new Set<string>()
+    const queue = [...startNodes.map(n => n.id)]
+    while (queue.length > 0) {
+      const current = queue.shift()!
+      if (visited.has(current)) continue
+      visited.add(current)
+      for (const neighbor of adjacency.get(current) || []) {
+        if (!visited.has(neighbor)) queue.push(neighbor)
+      }
+    }
+
+    // All non-start nodes must be reachable from start (supports cycles via visited set)
+    for (const node of wfNodes) {
+      if (node.type === 'start') continue
+      if (!visited.has(node.id)) {
+        return '存在无法从起始节点到达的节点，请检查节点连线'
+      }
+    }
+
+    return null
+  }
   // 初始化工作流
   const initializeWorkflow = useCallback(() => {
     if (!workflowId) return
@@ -118,6 +228,16 @@ export const WorkflowEditorModal: FC<WorkflowEditorModalProps> = ({
   }, [isOpen, workflowId, initializeWorkflow])
 
   useEffect(() => {
+    if (isOpen) {
+      const timer = setTimeout(() => {
+        const state = useFlowEditorStore.getState()
+        initialSnapshot.current = JSON.stringify({ nodes: state.nodes, edges: state.edges })
+      }, 0)
+      return () => clearTimeout(timer)
+    }
+  }, [isOpen])
+
+  useEffect(() => {
     if (!isOpen) return
 
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -131,13 +251,14 @@ export const WorkflowEditorModal: FC<WorkflowEditorModalProps> = ({
       }
       if (e.key === 'Escape') {
         e.preventDefault()
-        onClose()
+        e.stopPropagation()
+        handleClose()
       }
     }
 
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [isOpen, canUndo, canRedo, undo, redo, onClose])
+    document.addEventListener('keydown', handleKeyDown, true)
+    return () => document.removeEventListener('keydown', handleKeyDown, true)
+  }, [isOpen, canUndo, canRedo, undo, redo, handleClose])
 
   // 打开弹窗：继承上次持久化的布局，否则居中初始化
   useLayoutEffect(() => {
@@ -329,12 +450,20 @@ export const WorkflowEditorModal: FC<WorkflowEditorModalProps> = ({
       return
     }
 
+    const validationError = validateWorkflow()
+    if (validationError) {
+      addToast(validationError, 'warning')
+      return
+    }
+
     const loadingToastId = addToast('正在保存...', 'info', 0)
     const success = await saveWorkflowData(workflowId, nodes, edges)
     useToastStore.getState().removeToast(loadingToastId)
 
     if (success) {
       addToast('保存成功', 'success')
+      const state = useFlowEditorStore.getState()
+      initialSnapshot.current = JSON.stringify({ nodes: state.nodes, edges: state.edges })
     } else {
       addToast('保存失败，请重试', 'error')
     }
@@ -355,7 +484,7 @@ export const WorkflowEditorModal: FC<WorkflowEditorModalProps> = ({
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
             className="fixed inset-0 bg-black/30 backdrop-blur-sm z-[50]"
-            onClick={onClose}
+            onClick={() => handleClose()}
           />
 
           {/* 弹窗容器 */}
@@ -383,9 +512,9 @@ export const WorkflowEditorModal: FC<WorkflowEditorModalProps> = ({
                 className={isDragging ? 'cursor-grabbing' : 'cursor-grab'}
               >
                 <FlowToolbar
-                  onBack={onClose}
+                  onBack={() => handleClose()}
                   onSave={handleSave}
-                  onClose={onClose}
+                  onClose={() => handleClose()}
                   workflowId={workflowId}
                 />
               </div>
@@ -448,6 +577,16 @@ export const WorkflowEditorModal: FC<WorkflowEditorModalProps> = ({
               />
             </motion.div>
           </div>
+
+          <ConfirmModal
+            isOpen={showConfirm}
+            title="确认退出"
+            message="当前有未保存的修改，确定要退出吗？"
+            confirmText="退出"
+            cancelText="继续编辑"
+            onConfirm={handleConfirmClose}
+            onCancel={handleCancelClose}
+          />
         </>
       )}
     </AnimatePresence>
