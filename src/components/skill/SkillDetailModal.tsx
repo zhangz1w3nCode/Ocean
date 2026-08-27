@@ -186,16 +186,16 @@ export const SkillDetailModal: FC<SkillDetailModalProps> = ({
         </div>
 
         {/* 内容区域 */}
-        <div className="flex-1 min-h-0 overflow-y-auto pr-2">
+        <div className="flex-1 min-h-0 flex flex-col overflow-hidden pr-2">
           {activeTab === 'content' ? (
-            <div className="space-y-4">
+            <div className="flex-1 min-h-0 flex flex-col space-y-4">
               {/* 技能内容 */}
-              <div>
+              <div className="flex-1 min-h-0 flex flex-col">
                 <label className="flex items-center gap-2 text-sm font-medium text-macos-text mb-1.5">
                   <FileText size={16} />
                   技能内容
                 </label>
-                <div className="bg-gray-50 rounded-lg p-4">
+                <div className="bg-gray-50 rounded-lg p-4 flex-1 min-h-0 overflow-y-auto">
                   {skill.content ? (
                     <MarkdownRenderer content={skill.content} />
                   ) : (

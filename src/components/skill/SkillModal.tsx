@@ -864,7 +864,7 @@ export const SkillModal: FC<SkillModalProps> = ({
       {/* 内容区域 */}
       {activeTab === 'content' ? (
         /* 技能内容编辑 */
-        <div className="flex flex-col">
+        <div className="flex-1 min-h-0 flex flex-col">
           <div className="flex items-center justify-between mb-1.5">
             <label className="flex items-center gap-2 text-sm font-medium text-macos-text">
               <Wand2 size={16} className="text-violet-500" />
@@ -915,24 +915,25 @@ export const SkillModal: FC<SkillModalProps> = ({
 
           {/* 编辑模式 */}
           {viewMode === 'edit' && (
-            <MarkdownEditor
-              placeholder="在此输入技能内容，支持 Markdown 格式...&#10;&#10;例如：&#10;# 技能说明&#10;这是一个代码分析技能...&#10;&#10;提示：输入@和%可引用其他业务内容 "
-              value={content}
-              onChange={(e) => {
-                setContent(e.target.value)
-                if (invalidFields.has('content')) setInvalidFields(new Set())
-              }}
-              rows={8}
-              invalid={invalidFields.has('content')}
-              className="font-mono text-sm"
-              excludePath={excludePath}
-            />
+            <div className="flex-1 min-h-0">
+              <MarkdownEditor
+                placeholder="在此输入技能内容，支持 Markdown 格式...&#10;&#10;例如：&#10;# 技能说明&#10;这是一个代码分析技能...&#10;&#10;提示：输入@和%可引用其他业务内容 "
+                value={content}
+                onChange={(e) => {
+                  setContent(e.target.value)
+                  if (invalidFields.has('content')) setInvalidFields(new Set())
+                }}
+                invalid={invalidFields.has('content')}
+                className="font-mono text-sm h-full"
+                excludePath={excludePath}
+              />
+            </div>
           )}
 
           {/* 预览模式 */}
           {viewMode === 'preview' && (
             <div
-              className={`bg-gray-50 rounded-lg p-4 min-h-[200px] max-h-[50vh] overflow-y-auto ${
+              className={`bg-gray-50 rounded-lg p-4 flex-1 min-h-0 overflow-y-auto ${
                 invalidFields.has('content') ? 'ring-2 ring-gray-400' : ''
               }`}
             >
