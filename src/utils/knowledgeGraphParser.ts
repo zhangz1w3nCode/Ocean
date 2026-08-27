@@ -7,7 +7,8 @@
  */
 
 /**
- * 匹配 [[xxx.md|关系]] 或 [[xxx.md]] 格式
+ * 匹配 [[xxx.md|关系]] 或 [[xxx.md]] 或 [[skill-name|关系]] 格式
+ * .md/.mdx 扩展名为可选，兼容纯 skill 名称引用
  * 支持以下情况：
  * - [[知识A.md|引用]] - 带关系名称
  * - [[知识A.md]] - 不带关系名称，默认"关联"
@@ -15,8 +16,9 @@
  * - [[.knowledges/知识A.md|引用]] - 项目根共享知识库路径
  * - [[{资产根目录}/knowledges/知识A.md|引用]] - 带完整路径前缀（历史格式兼容）
  * - [[`xxx.md`|引用]] - 路径包含反引号的混合格式
+ * - [[`skill-name`|引用]] - 纯 skill 名称引用
  */
-const WIKI_LINK_REGEX = /\[\[([^\]|]+\.(?:md|mdx)`?)(?:\|([^\]]+))?\]\]/g
+const WIKI_LINK_REGEX = /\[\[([^\]|]+?)(?:\.(?:md|mdx))?`?(?:\|([^\]]+))?\]\]/g
 
 /**
  * 清理路径中的反引号
@@ -35,9 +37,10 @@ function cleanBackticks(path: string): string {
  * - `./知识A.md` - 相对路径
  * - `.knowledges/知识A.md` - 项目根共享知识库路径
  * - `{资产根目录}/knowledges/知识A.md` - 完整路径（历史格式兼容）
- * - `{资产根目录}/agents/xxx.md` - 其他业务模块引用（知识图谱只处理 knowledges 目录）
+ * - `{资产根目录}/agents/xxx.md` - 其他业务模块引用
+ * - `skill-name` - 纯 skill 名称引用
  */
-const BACKTICK_LINK_REGEX = /`([^`]+\.(?:md|mdx))`/g
+const BACKTICK_LINK_REGEX = /`([^`]+)`/g
 
 /**
  * 知识链接信息
@@ -152,6 +155,9 @@ export function parseKnowledgeLinks(content: string): KnowledgeLink[] {
         relation = '引用技能'
       } else if (rawPath.includes('/knowledges/') || rawPath.includes('.knowledges/')) {
         relation = '引用知识'
+      } else if (!cleanedPath.includes('/') && !cleanedPath.match(/\.(?:md|mdx)$/)) {
+        // 纯名称引用（无路径分隔符且无 .md 扩展名）视为技能引用
+        relation = '引用技能'
       }
 
       links.push({
