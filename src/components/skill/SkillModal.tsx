@@ -106,7 +106,7 @@ export const SkillModal: FC<SkillModalProps> = ({
   })
 
   // 计算排除路径（编辑模式下排除当前技能）
-  const excludePath = mode === 'edit' && initialData ? `${getAssetDirName()}/skills/${initialData.name}/SKILL.md` : undefined
+  const excludePath = mode === 'edit' && initialData ? initialData.name : undefined
 
   // 编辑/预览模式
   const [viewMode, setViewMode] = useState<'edit' | 'preview'>('edit')

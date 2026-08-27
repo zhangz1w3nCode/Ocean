@@ -137,7 +137,7 @@ export function useReferenceItems(options: UseReferenceItemsOptions = {}): Refer
     })
 
     // 技能 - 先添加库引用，再添加具体文件
-    // 注意：技能使用文件夹结构，路径为 .claude/skills/{name}/SKILL.md
+    // 技能引用只拼接 skill 名称，不拼接相对路径
     const skillLibrary = libraryConfig.find(c => c.category === 'skills')!
     if (`${assetDir}/${skillLibrary.subDir}` !== excludePath) {
       items.push({
@@ -149,8 +149,7 @@ export function useReferenceItems(options: UseReferenceItemsOptions = {}): Refer
       })
     }
     skillFiles.forEach((skill) => {
-      // 技能使用文件夹结构，路径为 .claude/skills/{name}/SKILL.md
-      const path = `${assetDir}/skills/${skill.name}/SKILL.md`
+      const path = skill.name
       if (path !== excludePath) {
         items.push({
           id: skill.id,

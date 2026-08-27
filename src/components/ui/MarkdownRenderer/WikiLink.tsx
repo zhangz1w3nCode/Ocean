@@ -61,6 +61,11 @@ export function getReferenceType(path: string): { icon: string; color: string; b
   if (path.includes('/knowledges/') || path.includes('.knowledges/')) {
     return { icon: '知识', color: '#2563EB', bgColor: '#DBEAFE' } // 蓝色
   }
+  // 纯名称引用（无路径分隔符且无 .md 扩展名）视为技能引用
+  const cleanPath = path.replace(/^`+|`+$/g, '')
+  if (!cleanPath.includes('/') && !cleanPath.match(/\.(?:md|mdx)$/)) {
+    return { icon: '技能', color: '#7C3AED', bgColor: '#EDE9FE' } // 紫罗兰色
+  }
   // 默认样式
   return { icon: '引用', color: '#6B7280', bgColor: '#F3F4F6' } // 灰色
 }
@@ -99,9 +104,10 @@ export const WikiLink: FC<WikiLinkProps> = ({ path, relation, displayName }) => 
 
 /**
  * WikiLink 正则表达式
- * 匹配 [[xxx.md|关系]] 或 [[xxx.md]] 格式
+ * 匹配 [[xxx.md|关系]] 或 [[xxx.md]] 或 [[skill-name|关系]] 格式
+ * .md/.mdx 扩展名为可选，兼容纯 skill 名称引用
  */
-export const WIKI_LINK_REGEX = /\[\[([^\]|]+\.(?:md|mdx)`?)(?:\|([^\]]+))?\]\]/g
+export const WIKI_LINK_REGEX = /\[\[([^\]|]+?)(?:\.(?:md|mdx))?`?(?:\|([^\]]+))?\]\]/g
 
 /**
  * 解析内容中的 WikiLink 并渲染
