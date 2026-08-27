@@ -1,7 +1,21 @@
 import type { FC } from 'react'
-import { Wand2, MessageSquare, FileText } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import type { LucideIcon } from 'lucide-react'
+import { Wand2, MessageSquare, FileText, FileCode, FolderOpen } from 'lucide-react'
 import { Modal, Button, MarkdownRenderer } from '../ui'
-import type { SkillFile } from '../../types'
+import { useSkillStore } from '../../stores/skillStore'
+import { SkillResourceDetailModal } from './SkillResourceDetailModal'
+import { SkillResourceEditModal } from './SkillResourceEditModal'
+import type { SkillFile, SkillResource } from '../../types'
+
+type TabType = 'content' | 'scripts' | 'references' | 'examples'
+
+const tabConfig: Record<TabType, { label: string; icon: LucideIcon; color: string; bgColor: string }> = {
+  content: { label: '技能内容', icon: Wand2, color: 'text-violet-600', bgColor: 'bg-violet-50' },
+  scripts: { label: '脚本', icon: FileCode, color: 'text-violet-600', bgColor: 'bg-violet-50' },
+  references: { label: '参考文档', icon: FileText, color: 'text-blue-600', bgColor: 'bg-blue-50' },
+  examples: { label: '示例', icon: FolderOpen, color: 'text-green-600', bgColor: 'bg-green-50' },
+}
 
 interface SkillDetailModalProps {
   isOpen: boolean
@@ -10,7 +24,6 @@ interface SkillDetailModalProps {
   skill: SkillFile | null
 }
 
-// 技能使用紫罗兰色
 const colorConfig = {
   color: '#7C3AED',
   bgColor: '#EDE9FE',
@@ -22,9 +35,40 @@ export const SkillDetailModal: FC<SkillDetailModalProps> = ({
   onEdit,
   skill,
 }) => {
+  const { loadResources, saveResource } = useSkillStore()
+  const [activeTab, setActiveTab] = useState<TabType>('content')
+  const [resources, setResources] = useState<Record<TabType, SkillResource[]>>({
+    content: [],
+    scripts: [],
+    references: [],
+    examples: [],
+  })
+  const [isResourceDetailOpen, setIsResourceDetailOpen] = useState(false)
+  const [viewingResource, setViewingResource] = useState<SkillResource | null>(null)
+  const [isResourceEditOpen, setIsResourceEditOpen] = useState(false)
+  const [editingResource, setEditingResource] = useState<SkillResource | null>(null)
+
+  useEffect(() => {
+    if (isOpen && skill) {
+      setActiveTab('content')
+      setIsResourceDetailOpen(false)
+      setViewingResource(null)
+      setIsResourceEditOpen(false)
+      setEditingResource(null)
+      const loadAll = async () => {
+        const [scripts, references, examples] = await Promise.all([
+          loadResources(skill.name, 'scripts'),
+          loadResources(skill.name, 'references'),
+          loadResources(skill.name, 'examples'),
+        ])
+        setResources({ content: [], scripts, references, examples })
+      }
+      loadAll()
+    }
+  }, [isOpen, skill, loadResources])
+
   if (!skill) return null
 
-  // 格式化日期
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr)
     return date.toLocaleDateString('zh-CN', {
@@ -34,61 +78,79 @@ export const SkillDetailModal: FC<SkillDetailModalProps> = ({
     })
   }
 
-  return (
-    <Modal
-      layoutKey="skill"
-      isOpen={isOpen}
-      onClose={onClose}
-      title=""
-      size="xl"
-      footer={
-        <div className="flex justify-between">
-          <Button variant="ghost" size="sm" onClick={onClose}>
-            关闭
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onEdit}
-            className="bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 hover:border-gray-400 rounded-lg"
-          >
-            编辑
-          </Button>
-        </div>
-      }
-    >
-      {/* 头部信息 - 固定在顶部 */}
-      <div className="flex items-center gap-4 pb-4 mb-4 border-b border-gray-100">
-        {/* 技能图标 - 魔法棒 */}
-        <div
-          className="w-14 h-14 rounded-xl flex items-center justify-center flex-shrink-0"
-          style={{ backgroundColor: colorConfig.bgColor }}
-        >
-          <Wand2 size={28} style={{ color: colorConfig.color }} />
-        </div>
+  const currentResources = resources[activeTab] || []
+  const currentTabConfig = tabConfig[activeTab]
 
-        {/* 技能信息 */}
-        <div className="flex-1 min-w-0">
-          <h2 className="text-xl font-semibold text-macos-text mb-1">{skill.name}</h2>
-          <div className="flex items-center gap-3">
-            <span
-              className="inline-flex items-center px-2.5 py-1 rounded-lg text-sm font-medium"
-              style={{ backgroundColor: colorConfig.bgColor, color: colorConfig.color }}
+  const handleSaveResourceCallback = async (fileName: string, fileContent: string) => {
+    if (!skill) return false
+    const success = await saveResource(
+      skill.name,
+      activeTab as 'scripts' | 'references' | 'examples',
+      fileName,
+      fileContent
+    )
+    if (success) {
+      const [scripts, references, examples] = await Promise.all([
+        loadResources(skill.name, 'scripts'),
+        loadResources(skill.name, 'references'),
+        loadResources(skill.name, 'examples'),
+      ])
+      setResources({ content: [], scripts, references, examples })
+    }
+    return success
+  }
+
+  return (
+    <>
+      <Modal
+        layoutKey="skill"
+        isOpen={isOpen}
+        onClose={onClose}
+        title=""
+        size="xl"
+        footer={
+          <div className="flex justify-between">
+            <Button variant="ghost" size="sm" onClick={onClose}>
+              关闭
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onEdit}
+              className="bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 hover:border-gray-400 rounded-lg"
             >
-              skill
-            </span>
-            <span className="text-sm text-macos-text-tertiary">
-              更新于 {formatDate(skill.updatedAt)}
-            </span>
+              编辑
+            </Button>
+          </div>
+        }
+      >
+        {/* 头部信息 */}
+        <div className="flex items-center gap-4 pb-4 mb-4 border-b border-gray-100">
+          <div
+            className="w-14 h-14 rounded-xl flex items-center justify-center flex-shrink-0"
+            style={{ backgroundColor: colorConfig.bgColor }}
+          >
+            <Wand2 size={28} style={{ color: colorConfig.color }} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h2 className="text-xl font-semibold text-macos-text mb-1">{skill.name}</h2>
+            <div className="flex items-center gap-3">
+              <span
+                className="inline-flex items-center px-2.5 py-1 rounded-lg text-sm font-medium"
+                style={{ backgroundColor: colorConfig.bgColor, color: colorConfig.color }}
+              >
+                skill
+              </span>
+              <span className="text-sm text-macos-text-tertiary">
+                更新于 {formatDate(skill.updatedAt)}
+              </span>
+            </div>
           </div>
         </div>
-      </div>
 
-      {/* 内容区域 - 固定高度，超出滚动 */}
-      <div className="flex-1 min-h-0 overflow-y-auto pr-2 space-y-4">
         {/* 技能描述 */}
         {skill.description && (
-          <div>
+          <div className="mb-4">
             <label className="flex items-center gap-2 text-sm font-medium text-macos-text mb-1.5">
               <MessageSquare size={16} />
               技能描述
@@ -99,45 +161,126 @@ export const SkillDetailModal: FC<SkillDetailModalProps> = ({
           </div>
         )}
 
-        {/* 技能内容 */}
-        <div>
-          <label className="flex items-center gap-2 text-sm font-medium text-macos-text mb-1.5">
-            <FileText size={16} />
-            技能内容
-          </label>
-          <div className="bg-gray-50 rounded-lg p-4">
-            {skill.content ? (
-              <MarkdownRenderer content={skill.content} />
-            ) : (
-              <p className="text-sm text-macos-text-tertiary text-center py-4">
-                暂无技能内容
-              </p>
-            )}
-          </div>
+        {/* Tab 分栏 */}
+        <div className="flex items-center gap-1 bg-gray-100 rounded-xl p-1.5 mb-4">
+          {(Object.keys(tabConfig) as TabType[]).map((tab) => {
+            const config = tabConfig[tab]
+            const Icon = config.icon
+            const isActive = activeTab === tab
+            return (
+              <button
+                key={tab}
+                type="button"
+                onClick={() => setActiveTab(tab)}
+                className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 flex-1 justify-center ${
+                  isActive
+                    ? 'bg-white text-gray-800 shadow-sm'
+                    : 'text-gray-500 hover:text-gray-700 hover:bg-gray-200/50'
+                }`}
+              >
+                <Icon size={16} className={isActive ? config.color : ''} />
+                {config.label}
+              </button>
+            )
+          })}
         </div>
 
-        {/* 资源文件统计 */}
-        {(skill.scripts?.length || 0) > 0 || (skill.references?.length || 0) > 0 || (skill.examples?.length || 0) > 0 ? (
-          <div className="flex items-center gap-3 pt-2">
-            <span className="text-xs text-macos-text-tertiary">包含资源:</span>
-            {skill.scripts && skill.scripts.length > 0 && (
-              <span className="px-2 py-0.5 rounded text-xs bg-violet-50 text-violet-600">
-                scripts ({skill.scripts.length})
-              </span>
-            )}
-            {skill.references && skill.references.length > 0 && (
-              <span className="px-2 py-0.5 rounded text-xs bg-blue-50 text-blue-600">
-                references ({skill.references.length})
-              </span>
-            )}
-            {skill.examples && skill.examples.length > 0 && (
-              <span className="px-2 py-0.5 rounded text-xs bg-green-50 text-green-600">
-                examples ({skill.examples.length})
-              </span>
-            )}
-          </div>
-        ) : null}
-      </div>
-    </Modal>
+        {/* 内容区域 */}
+        <div className="flex-1 min-h-0 overflow-y-auto pr-2">
+          {activeTab === 'content' ? (
+            <div className="space-y-4">
+              {/* 技能内容 */}
+              <div>
+                <label className="flex items-center gap-2 text-sm font-medium text-macos-text mb-1.5">
+                  <FileText size={16} />
+                  技能内容
+                </label>
+                <div className="bg-gray-50 rounded-lg p-4">
+                  {skill.content ? (
+                    <MarkdownRenderer content={skill.content} />
+                  ) : (
+                    <p className="text-sm text-macos-text-tertiary text-center py-4">
+                      暂无技能内容
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {/* 目录说明 */}
+              <div className={`${currentTabConfig.bgColor} rounded-lg p-3`}>
+                <div className="flex items-center gap-2">
+                  <currentTabConfig.icon size={16} className={currentTabConfig.color} />
+                  <span className={`text-sm font-medium ${currentTabConfig.color}`}>
+                    {activeTab}/
+                  </span>
+                </div>
+              </div>
+
+              {/* 文件列表 */}
+              <div className="border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-[300px] overflow-y-auto">
+                {currentResources.length > 0 ? (
+                  currentResources.map((resource) => (
+                    <div
+                      key={resource.name}
+                      className="flex items-center justify-between p-3 hover:bg-gray-50"
+                    >
+                      <button
+                        onClick={() => {
+                          setViewingResource(resource)
+                          setIsResourceDetailOpen(true)
+                        }}
+                        className="flex items-center gap-2 flex-1 text-left cursor-pointer"
+                      >
+                        <currentTabConfig.icon size={16} className={currentTabConfig.color} />
+                        <span className="text-sm text-gray-700 hover:text-gray-900">{resource.name}</span>
+                      </button>
+                    </div>
+                  ))
+                ) : (
+                  <div className="p-8 text-center">
+                    <p className="text-sm text-gray-400 mb-2">暂无文件</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </Modal>
+
+      {/* 资源详情弹窗 */}
+      <SkillResourceDetailModal
+        isOpen={isResourceDetailOpen}
+        onClose={() => {
+          setIsResourceDetailOpen(false)
+          setViewingResource(null)
+        }}
+        onEdit={() => {
+          setIsResourceDetailOpen(false)
+          setEditingResource(viewingResource)
+          setViewingResource(null)
+          setIsResourceEditOpen(true)
+        }}
+        resource={viewingResource}
+        tabLabel={currentTabConfig.label}
+        TabIcon={currentTabConfig.icon}
+        tabColor={currentTabConfig.color}
+      />
+
+      {/* 资源编辑弹窗 */}
+      <SkillResourceEditModal
+        isOpen={isResourceEditOpen}
+        onClose={() => {
+          setIsResourceEditOpen(false)
+          setEditingResource(null)
+        }}
+        onConfirm={handleSaveResourceCallback}
+        mode="edit"
+        initialData={editingResource}
+        filePlaceholder={currentTabConfig.label.toLowerCase()}
+        contentPlaceholder="# 在此输入文件内容..."
+      />
+    </>
   )
 }

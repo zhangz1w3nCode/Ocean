@@ -1,7 +1,9 @@
 import type { FC } from 'react'
 import { useState, useEffect, useRef } from 'react'
-import { Type, Wand2, Eye, Edit3, MessageSquare, FileCode, FileText, FolderOpen, Plus, Trash2, X, PenLine, Brain, Bot, Loader2 } from 'lucide-react'
+import { Type, Wand2, Eye, Edit3, MessageSquare, FileCode, FileText, FolderOpen, Plus, Trash2, PenLine, Brain, Bot, Loader2 } from 'lucide-react'
 import { Modal, Input, Textarea, Button, ConfirmModal, MarkdownEditor, MarkdownRenderer, OptimizeModal } from '../ui'
+import { SkillResourceDetailModal } from './SkillResourceDetailModal'
+import { SkillResourceEditModal } from './SkillResourceEditModal'
 import { useToastStore } from '../../stores/toastStore'
 import { useSettingsStore } from '../../stores/settingsStore'
 import { useProjectStore } from '../../stores/projectStore'
@@ -122,11 +124,14 @@ export const SkillModal: FC<SkillModalProps> = ({
     content: [],
   })
 
-  // 资源编辑状态
-  const [isEditingResource, setIsEditingResource] = useState(false)
-  const [editingFileName, setEditingFileName] = useState<string | null>(null)
-  const [fileName, setFileName] = useState('')
-  const [fileContent, setFileContent] = useState('')
+  // 资源详情弹窗状态
+  const [isResourceDetailOpen, setIsResourceDetailOpen] = useState(false)
+  const [viewingResource, setViewingResource] = useState<SkillResource | null>(null)
+
+  // 资源编辑弹窗状态
+  const [isResourceEditOpen, setIsResourceEditOpen] = useState(false)
+  const [resourceEditMode, setResourceEditMode] = useState<'create' | 'edit'>('create')
+  const [editingResource, setEditingResource] = useState<SkillResource | null>(null)
 
   // 确认弹窗状态
   const [showConfirm, setShowConfirm] = useState(false)
@@ -205,7 +210,7 @@ export const SkillModal: FC<SkillModalProps> = ({
       setInvalidFields(new Set())
       setViewMode('edit')
       setActiveTab('content')
-      resetResourceEditState()
+      closeResourceModals()
       clearAgenticSteps()
       // 延迟设置快照，确保状态已更新
       setTimeout(() => {
@@ -446,7 +451,7 @@ export const SkillModal: FC<SkillModalProps> = ({
     setInvalidFields(new Set())
     setActiveTab('content')
     setCreateMode('select')
-    resetResourceEditState()
+    closeResourceModals()
     clearAgenticSteps()
     onClose()
   }
@@ -479,12 +484,12 @@ export const SkillModal: FC<SkillModalProps> = ({
     setShowBackConfirm(false)
   }
 
-  // 重置资源编辑状态
-  const resetResourceEditState = () => {
-    setIsEditingResource(false)
-    setEditingFileName(null)
-    setFileName('')
-    setFileContent('')
+  // 关闭资源详情/编辑弹窗
+  const closeResourceModals = () => {
+    setIsResourceDetailOpen(false)
+    setViewingResource(null)
+    setIsResourceEditOpen(false)
+    setEditingResource(null)
   }
 
   // 创建模式下不能编辑资源
@@ -492,47 +497,47 @@ export const SkillModal: FC<SkillModalProps> = ({
 
   // 新建资源文件
   const handleCreateResource = () => {
-    resetResourceEditState()
-    setIsEditingResource(true)
+    setResourceEditMode('create')
+    setEditingResource(null)
+    setIsResourceEditOpen(true)
   }
 
   // 编辑资源文件
   const handleEditResource = (resource: SkillResource) => {
-    setEditingFileName(resource.name)
-    setFileName(resource.name)
-    setFileContent(resource.content || '')
-    setIsEditingResource(true)
+    setResourceEditMode('edit')
+    setEditingResource(resource)
+    setIsResourceEditOpen(true)
   }
 
-  // 保存资源文件
-  const handleSaveResource = async () => {
-    if (!initialData) return
+  // 点击文件名查看详情
+  const handleViewResource = (resource: SkillResource) => {
+    setViewingResource(resource)
+    setIsResourceDetailOpen(true)
+  }
 
-    if (!fileName.trim()) {
-      addToast('请输入文件名', 'warning')
-      return
+  // 从详情弹窗进入编辑
+  const handleEditFromDetail = () => {
+    if (viewingResource) {
+      setIsResourceDetailOpen(false)
+      setResourceEditMode('edit')
+      setEditingResource(viewingResource)
+      setIsResourceEditOpen(true)
     }
+  }
 
-    if (!fileContent.trim()) {
-      addToast('请输入文件内容', 'warning')
-      return
-    }
-
+  // 资源编辑保存回调
+  const handleSaveResourceCallback = async (fileName: string, fileContent: string) => {
+    if (!initialData) return false
     const success = await saveResource(
       initialData.name,
       activeTab as 'scripts' | 'references' | 'examples',
-      fileName.trim(),
-      fileContent.trim()
+      fileName,
+      fileContent
     )
-
     if (success) {
-      addToast(editingFileName ? '文件更新成功' : '文件创建成功', 'success')
-      // 重新加载资源列表
       await loadAllResources(initialData.name)
-      resetResourceEditState()
-    } else {
-      addToast('保存失败', 'error')
     }
+    return success
   }
 
   // 点击删除资源
@@ -840,7 +845,7 @@ export const SkillModal: FC<SkillModalProps> = ({
                 type="button"
                 onClick={() => {
                   setActiveTab(tab)
-                  resetResourceEditState()
+                  closeResourceModals()
                 }}
                 className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 flex-1 justify-center ${
                   isActive
@@ -954,101 +959,55 @@ export const SkillModal: FC<SkillModalProps> = ({
             </div>
           </div>
 
-          {/* 编辑区域 */}
-          {isEditingResource ? (
-            <div className="space-y-3 border border-gray-200 rounded-lg p-4">
-              <div className="flex items-center justify-between">
-                <h4 className="text-sm font-medium text-gray-700">
-                  {editingFileName ? '编辑文件' : '新建文件'}
-                </h4>
-                <button
-                  onClick={resetResourceEditState}
-                  className="p-1 hover:bg-gray-100 rounded"
+          {/* 文件列表 */}
+          <div className="border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-[300px] overflow-y-auto">
+            {currentResources.length > 0 ? (
+              currentResources.map((resource) => (
+                <div
+                  key={resource.name}
+                  className="flex items-center justify-between p-3 hover:bg-gray-50"
                 >
-                  <X size={16} className="text-gray-400" />
-                </button>
-              </div>
-
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">文件名</label>
-                <Input
-                  placeholder={getFilePlaceholder()}
-                  value={fileName}
-                  onChange={(e) => setFileName(e.target.value)}
-                  disabled={!!editingFileName}
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">文件内容</label>
-                <Textarea
-                  placeholder={getContentPlaceholder()}
-                  value={fileContent}
-                  onChange={(e) => setFileContent(e.target.value)}
-                  rows={8}
-                  className="font-mono text-sm"
-                />
-              </div>
-
-              <div className="flex justify-end gap-2">
-                <Button variant="ghost" size="sm" onClick={resetResourceEditState}>
-                  取消
-                </Button>
-                <Button variant="outline" size="sm" onClick={handleSaveResource}>
-                  保存
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <>
-              {/* 文件列表 */}
-              <div className="border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-[300px] overflow-y-auto">
-                {currentResources.length > 0 ? (
-                  currentResources.map((resource) => (
-                    <div
-                      key={resource.name}
-                      className="flex items-center justify-between p-3 hover:bg-gray-50"
+                  <button
+                    onClick={() => handleViewResource(resource)}
+                    className="flex items-center gap-2 flex-1 text-left cursor-pointer"
+                  >
+                    <currentTabConfig.icon size={16} className={currentTabConfig.color} />
+                    <span className="text-sm text-gray-700 hover:text-gray-900">{resource.name}</span>
+                  </button>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => handleEditResource(resource)}
+                      className="p-1.5 hover:bg-gray-100 rounded text-gray-400 hover:text-gray-600"
                     >
-                      <div className="flex items-center gap-2">
-                        <currentTabConfig.icon size={16} className={currentTabConfig.color} />
-                        <span className="text-sm text-gray-700">{resource.name}</span>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <button
-                          onClick={() => handleEditResource(resource)}
-                          className="p-1.5 hover:bg-gray-100 rounded text-gray-400 hover:text-gray-600"
-                        >
-                          <Edit3 size={14} />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteResourceClick(resource.name)}
-                          className="p-1.5 hover:bg-red-50 rounded text-gray-400 hover:text-red-500"
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <div className="p-8 text-center">
-                    <p className="text-sm text-gray-400 mb-2">暂无文件</p>
-                    <p className="text-xs text-gray-300">点击下方按钮添加文件</p>
+                      <Edit3 size={14} />
+                    </button>
+                    <button
+                      onClick={() => handleDeleteResourceClick(resource.name)}
+                      className="p-1.5 hover:bg-red-50 rounded text-gray-400 hover:text-red-500"
+                    >
+                      <Trash2 size={14} />
+                    </button>
                   </div>
-                )}
+                </div>
+              ))
+            ) : (
+              <div className="p-8 text-center">
+                <p className="text-sm text-gray-400 mb-2">暂无文件</p>
+                <p className="text-xs text-gray-300">点击下方按钮添加文件</p>
               </div>
+            )}
+          </div>
 
-              {/* 新建按钮 */}
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleCreateResource}
-                className="w-full border-dashed"
-              >
-                <Plus size={16} />
-                添加文件
-              </Button>
-            </>
-          )}
+          {/* 新建按钮 */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleCreateResource}
+            className="w-full border-dashed"
+          >
+            <Plus size={16} />
+            添加文件
+          </Button>
         </div>
       )}
 
@@ -1162,6 +1121,38 @@ export const SkillModal: FC<SkillModalProps> = ({
           }}
           title="优化技能内容"
           templateType="skill-optimize"
+        />
+      )}
+      {/* 资源详情弹窗 */}
+      {mode === 'edit' && (
+        <SkillResourceDetailModal
+          isOpen={isResourceDetailOpen}
+          onClose={() => {
+            setIsResourceDetailOpen(false)
+            setViewingResource(null)
+          }}
+          onEdit={handleEditFromDetail}
+          resource={viewingResource}
+          tabLabel={currentTabConfig.label}
+          TabIcon={currentTabConfig.icon}
+          tabColor={currentTabConfig.color}
+        />
+      )}
+
+      {/* 资源编辑弹窗 */}
+      {mode === 'edit' && (
+        <SkillResourceEditModal
+          isOpen={isResourceEditOpen}
+          onClose={() => {
+            setIsResourceEditOpen(false)
+            setEditingResource(null)
+          }}
+          onConfirm={handleSaveResourceCallback}
+          mode={resourceEditMode}
+          initialData={editingResource}
+          existingNames={currentResources.map((r) => r.name)}
+          filePlaceholder={getFilePlaceholder()}
+          contentPlaceholder={getContentPlaceholder()}
         />
       )}
     </>
