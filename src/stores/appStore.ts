@@ -23,6 +23,10 @@ interface AppState {
   sidebarNavOrder: PageType[]
   setSidebarNavOrder: (order: PageType[]) => void
   initSidebarNavOrder: (order: PageType[] | undefined) => void
+  // 侧边栏折叠状态
+  isSidebarCollapsed: boolean
+  toggleSidebar: () => void
+  initSidebarCollapsed: (collapsed?: boolean) => void
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -76,5 +80,26 @@ export const useAppStore = create<AppState>((set, get) => ({
     } else {
       set({ sidebarNavOrder: DEFAULT_NAV_ORDER, currentPage: DEFAULT_NAV_ORDER[0] })
     }
+  },
+  isSidebarCollapsed: false,
+  toggleSidebar: async () => {
+    const newCollapsed = !get().isSidebarCollapsed
+    set({ isSidebarCollapsed: newCollapsed })
+    const { useProjectStore } = await import('./projectStore')
+    const currentConfig = useProjectStore.getState().getAppConfig()
+    if (currentConfig) {
+      const newConfig: AppConfig = {
+        ...currentConfig,
+        sidebarCollapsed: newCollapsed,
+      }
+      const success = await saveAppConfig(newConfig)
+      if (!success) {
+        console.error('保存侧边栏折叠状态失败')
+      }
+      useProjectStore.setState({ appConfig: newConfig })
+    }
+  },
+  initSidebarCollapsed: (collapsed) => {
+    set({ isSidebarCollapsed: !!collapsed })
   },
 }))

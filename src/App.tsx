@@ -13,6 +13,7 @@ import { useAgentStore } from './stores/agentStore'
 import { useKnowledgeStore } from './stores/knowledgeStore'
 import { useSkillStore } from './stores/skillStore'
 import { useSettingsStore } from './stores/settingsStore'
+import { motion } from 'framer-motion'
 
 const App: FC = () => {
   const { loadNodeDefinitions } = useNodeStore()
@@ -22,7 +23,7 @@ const App: FC = () => {
   const { loadKnowledgeFiles } = useKnowledgeStore()
   const { loadSkillFiles } = useSkillStore()
   const { isProjectLoaded, loadAppConfigOnStart, currentProject, setCurrentProject } = useProjectStore()
-  const { isSwitchingProject, finishSwitchingProject } = useAppStore()
+  const { isSwitchingProject, finishSwitchingProject, isSidebarCollapsed } = useAppStore()
   const { loadAssetRoot, assetRoot } = useSettingsStore()
 
   // 应用启动时加载应用配置
@@ -74,7 +75,13 @@ const App: FC = () => {
       <div className="fixed top-0 left-0 right-0 h-8 drag-region z-50" />
 
       <div className="h-screen w-full flex bg-macos-bg overflow-hidden pt-8">
-        <Sidebar />
+        <motion.div
+          animate={{ width: isSidebarCollapsed ? 0 : 208 }}
+          transition={{ duration: 0.2, ease: 'easeInOut' }}
+          className="h-full flex-shrink-0 overflow-hidden"
+        >
+          <Sidebar />
+        </motion.div>
         <MainContent />
       </div>
       <Toast />

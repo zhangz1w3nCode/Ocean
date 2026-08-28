@@ -1,4 +1,5 @@
 import type { FC } from 'react'
+import { useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAppStore, type PageType } from '../../stores/appStore'
 import { WorkflowsPage } from '../../pages/WorkflowsPage'
@@ -25,11 +26,36 @@ const pageComponents: Record<PageType, FC> = {
 }
 
 export const MainContent: FC = () => {
-  const { currentPage, isEditing, editingWorkflowId, stopEditing } = useAppStore()
+  const { currentPage, isEditing, editingWorkflowId, stopEditing, isSidebarCollapsed, toggleSidebar } = useAppStore()
   const CurrentPageComponent = pageComponents[currentPage]
+  const dragStartXRef = useRef(0)
+
+  const handleEdgeMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault()
+    dragStartXRef.current = e.clientX
+
+    const handleMouseUp = (e: MouseEvent) => {
+      const delta = e.clientX - dragStartXRef.current
+      if (Math.abs(delta) < 5) {
+        toggleSidebar()
+      } else if (delta < -50 && !isSidebarCollapsed) {
+        toggleSidebar()
+      } else if (delta > 50 && isSidebarCollapsed) {
+        toggleSidebar()
+      }
+      document.removeEventListener('mouseup', handleMouseUp)
+    }
+
+    document.addEventListener('mouseup', handleMouseUp)
+  }
 
   return (
-    <main className="flex-1 h-full flex flex-col bg-macos-bg overflow-hidden">
+    <main className="flex-1 h-full flex flex-col bg-macos-bg overflow-hidden relative">
+      {/* 内容区左边缘交互热区 - 隐藏/展开侧边栏 */}
+      <div
+        onMouseDown={handleEdgeMouseDown}
+        className="absolute top-0 left-4 h-full w-1.5 cursor-col-resize z-10"
+      />
       <AnimatePresence mode="wait">
         <motion.div
           key={currentPage}

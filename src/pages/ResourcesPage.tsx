@@ -132,7 +132,7 @@ export const ResourcesPage: FC = () => {
   })
 
   return (
-    <div className="h-full pl-2 pr-4 pt-4 pb-4">
+    <div className="h-full pl-4 pr-4 pt-4 pb-4">
       {/* 白色圆角卡片容器 */}
       <div className="h-full bg-white rounded-2xl shadow-sm flex flex-col overflow-hidden">
         {/* 页面头部 */}

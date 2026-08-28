@@ -37,6 +37,7 @@ export interface AppConfig {
   sidebarNavOrder?: string[]    // 侧边栏导航项顺序（存储 PageType 的 id）
   knowledgeGraphConfig?: KnowledgeGraphConfig  // 知识图谱配置
   assetRoot?: AssetRoot          // 资产加载来源（claude=加载 .claude/，pi=加载 .pi/）
+  sidebarCollapsed?: boolean     // 侧边栏是否折叠隐藏
 }
 
 // 导入 React Flow 类型用于 Workflow
