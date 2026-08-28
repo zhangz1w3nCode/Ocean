@@ -86,7 +86,7 @@ declare global {
       // 设置模块 API
       testLLMConnection: (provider: any) => Promise<{ success: boolean; status?: number; statusText?: string; body?: string; json?: any; usage?: Usage; error?: string }>
       testExecutablePath: (filePath: string) => Promise<{ success: boolean; exists?: boolean; isExecutable?: boolean; path?: string; error?: string }>
-      // LLM 调用 API (使用 pi-mono SDK)
+      // LLM 调用 API
       callLLMApi: (provider: any, prompt: string, model?: string) => Promise<{ success: boolean; content?: string; usage?: Usage; error?: string }>
       // LLM 配置文件 API
       saveLLMConfig: (config: any) => Promise<{ success: boolean; error?: string }>
@@ -94,9 +94,9 @@ declare global {
       // Agentic 配置文件 API
       saveAgenticConfig: (config: any) => Promise<{ success: boolean; error?: string }>
       loadAgenticConfig: () => Promise<{ success: boolean; config: any; error?: string }>
-      // Agentic 工具执行 API（使用 @mariozechner/pi-coding-agent）
+      // Agentic 工具执行 API
       executeAgenticTool: (params: {
-        type: 'read' | 'write' | 'edit' | 'ls' | 'grep' | 'find' | 'bash'
+        type: 'read' | 'write' | 'edit' | 'bash'
         cwd?: string
         path?: string
         content?: string
@@ -3260,14 +3260,11 @@ export const getDefaultLLMProvider = async (): Promise<LLMProvider | null> => {
 
 // ===== Agentic 配置存储方法 =====
 
-// 默认 Agentic 工具配置 - 使用 @mariozechner/pi-coding-agent 提供的工具
+// 默认 Agentic 工具配置
 const defaultAgenticTools: AgenticToolConfig[] = [
   { type: 'file-read', enabled: true, description: '读取文件内容，支持分段读取' },
   { type: 'file-write', enabled: true, description: '写入文件，自动创建目录' },
   { type: 'file-edit', enabled: true, description: '查找并替换文本' },
-  { type: 'file-ls', enabled: true, description: '列出目录内容' },
-  { type: 'file-grep', enabled: true, description: '搜索文件内容' },
-  { type: 'file-find', enabled: true, description: '查找文件' },
   { type: 'bash-execute', enabled: false, description: '执行终端命令' }
 ]
 

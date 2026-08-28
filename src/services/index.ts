@@ -8,15 +8,6 @@ export {
   type LlmContentResult
 } from './llmService'
 
-// Agentic 服务
-export {
-  getAgenticLLMProvider,
-  isAgenticAvailable,
-  executeAgenticTask,
-  getAgenticStatus,
-  type ToolExecutionResult,
-  type AgenticExecutionResult
-} from './agenticService'
 
 // Agent Loop 类型和工具函数（服务类已弃用，请直接使用 useAgentLoop Hook）
 export {
