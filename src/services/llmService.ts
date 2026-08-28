@@ -340,18 +340,22 @@ export const getSupportedProviders = (): Array<{ id: string; name: string; envKe
  */
 export const testLLMConnection = async (provider: LLMProvider): Promise<{ success: boolean; error?: string; usage?: Usage }> => {
   try {
-    const result = await window.electronAPI!.callLLMApi(
-      provider,
-      'Hello, this is a test message. Please reply with "OK".',
-      provider.defaultModel
-    )
+    if (isElectron() && window.electronAPI?.callLLMApi) {
+      const result = await window.electronAPI.callLLMApi(
+        provider,
+        'Hello, this is a test message. Please reply with "OK".',
+        provider.defaultModel
+      )
 
-    if (result.success) {
-      console.log('LLM 连接测试成功:', result.usage)
-      return { success: true, usage: result.usage }
+      if (result.success) {
+        console.log('LLM 连接测试成功:', result.usage)
+        return { success: true, usage: result.usage }
+      }
+
+      return { success: false, error: result.error || '连接测试失败' }
     }
 
-    return { success: false, error: result.error || '连接测试失败' }
+    return { success: false, error: 'LLM 连接测试需要在桌面端应用环境运行' }
   } catch (error) {
     console.error('LLM 连接测试失败:', error)
     return { success: false, error: error instanceof Error ? error.message : '连接测试失败' }
