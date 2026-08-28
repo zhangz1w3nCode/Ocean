@@ -1376,24 +1376,20 @@ ipcMain.handle('load-agentic-config', async () => {
   }
 })
 
-// ========== Agentic 工具执行（使用 @mariozechner/pi-coding-agent） ==========
+// ========== Agentic 工具执行 ==========
 
-// 动态导入 pi-coding-agent 工具（ESM 模块）
+// 自研工具加载
 let piCodingAgentTools = null
 
 async function loadPiCodingAgentTools() {
   if (!piCodingAgentTools) {
-    const module = await import('@mariozechner/pi-coding-agent')
     piCodingAgentTools = {
-      createReadTool: module.createReadTool,
-      createWriteTool: module.createWriteTool,
-      createEditTool: module.createEditTool,
-      createLsTool: module.createLsTool,
-      createGrepTool: module.createGrepTool,
-      createFindTool: module.createFindTool,
-      createBashTool: module.createBashTool,
+      createReadTool: require('./tools/readTool.cjs'),
+      createWriteTool: require('./tools/writeTool.cjs'),
+      createEditTool: require('./tools/editTool.cjs'),
+      createBashTool: require('./tools/bashTool.cjs'),
     }
-    console.log('✅ pi-coding-agent 工具加载成功')
+    console.log('✅ 自研工具加载成功')
   }
   return piCodingAgentTools
 }
@@ -1403,7 +1399,7 @@ const toolInstanceCache = new Map()
 
 /**
  * 执行 Agentic 工具
- * 使用 @mariozechner/pi-coding-agent 提供的工具实现
+ * 使用自研工具实现
  */
 ipcMain.handle('execute-agentic-tool', async (_, params) => {
   const { type, ...args } = params
@@ -1414,7 +1410,7 @@ ipcMain.handle('execute-agentic-tool', async (_, params) => {
   }
 
   try {
-    // 加载 pi-coding-agent 工具
+    // 加载自研工具
     const tools = await loadPiCodingAgentTools()
 
     // 获取或创建工具实例
@@ -1431,15 +1427,6 @@ ipcMain.handle('execute-agentic-tool', async (_, params) => {
           break
         case 'edit':
           tool = tools.createEditTool(cwd)
-          break
-        case 'ls':
-          tool = tools.createLsTool(cwd)
-          break
-        case 'grep':
-          tool = tools.createGrepTool(cwd)
-          break
-        case 'find':
-          tool = tools.createFindTool(cwd)
           break
         case 'bash':
           tool = tools.createBashTool(cwd)
@@ -1481,28 +1468,6 @@ ipcMain.handle('execute-agentic-tool', async (_, params) => {
           newText: args.newText
         }
         break
-      case 'ls':
-        toolArgs = {
-          path: args.path,
-          limit: args.limit
-        }
-        break
-      case 'grep':
-        toolArgs = {
-          pattern: args.pattern,
-          path: args.path,
-          glob: args.glob,
-          ignoreCase: args.ignoreCase,
-          limit: args.limit
-        }
-        break
-      case 'find':
-        toolArgs = {
-          pattern: args.pattern,
-          path: args.path,
-          limit: args.limit
-        }
-        break
       case 'bash':
         toolArgs = {
           command: args.command,
@@ -1511,7 +1476,7 @@ ipcMain.handle('execute-agentic-tool', async (_, params) => {
         break
     }
 
-    console.log(`✅ [${type}] 使用 pi-coding-agent 执行工具`, toolArgs)
+    console.log(`✅ [${type}] 执行工具`, toolArgs)
 
     // 执行工具
     const result = await tool.execute(
@@ -1520,7 +1485,7 @@ ipcMain.handle('execute-agentic-tool', async (_, params) => {
       undefined // signal
     )
 
-    // 解析结果 - pi-coding-agent 返回 { content: [...], details: ... }
+    // 解析结果 - 工具返回 { content: [...], details: ... }
     if (result.content && Array.isArray(result.content)) {
       const textParts = result.content
         .filter(part => part.type === 'text')
@@ -1572,9 +1537,6 @@ const toolNameMap = {
   'file-read': 'read',
   'file-write': 'write',
   'file-edit': 'edit',
-  'file-ls': 'ls',
-  'file-grep': 'grep',
-  'file-find': 'find',
   'bash-execute': 'bash'
 }
 
@@ -1630,36 +1592,6 @@ const buildToolsDefinition = (enabledTools) => {
           required: ['path', 'oldText', 'newText']
         }
         break
-      case 'file-ls':
-        toolDef.function.parameters = {
-          type: 'object',
-          properties: {
-            path: { type: 'string', description: '目录路径，默认为当前目录' }
-          }
-        }
-        break
-      case 'file-grep':
-        toolDef.function.parameters = {
-          type: 'object',
-          properties: {
-            pattern: { type: 'string', description: '搜索的正则表达式模式' },
-            path: { type: 'string', description: '搜索路径，默认为当前目录' },
-            glob: { type: 'string', description: '文件匹配模式（如 *.ts）' },
-            ignoreCase: { type: 'boolean', description: '是否忽略大小写' }
-          },
-          required: ['pattern']
-        }
-        break
-      case 'file-find':
-        toolDef.function.parameters = {
-          type: 'object',
-          properties: {
-            pattern: { type: 'string', description: '文件名匹配模式' },
-            path: { type: 'string', description: '搜索路径，默认为当前目录' }
-          },
-          required: ['pattern']
-        }
-        break
       case 'bash-execute':
         toolDef.function.parameters = {
           type: 'object',
@@ -1699,15 +1631,6 @@ const executeToolCall = async (toolName, toolArgs, cwd) => {
           break
         case 'edit':
           tool = tools.createEditTool(cwd)
-          break
-        case 'ls':
-          tool = tools.createLsTool(cwd)
-          break
-        case 'grep':
-          tool = tools.createGrepTool(cwd)
-          break
-        case 'find':
-          tool = tools.createFindTool(cwd)
           break
         case 'bash':
           tool = tools.createBashTool(cwd)

@@ -194,7 +194,7 @@ export interface ReferenceItem {
 
 // ========== 设置模块类型定义 ==========
 
-// Token 使用情况（pi-mono 格式）
+// Token 使用情况
 export interface Usage {
   input: number
   output: number
@@ -272,14 +272,11 @@ export interface SettingsItem {
 
 // ========== Agentic 配置类型定义 ==========
 
-// Agentic 工具类型 - 使用 @mariozechner/pi-coding-agent 提供的工具
+// Agentic 工具类型
 export type AgenticToolType =
   | 'file-read'      // 读取文件内容
   | 'file-write'     // 写入文件
   | 'file-edit'      // 编辑文件（查找替换）
-  | 'file-ls'        // 列出目录内容
-  | 'file-grep'      // 搜索文件内容
-  | 'file-find'      // 查找文件
   | 'bash-execute'   // 执行终端命令
 
 // Agentic 工具配置

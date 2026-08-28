@@ -1,5 +1,5 @@
 /**
- * LLM 服务 - 使用 pi-mono SDK 调用外部 LLM API
+ * LLM 服务 - 调用外部 LLM API
  *
  * 特性：
  * - 支持 20+ LLM 提供商 (OpenAI, Anthropic, Google, Groq, xAI 等)
@@ -11,8 +11,6 @@
 import type { LLMProvider, Usage } from '../types'
 import { isElectron } from '../utils/storage'
 
-// pi-mono SDK 导入
-import { getModel, complete, type Context } from '@mariozechner/pi-ai'
 
 // LLM 响应结构
 export interface LLMResponse {
@@ -27,7 +25,7 @@ export interface LlmContentResult {
   content: string
 }
 
-// pi-mono 支持的提供商映射
+// LLM 提供商映射
 const PI_MONO_PROVIDER_MAP: Record<string, string> = {
   'openai': 'openai',
   'anthropic': 'anthropic',
@@ -74,7 +72,7 @@ const getApiKey = (provider: LLMProvider): string => {
 }
 
 /**
- * 使用 pi-mono SDK 调用 LLM
+ * 使用 LLM 生成内容
  */
 export const generateWithLLM = async (
   provider: LLMProvider,
@@ -92,18 +90,18 @@ export const generateWithLLM = async (
       prompt = `${promptTemplate}\n\n## 用户需求\n${userDescription}`
     }
 
-    // 获取 pi-mono provider 和 model
+    // 获取 provider 和 model
     const piProvider = PI_MONO_PROVIDER_MAP[provider.type] || 'openai-compatible'
     const modelId = provider.defaultModel || 'gpt-4o-mini'
 
-    console.log('转换 provider 到 pi-mono:', {
+    console.log('转换 provider:', {
       provider: provider.name,
       type: provider.type,
       piProvider,
       modelId
     })
 
-    console.log('\n=== 使用 pi-mono SDK 调用 LLM ===')
+    console.log('\n=== 调用 LLM ===')
     console.log('提供商:', provider.name)
     console.log('模型:', provider.defaultModel)
 
@@ -133,69 +131,14 @@ export const generateWithLLM = async (
       }
     }
 
-    // 浏览器环境：直接使用 pi-mono SDK
-    console.log('浏览器环境：使用 pi-mono SDK 直接调用')
-
-    const apiKey = getApiKey(provider)
-    const model = getModel(piProvider as any, modelId)
-
-    // 构建上下文
-    const context: Context = {
-      messages: [
-        { role: 'user', content: prompt, timestamp: Date.now() }
-      ]
-    }
-
-    // 构建 complete 选项,使用配置的模型参数
-    const completeOptions: any = {
-      apiKey,
-      temperature: provider.modelParams?.temperature ?? 0.7,
-    }
-
-    // 添加可选参数
-    if (provider.modelParams?.maxTokens !== undefined) {
-      completeOptions.maxTokens = provider.modelParams.maxTokens
-    }
-    if (provider.modelParams?.topP !== undefined) {
-      completeOptions.topP = provider.modelParams.topP
-    }
-    if (provider.modelParams?.topK !== undefined) {
-      completeOptions.topK = provider.modelParams.topK
-    }
-
-    console.log('\n========== LLM 请求参数 (pi-mono SDK) ==========')
-    console.log('提供商:', provider.name)
-    console.log('类型:', provider.type)
-    console.log('模型:', modelId)
-    console.log('模型参数配置:', provider.modelParams)
-    console.log('complete 选项:', completeOptions)
-    console.log('==============================================\n')
-
-    // 使用 pi-mono 的 complete 函数
-    const response = await complete(model, context, completeOptions)
-
-    console.log('pi-mono 调用成功')
-    console.log('Token 使用:', response.usage)
-
-    // 提取文本内容
-    let content = ''
-    for (const item of response.content) {
-      if (item.type === 'text') {
-        content += item.text
-      }
-    }
-
-    // 过滤思考标签
-    content = removeThinkTags(content)
-
+    // 桌面端应用，仅在 Electron 环境运行（浏览器回退已移除）
     return {
-      success: true,
-      content,
-      usage: response.usage as Usage
+      success: false,
+      error: 'LLM 调用需要在桌面端应用环境运行'
     }
 
   } catch (error) {
-    console.error('pi-mono 调用失败:', error)
+    console.error('LLM 调用失败:', error)
     return {
       success: false,
       error: error instanceof Error ? error.message : '未知错误'
@@ -204,7 +147,7 @@ export const generateWithLLM = async (
 }
 
 /**
- * 优化内容 - 使用 pi-mono SDK 调用 LLM
+ * 优化内容 - 调用 LLM
  * 与LLM创建不同，优化是基于现有内容进行改进
  */
 export const optimizeContentWithLLM = async (
@@ -232,18 +175,18 @@ export const optimizeContentWithLLM = async (
       prompt = `${promptTemplate}\n\n## 现有内容\n${currentContent}\n\n## 优化目标\n${optimizeTarget}`
     }
 
-    // 获取 pi-mono provider 和 model
+    // 获取 provider 和 model
     const piProvider = PI_MONO_PROVIDER_MAP[provider.type] || 'openai-compatible'
     const modelId = provider.defaultModel || 'gpt-4o-mini'
 
-    console.log('转换 provider 到 pi-mono:', {
+    console.log('转换 provider:', {
       provider: provider.name,
       type: provider.type,
       piProvider,
       modelId
     })
 
-    console.log('\n=== 使用 pi-mono SDK 调用 LLM (优化) ===')
+    console.log('\n=== 调用 LLM (优化) ===')
     console.log('提供商:', provider.name)
     console.log('模型:', provider.defaultModel)
     console.log('优化目标:', optimizeTarget)
@@ -274,69 +217,15 @@ export const optimizeContentWithLLM = async (
       }
     }
 
-    // 浏览器环境：直接使用 pi-mono SDK
-    console.log('浏览器环境：使用 pi-mono SDK 直接调用')
-
-    const apiKey = getApiKey(provider)
-    const model = getModel(piProvider as any, modelId)
-
-    // 构建上下文
-    const context: Context = {
-      messages: [
-        { role: 'user', content: prompt, timestamp: Date.now() }
-      ]
-    }
-
-    // 构建 complete 选项,使用配置的模型参数
-    const completeOptions: any = {
-      apiKey,
-      temperature: provider.modelParams?.temperature ?? 0.7,
-    }
-
-    // 添加可选参数
-    if (provider.modelParams?.maxTokens !== undefined) {
-      completeOptions.maxTokens = provider.modelParams.maxTokens
-    }
-    if (provider.modelParams?.topP !== undefined) {
-      completeOptions.topP = provider.modelParams.topP
-    }
-    if (provider.modelParams?.topK !== undefined) {
-      completeOptions.topK = provider.modelParams.topK
-    }
-
-    console.log('\n========== LLM 请求参数 (pi-mono SDK) ==========')
-    console.log('提供商:', provider.name)
-    console.log('类型:', provider.type)
-    console.log('模型:', modelId)
-    console.log('模型参数配置:', provider.modelParams)
-    console.log('complete 选项:', completeOptions)
-    console.log('==============================================\n')
-
-    // 使用 pi-mono 的 complete 函数
-    const response = await complete(model, context, completeOptions)
-
-    console.log('pi-mono 调用成功（优化）')
-    console.log('Token 使用:', response.usage)
-
-    // 提取文本内容
-    let content = ''
-    for (const item of response.content) {
-      if (item.type === 'text') {
-        content += item.text
-      }
-    }
-
-    // 过滤思考标签
-    content = removeThinkTags(content)
-
+    // 桌面端应用，仅在 Electron 环境运行（浏览器回退已移除）
     return {
-      success: true,
-      content,
-      usage: response.usage as Usage
+      success: false,
+      error: 'LLM 调用需要在桌面端应用环境运行'
     }
+
 
   } catch (error) {
-    console.error('pi-mono 调用失败:', error)
+    console.error('LLM 调用失败:', error)
     return {
       success: false,
       error: error instanceof Error ? error.message : '未知错误'
@@ -451,36 +340,20 @@ export const getSupportedProviders = (): Array<{ id: string; name: string; envKe
  */
 export const testLLMConnection = async (provider: LLMProvider): Promise<{ success: boolean; error?: string; usage?: Usage }> => {
   try {
-    const piProvider = PI_MONO_PROVIDER_MAP[provider.type] || 'openai-compatible'
-    const modelId = provider.defaultModel || 'gpt-4o-mini'
-    const model = getModel(piProvider as any, modelId)
+    const result = await window.electronAPI!.callLLMApi(
+      provider,
+      'Hello, this is a test message. Please reply with "OK".',
+      provider.defaultModel
+    )
 
-    const apiKey = getApiKey(provider)
-
-    // 发送一个简单的测试消息
-    const context: Context = {
-      messages: [
-        { role: 'user', content: 'Hello, this is a test message. Please reply with "OK".', timestamp: Date.now() }
-      ]
+    if (result.success) {
+      console.log('LLM 连接测试成功:', result.usage)
+      return { success: true, usage: result.usage }
     }
 
-    const response = await complete(model, context, {
-      apiKey,
-      temperature: 0.1,
-    })
-
-    console.log('LLM 连接测试成功:', response.usage)
-
-    return {
-      success: true,
-      usage: response.usage as Usage
-    }
-
+    return { success: false, error: result.error || '连接测试失败' }
   } catch (error) {
     console.error('LLM 连接测试失败:', error)
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : '连接测试失败'
-    }
+    return { success: false, error: error instanceof Error ? error.message : '连接测试失败' }
   }
 }

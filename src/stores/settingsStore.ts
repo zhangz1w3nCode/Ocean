@@ -17,14 +17,11 @@ import {
 } from '../utils/storage'
 
 import { updateCachedAssetRoot } from '../utils/asset-config'
-// 默认 Agentic 工具配置 - 使用 @mariozechner/pi-coding-agent 提供的工具
+// 默认 Agentic 工具配置
 const defaultAgenticTools: { type: AgenticToolType; description: string }[] = [
   { type: 'file-read', description: '读取指定路径的文件内容，支持分段读取' },
   { type: 'file-write', description: '将内容写入指定路径的文件，自动创建目录' },
   { type: 'file-edit', description: '编辑文件中的文本，查找并替换' },
-  { type: 'file-ls', description: '列出指定目录中的文件和子目录' },
-  { type: 'file-grep', description: '在文件中搜索匹配的文本内容' },
-  { type: 'file-find', description: '查找匹配名称的文件' },
   { type: 'bash-execute', description: '执行终端命令（如 ls、mkdir、rm 等）' }
 ]
 

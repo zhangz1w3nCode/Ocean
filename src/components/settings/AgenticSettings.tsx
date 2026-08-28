@@ -28,14 +28,11 @@ import {
 import type { AgenticToolType, LLMProvider } from '../../types'
 import { isElectron } from '../../utils/storage'
 
-// 工具图标映射 - 使用 pi-coding-agent 提供的工具
+// 工具图标映射
 const toolIcons: Record<AgenticToolType, typeof FileText> = {
   'file-read': FileText,
   'file-write': FileText,
   'file-edit': FileEdit,
-  'file-ls': FolderTree,
-  'file-grep': Search,
-  'file-find': FileSearch,
   'bash-execute': Terminal
 }
 
@@ -44,9 +41,6 @@ const toolLabels: Record<AgenticToolType, string> = {
   'file-read': '文件读取',
   'file-write': '文件写入',
   'file-edit': '文件编辑',
-  'file-ls': '目录列表',
-  'file-grep': '内容搜索',
-  'file-find': '文件查找',
   'bash-execute': '终端执行'
 }
 
