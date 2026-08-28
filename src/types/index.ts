@@ -385,3 +385,20 @@ export interface CreateSkillInput {
   references?: { name: string; content: string }[]
   examples?: { name: string; content: string }[]
 }
+
+// ========== 回收站类型定义 ==========
+
+// 回收站业务模块
+export type TrashModule = 'agents' | 'skills' | 'knowledges' | 'workflows' | 'nodes' | 'resources'
+
+// 回收站条目
+export interface TrashItem {
+  id: string                   // 唯一标识
+  module: TrashModule          // 业务模块（用于分组/筛选）
+  type: string                 // 精确类型（agent/skill/skill-resource/knowledge/workflow/local-node/node/resource）
+  name: string                 // 原始名称（模块内身份名，知识库可能包含 category 路径）
+  originalPath?: string        // 原始绝对路径（主进程恢复用）
+  originalRelativePath: string // 原始相对路径（展示用）
+  deletedAt: string            // 删除时间（ISO）
+  meta?: Record<string, any>   // 扩展元数据（如 skillName/resourceType/workflowName）
+}
