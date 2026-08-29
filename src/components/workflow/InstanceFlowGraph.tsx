@@ -6,12 +6,13 @@ import {
   ReactFlow,
   Background,
   Controls,
-  useNodesState,
   useEdgesState,
+  applyNodeChanges,
   BackgroundVariant,
   MarkerType,
   type Node,
   type Edge,
+  type NodeChange,
   type NodeMouseHandler,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
@@ -112,20 +113,20 @@ export const InstanceFlowGraph: FC<InstanceFlowGraphProps> = ({ traceLog, flowDa
           const branch = node.data?.branches?.find((b: any) => b.name === p.branch)
           if (branch && edge.branchId === branch.id) {
             const tgtNode = flowData.nodes.find(n => n.id === edge.target)
-            const isCurrentEdge = tgtNode && tgtNode.data?.label === currentName
+            const isCurrentEdge = isRunning && tgtNode && tgtNode.data?.label === currentName
             traversed.push({
               id: edge.id, source: edge.source, target: edge.target, type: 'default',
-              animated: isRunning && !isCurrentEdge,
+              animated: isRunning,
               style: { strokeWidth: 2, stroke: isCurrentEdge ? '#3B82F6' : '#9CA3AF' },
               markerEnd: { type: MarkerType.ArrowClosed, width: 15, height: 15, color: isCurrentEdge ? '#3B82F6' : '#9CA3AF' },
             })
           }
         } else {
           const tgtNode = flowData.nodes.find(n => n.id === edge.target)
-          const isCurrentEdge = tgtNode && tgtNode.data?.label === currentName
+          const isCurrentEdge = isRunning && tgtNode && tgtNode.data?.label === currentName
           traversed.push({
             id: edge.id, source: edge.source, target: edge.target, type: 'default',
-            animated: isRunning && !isCurrentEdge,
+            animated: isRunning,
             style: { strokeWidth: 2, stroke: isCurrentEdge ? '#3B82F6' : '#9CA3AF' },
             markerEnd: { type: MarkerType.ArrowClosed, width: 15, height: 15, color: isCurrentEdge ? '#3B82F6' : '#9CA3AF' },
           })
@@ -159,11 +160,17 @@ export const InstanceFlowGraph: FC<InstanceFlowGraphProps> = ({ traceLog, flowDa
     return traversed.filter(e => { if (seen.has(e.id)) { seen.delete(e.id); return true } return false })
   }, [path, flowData, flowMap, completedNodes, currentName, isRunning])
 
-  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes)
+  const [nodes, setNodes] = useState(initialNodes)
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges)
 
+  // 实时刷新时同步新数据到 state
   useEffect(() => { setNodes(initialNodes) }, [initialNodes, setNodes])
   useEffect(() => { setEdges(initialEdges) }, [initialEdges, setEdges])
+
+  // 过滤 selection 变更，防止 ReactFlow 清除程序设置的 selected 高亮
+  const onNodesChange = useCallback((changes: NodeChange[]) => {
+    setNodes(nds => applyNodeChanges(changes.filter(c => c.type !== 'select'), nds))
+  }, [])
 
   // 点击节点 — 任何已渲染节点都可点击查看产物
   const onNodeClick = (_e: React.MouseEvent, node: Node) => {

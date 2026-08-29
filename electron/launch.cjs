@@ -483,7 +483,7 @@ ipcMain.handle('list-workflow-instances', () => {
             const lastMatch = yaml.match(/^last_node:\s*(.+)/m)
             if (lastMatch) lastNode = lastMatch[1].trim()
             // 解析 completed 列表
-            const completedMatch = yaml.match(/^completed:\n([\s\S]*?)(?=\n\S|\nlimits:|\n$)/m)
+            const completedMatch = yaml.match(/^completed:\n([\s\S]*?)(?=\n[a-z]|\n$)/m)
             if (completedMatch) {
               completedNodes = completedMatch[1].split('\n').map(l => l.replace(/^\s*-\s*/, '').trim()).filter(Boolean)
             }
@@ -585,12 +585,13 @@ ipcMain.handle('read-instance-detail', (_, workflowName, instanceId) => {
     let wfStatus = 'unknown'
     if (fmMatch) {
       const yaml = fmMatch[1]
-      const cm = yaml.match(/^completed:\n([\s\S]*?)(?=\n\S|\nlimits:|\n$)/m)
+      const cm = yaml.match(/^completed:\n([\s\S]*?)(?=\n[a-z]|\n$)/m)
       if (cm) completedNodes = cm[1].split('\n').map(l => l.replace(/^\s*-\s*/, '').trim()).filter(Boolean)
       const cnm = yaml.match(/^current_name:\s*(.+)/m)
       if (cnm) currentName = cnm[1].trim()
       const stm = yaml.match(/^status:\s*(.+)/m)
       if (stm) wfStatus = stm[1].trim()
+    }
 
     // 读取工作流定义中的 flow.json（在 workflow 目录的 meta-data 下）
     let flowData = null
