@@ -1,8 +1,12 @@
 export function formatStatus(status: string): string {
   const statusMap: Record<string, string> = {
     completed: '已完成',
-    'in-progress': '进行中',
+    executing: '执行中',
+    idle: '待执行',
+    awaiting_choice: '等待选择',
+    aborted: '已中止',
     failed: '失败',
+    'in-progress': '进行中',
     unknown: '未知',
   }
   return statusMap[status] || status

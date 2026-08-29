@@ -517,6 +517,10 @@ ipcMain.handle('list-workflow-instances', () => {
 // 读取实例文件内容
 ipcMain.handle('read-instance-file', (_, workflowName, instanceId, fileName) => {
   try {
+    // 防止路径穿越
+    if (workflowName.includes('..') || instanceId.includes('..') || fileName.includes('..')) {
+      return { success: false, error: 'Invalid path' }
+    }
     const filePath = path.join(getWorkflowsDir(), workflowName, 'instance', instanceId, fileName)
     if (!fs.existsSync(filePath)) {
       return { success: false, error: 'File not found' }
@@ -603,6 +607,7 @@ ipcMain.handle('read-instance-detail', (_, workflowName, instanceId) => {
         console.error('解析 flow.json 失败:', e)
       }
     }
+    let instanceMd = ''
     const instMdPath = path.join(instDir, 'instance.md')
     if (fs.existsSync(instMdPath)) {
       instanceMd = fs.readFileSync(instMdPath, 'utf-8')
