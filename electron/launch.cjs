@@ -582,13 +582,15 @@ ipcMain.handle('read-instance-detail', (_, workflowName, instanceId) => {
     // 解析 process.md frontmatter 获取节点状态信息
     let completedNodes = []
     let currentName = ''
+    let wfStatus = 'unknown'
     if (fmMatch) {
       const yaml = fmMatch[1]
       const cm = yaml.match(/^completed:\n([\s\S]*?)(?=\n\S|\nlimits:|\n$)/m)
       if (cm) completedNodes = cm[1].split('\n').map(l => l.replace(/^\s*-\s*/, '').trim()).filter(Boolean)
       const cnm = yaml.match(/^current_name:\s*(.+)/m)
       if (cnm) currentName = cnm[1].trim()
-    }
+      const stm = yaml.match(/^status:\s*(.+)/m)
+      if (stm) wfStatus = stm[1].trim()
 
     // 读取工作流定义中的 flow.json（在 workflow 目录的 meta-data 下）
     let flowData = null
@@ -635,7 +637,7 @@ ipcMain.handle('read-instance-detail', (_, workflowName, instanceId) => {
     }
     // 按时间排序
     artifacts.sort((a, b) => new Date(a.updatedAt) - new Date(b.updatedAt))
-    return { success: true, detail: { processRaw, mermaid, trace, artifacts, traceLog, instanceMd, flowData, completedNodes, currentName } }
+    return { success: true, detail: { processRaw, mermaid, trace, artifacts, traceLog, instanceMd, flowData, completedNodes, currentName, wfStatus } }
   } catch (error) {
     console.error('读取实例详情失败:', error)
     return { success: false, error: String(error) }

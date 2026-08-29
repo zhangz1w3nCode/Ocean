@@ -1,5 +1,7 @@
 import type { FC } from 'react'
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useCallback } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
+import { X, FileText } from 'lucide-react'
 import {
   ReactFlow,
   Background,
@@ -10,8 +12,10 @@ import {
   MarkerType,
   type Node,
   type Edge,
+  type NodeMouseHandler,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
+import { MarkdownRenderer } from '../ui'
 import {
   StartNode,
   EndNode,
@@ -20,14 +24,11 @@ import {
   BusinessNode,
   LocalNode,
 } from '../flow/nodes'
+import type { InstanceArtifact } from '../../types'
 
 const nodeTypes = {
-  start: StartNode,
-  end: EndNode,
-  process: ProcessNode,
-  decision: DecisionNode,
-  business: BusinessNode,
-  local: LocalNode,
+  start: StartNode, end: EndNode, process: ProcessNode,
+  decision: DecisionNode, business: BusinessNode, local: LocalNode,
 }
 
 const defaultEdgeOptions = {
@@ -42,26 +43,15 @@ interface InstanceFlowGraphProps {
   flowData: { nodes: any[]; edges: any[] } | null
   completedNodes: string[]
   currentName: string
+  wfStatus: string
+  artifacts: InstanceArtifact[]
 }
 
-// 解析 trace.jsonl，复刻 workflow-cli executor.rs render_mermaid 的 path 构建逻辑
 function parseTraceLog(rawLog: string) {
-  const entries = rawLog
-    .split('\n')
-    .filter(l => l.trim())
-    .map(l => {
-      try { return JSON.parse(l) } catch { return null }
-    })
-    .filter(Boolean) as Array<{
-      ts: string
-      command: string
-      node?: string
-      invoke?: string
-      status?: string
-      branch?: string
-    }>
+  const entries = rawLog.split('\n').filter(l => l.trim())
+    .map(l => { try { return JSON.parse(l) } catch { return null } })
+    .filter(Boolean) as Array<{ ts: string; command: string; node?: string; invoke?: string; status?: string; branch?: string }>
 
-  // 构建 ordered path: [(node_label, branch?)]
   const path: Array<{ node: string; branch?: string }> = []
   for (const entry of entries) {
     if (!entry.node || !entry.status) continue
@@ -75,23 +65,21 @@ function parseTraceLog(rawLog: string) {
   return path
 }
 
-export const InstanceFlowGraph: FC<InstanceFlowGraphProps> = ({ traceLog, flowData, completedNodes, currentName }) => {
-  const path = useMemo(() => parseTraceLog(traceLog), [traceLog])
+export const InstanceFlowGraph: FC<InstanceFlowGraphProps> = ({ traceLog, flowData, completedNodes, currentName, wfStatus, artifacts }) => {
+  const [selectedNodeLabel, setSelectedNodeLabel] = useState<string | null>(null)
 
-  // flow.json 按 label 索引
+  const path = useMemo(() => parseTraceLog(traceLog), [traceLog])
+  const isRunning = wfStatus !== 'completed' && wfStatus !== 'aborted' && path.length > 0
+
   const flowMap = useMemo(() => {
     const m = new Map<string, any>()
-    if (flowData?.nodes) {
-      for (const n of flowData.nodes) m.set(n.data?.label || '', n)
-    }
+    if (flowData?.nodes) for (const n of flowData.nodes) m.set(n.data?.label || '', n)
     return m
   }, [flowData])
 
-  // visited 集合：path 中的节点 + start + end(若 completed)
   const visited = useMemo(() => {
     const s = new Set<string>()
     for (const p of path) s.add(p.node)
-    // start 节点
     if (flowData?.nodes) {
       const start = flowData.nodes.find(n => n.type === 'start')
       if (start) s.add(start.data?.label || '')
@@ -101,85 +89,75 @@ export const InstanceFlowGraph: FC<InstanceFlowGraphProps> = ({ traceLog, flowDa
     return s
   }, [path, flowData, completedNodes])
 
-  // 构建 ReactFlow nodes
   const initialNodes: Node[] = useMemo(() => {
     if (!flowData?.nodes) return []
-    return flowData.nodes
-      .filter(n => visited.has(n.data?.label || ''))
-      .map(n => {
-        const label = n.data?.label || ''
-        const isDone = completedNodes.includes(label) || n.type === 'start'
-        return {
-          id: n.id,
-          type: n.type,
-          position: n.position,
-          data: n.data,
-          selected: isDone,
-        } as Node
-      })
+    return flowData.nodes.filter(n => visited.has(n.data?.label || '')).map(n => {
+      const label = n.data?.label || ''
+      const isDone = completedNodes.includes(label) || n.type === 'start'
+      return { id: n.id, type: n.type, position: n.position, data: n.data, selected: isDone } as Node
+    })
   }, [flowData, visited, completedNodes])
 
-  // 构建 traversed edges（复刻 executor.rs 逻辑）
   const initialEdges: Edge[] = useMemo(() => {
     if (!flowData?.nodes || !flowData?.edges) return []
-
-    const nodeById = new Map(flowData.nodes.map(n => [n.id, n]))
     const traversed: Edge[] = []
 
-    // 1. path 中每个节点的出边
     for (const p of path) {
       const node = flowMap.get(p.node)
       if (!node) continue
-
       for (const edge of flowData.edges) {
         if (edge.source !== node.id) continue
-
         if (node.type === 'decision') {
-          // decision: 只选 branch 匹配的边
           if (!p.branch) continue
           const branch = node.data?.branches?.find((b: any) => b.name === p.branch)
           if (branch && edge.branchId === branch.id) {
-            traversed.push({ id: edge.id, source: edge.source, target: edge.target, type: 'default' })
+            const tgtNode = flowData.nodes.find(n => n.id === edge.target)
+            const isCurrentEdge = tgtNode && tgtNode.data?.label === currentName
+            traversed.push({
+              id: edge.id, source: edge.source, target: edge.target, type: 'default',
+              animated: isRunning && !isCurrentEdge,
+              style: { strokeWidth: 2, stroke: isCurrentEdge ? '#3B82F6' : '#9CA3AF' },
+              markerEnd: { type: MarkerType.ArrowClosed, width: 15, height: 15, color: isCurrentEdge ? '#3B82F6' : '#9CA3AF' },
+            })
           }
         } else {
-          // 非 decision: 所有出边
-          traversed.push({ id: edge.id, source: edge.source, target: edge.target, type: 'default' })
+          const tgtNode = flowData.nodes.find(n => n.id === edge.target)
+          const isCurrentEdge = tgtNode && tgtNode.data?.label === currentName
+          traversed.push({
+            id: edge.id, source: edge.source, target: edge.target, type: 'default',
+            animated: isRunning && !isCurrentEdge,
+            style: { strokeWidth: 2, stroke: isCurrentEdge ? '#3B82F6' : '#9CA3AF' },
+            markerEnd: { type: MarkerType.ArrowClosed, width: 15, height: 15, color: isCurrentEdge ? '#3B82F6' : '#9CA3AF' },
+          })
         }
       }
     }
 
-    // 2. start → path 第一个节点
     if (path.length > 0) {
       const startNode = flowData.nodes.find(n => n.type === 'start')
       if (startNode) {
         const firstTarget = flowMap.get(path[0].node)
-        if (firstTarget) {
-          for (const edge of flowData.edges) {
-            if (edge.source === startNode.id && edge.target === firstTarget.id) {
-              traversed.push({ id: edge.id, source: edge.source, target: edge.target, type: 'default' })
-            }
+        if (firstTarget) for (const edge of flowData.edges) {
+          if (edge.source === startNode.id && edge.target === firstTarget.id) {
+            traversed.push({ id: edge.id, source: edge.source, target: edge.target, type: 'default', animated: isRunning, style: { strokeWidth: 2, stroke: '#9CA3AF' }, markerEnd: { type: MarkerType.ArrowClosed, width: 15, height: 15, color: '#9CA3AF' } })
           }
         }
       }
     }
 
-    // 3. 最后一个节点 → end（若 completed）
     if (path.length > 0 && completedNodes.length > 0) {
       const lastNode = flowMap.get(path[path.length - 1].node)
       const endNode = flowData.nodes.find(n => n.type === 'end')
-      if (lastNode && endNode) {
-        for (const edge of flowData.edges) {
-          if (edge.source === lastNode.id && edge.target === endNode.id) {
-            traversed.push({ id: edge.id, source: edge.source, target: edge.target, type: 'default' })
-          }
+      if (lastNode && endNode) for (const edge of flowData.edges) {
+        if (edge.source === lastNode.id && edge.target === endNode.id) {
+          traversed.push({ id: edge.id, source: edge.source, target: edge.target, type: 'default', style: { strokeWidth: 2, stroke: '#9CA3AF' }, markerEnd: { type: MarkerType.ArrowClosed, width: 15, height: 15, color: '#9CA3AF' } })
         }
       }
     }
 
-    // 去重
     const seen = new Set(traversed.map(e => e.id))
     return traversed.filter(e => { if (seen.has(e.id)) { seen.delete(e.id); return true } return false })
-  }, [path, flowData, flowMap, completedNodes])
+  }, [path, flowData, flowMap, completedNodes, currentName, isRunning])
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes)
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges)
@@ -187,30 +165,91 @@ export const InstanceFlowGraph: FC<InstanceFlowGraphProps> = ({ traceLog, flowDa
   useEffect(() => { setNodes(initialNodes) }, [initialNodes, setNodes])
   useEffect(() => { setEdges(initialEdges) }, [initialEdges, setEdges])
 
+  // 点击节点 — 任何已渲染节点都可点击查看产物
+  const onNodeClick = (_e: React.MouseEvent, node: Node) => {
+    const label = String(node.data?.label || '')
+    setSelectedNodeLabel(prev => prev === label ? null : label)
+  }
+
+  // 找选中节点的产物
+  const selectedArtifacts = useMemo(() => {
+    if (!selectedNodeLabel) return []
+    return artifacts.filter(a => a.nodeName === selectedNodeLabel)
+  }, [selectedNodeLabel, artifacts])
+
   if (!flowData?.nodes?.length || path.length === 0) {
     return <p className="text-sm text-macos-text-tertiary text-center py-8">无执行进度数据</p>
   }
 
   return (
-    <ReactFlow
-      nodes={nodes}
-      edges={edges}
-      onNodesChange={onNodesChange}
-      onEdgesChange={onEdgesChange}
-      nodeTypes={nodeTypes}
-      defaultEdgeOptions={defaultEdgeOptions}
-      nodesConnectable={false}
-      fitView
-      fitViewOptions={{ padding: 0.2, minZoom: 0.5, maxZoom: 1 }}
-      minZoom={0.2}
-      maxZoom={2}
-      defaultViewport={{ x: 0, y: 0, zoom: 0.8 }}
-      panOnScroll
-      panOnScrollMode={undefined}
-      proOptions={{ hideAttribution: true }}
-    >
-      <Background color="#E5E5E5" gap={20} size={1} variant={BackgroundVariant.Dots} />
-      <Controls className="!bg-white !border !border-gray-200 !shadow-md" />
-    </ReactFlow>
+    <div className="relative w-full h-full">
+      <ReactFlow
+        nodes={nodes}
+        edges={edges}
+        onNodesChange={onNodesChange}
+        onEdgesChange={onEdgesChange}
+        onNodeClick={onNodeClick}
+        nodeTypes={nodeTypes}
+        defaultEdgeOptions={defaultEdgeOptions}
+        nodesConnectable={false}
+        fitView
+        fitViewOptions={{ padding: 0.2, minZoom: 0.5, maxZoom: 1 }}
+        minZoom={0.2}
+        maxZoom={2}
+        defaultViewport={{ x: 0, y: 0, zoom: 0.8 }}
+        panOnScroll
+        panOnScrollMode={undefined}
+        proOptions={{ hideAttribution: true }}
+      >
+        <Background color="#E5E5E5" gap={20} size={1} variant={BackgroundVariant.Dots} />
+        <Controls className="!bg-white !border !border-gray-200 !shadow-md" />
+      </ReactFlow>
+
+      {/* 节点产物面板 */}
+      <AnimatePresence>
+        {selectedNodeLabel && (
+          <motion.div
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 20 }}
+            transition={{ duration: 0.15 }}
+            className="absolute right-4 top-4 bottom-4 w-72 bg-white rounded-xl border border-gray-200 shadow-lg z-10 flex flex-col overflow-hidden"
+          >
+            <div className="flex items-center justify-between px-4 h-12 flex-shrink-0 border-b border-gray-100">
+              <div className="flex items-center gap-2 min-w-0">
+                <FileText size={14} className="text-macos-text-secondary flex-shrink-0" strokeWidth={1.5} />
+                <span className="text-sm font-medium text-macos-text truncate">{selectedNodeLabel}</span>
+              </div>
+              <button
+                onClick={() => setSelectedNodeLabel(null)}
+                className="p-1 rounded-md text-macos-text-tertiary hover:text-macos-text hover:bg-gray-100 transition-colors flex-shrink-0"
+              >
+                <X size={16} strokeWidth={1.5} />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4">
+              {selectedArtifacts.length > 0 ? (
+                selectedArtifacts.length === 1 ? (
+                  <MarkdownRenderer content={selectedArtifacts[0].content} className="text-sm" />
+                ) : (
+                  <div className="flex flex-col gap-3">
+                    {selectedArtifacts.map((art, i) => (
+                      <div key={i}>
+                        <div className="text-xs font-mono text-macos-text-tertiary mb-1.5">{art.invokeId}</div>
+                        <div className="bg-gray-50 rounded-lg p-3 border border-gray-100">
+                          <MarkdownRenderer content={art.content} className="text-sm" />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )
+              ) : (
+                <p className="text-sm text-macos-text-tertiary text-center py-8">暂无产物</p>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
   )
 }

@@ -12,6 +12,7 @@ interface InstanceDetail {
   flowData: { nodes: any[]; edges: any[] } | null
   completedNodes: string[]
   currentName: string
+  wfStatus: string
 }
 
 interface WorkflowInstanceState {

@@ -387,6 +387,8 @@ const InstanceDetail: FC = () => {
                     flowData={detail.flowData}
                     completedNodes={detail.completedNodes}
                     currentName={detail.currentName}
+                    wfStatus={detail.wfStatus}
+                    artifacts={detail.artifacts}
                   />
                 </div>
               )}
@@ -478,6 +480,8 @@ const InstanceDetail: FC = () => {
                 flowData={detail!.flowData}
                 completedNodes={detail!.completedNodes}
                 currentName={detail!.currentName}
+                wfStatus={detail!.wfStatus}
+                artifacts={detail!.artifacts}
               />
             </div>
 
