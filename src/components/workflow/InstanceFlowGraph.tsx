@@ -81,6 +81,7 @@ export const InstanceFlowGraph: FC<InstanceFlowGraphProps> = ({ traceLog, flowDa
   const visited = useMemo(() => {
     const s = new Set<string>()
     for (const p of path) s.add(p.node)
+    if (currentName) s.add(currentName)
     if (flowData?.nodes) {
       const start = flowData.nodes.find(n => n.type === 'start')
       if (start) s.add(start.data?.label || '')
@@ -88,16 +89,16 @@ export const InstanceFlowGraph: FC<InstanceFlowGraphProps> = ({ traceLog, flowDa
       if (end && completedNodes.length > 0) s.add(end.data?.label || '')
     }
     return s
-  }, [path, flowData, completedNodes])
+  }, [path, flowData, completedNodes, currentName])
 
   const initialNodes: Node[] = useMemo(() => {
     if (!flowData?.nodes) return []
     return flowData.nodes.filter(n => visited.has(n.data?.label || '')).map(n => {
       const label = n.data?.label || ''
-      const isDone = completedNodes.includes(label) || n.type === 'start'
-      return { id: n.id, type: n.type, position: n.position, data: n.data, selected: isDone } as Node
+      const isCurrent = currentName === label
+      return { id: n.id, type: n.type, position: n.position, data: n.data, selected: isCurrent } as Node
     })
-  }, [flowData, visited, completedNodes])
+  }, [flowData, visited, currentName])
 
   const initialEdges: Edge[] = useMemo(() => {
     if (!flowData?.nodes || !flowData?.edges) return []

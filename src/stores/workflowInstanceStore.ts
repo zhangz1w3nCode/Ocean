@@ -102,7 +102,7 @@ export const useWorkflowInstanceStore = create<WorkflowInstanceState>((set, get)
       const inst = get().selectedInstance
       if (!inst) { get().stopLiveRefresh(); return }
       get().loadInstanceDetail(inst)
-    }, 3000)
+    }, 1000)
     set({ isLiveRefresh: true, _pollTimer: timer })
   },
 
