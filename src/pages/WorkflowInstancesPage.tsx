@@ -1,7 +1,7 @@
 import type { FC } from 'react'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Search, RefreshCw, Activity, FileText, Package, ChevronRight, ChevronLeft, Clock, Hash, GitBranch, Repeat, RotateCcw, Maximize2, X, Radio, ChevronUp, ChevronDown } from 'lucide-react'
+import { Search, RefreshCw, Activity, FileText, Package, ChevronRight, ChevronLeft, Clock, Hash, GitBranch, Repeat, RotateCcw, Maximize2, X, Radio, ChevronUp, ChevronDown, CircleDot, ListOrdered, Files, Terminal } from 'lucide-react'
 import { Button, Dropdown, MarkdownRenderer, Modal } from '../components/ui'
 import { InstanceFlowGraph } from '../components/workflow'
 import { useWorkflowInstanceStore } from '../stores/workflowInstanceStore'
@@ -178,7 +178,8 @@ const TraceTable: FC<{ trace: InstanceTraceEvent[] }> = ({ trace }) => (
           <th className="text-left py-2 pr-4 font-medium w-8">#</th>
           <th className="text-left py-2 pr-4 font-medium w-20">状态</th>
           <th className="text-left py-2 pr-4 font-medium">节点</th>
-          <th className="text-left py-2 font-medium w-32">执行ID</th>
+          <th className="text-left py-2 pr-4 font-medium w-32">执行ID</th>
+          <th className="text-left py-2 font-medium w-28">执行时间</th>
         </tr>
       </thead>
       <tbody>
@@ -193,7 +194,8 @@ const TraceTable: FC<{ trace: InstanceTraceEvent[] }> = ({ trace }) => (
               {evt.node}
               {evt.branch && <span className="text-macos-text-tertiary ml-1">({evt.branch})</span>}
             </td>
-            <td className="py-2 font-mono text-macos-text-tertiary text-[10px]">{evt.invoke}</td>
+            <td className="py-2 font-mono text-macos-text-tertiary text-[10px] pr-4">{evt.invoke}</td>
+            <td className="py-2 text-xs text-macos-text-tertiary">{evt.time}</td>
           </tr>
         ))}
       </tbody>
@@ -340,15 +342,15 @@ const InstanceDetail: FC = () => {
               <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
                 <div className="text-sm font-bold text-macos-text mb-3">基本信息</div>
                 <div className="flex flex-col gap-2.5">
-                  <DetailField icon={GitBranch} label="状态"><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${statusColors[detail?.wfStatus || inst.status] || statusColors.unknown}`}>{formatStatus(detail?.wfStatus || inst.status)}</span></DetailField>
-                  <DetailField icon={Hash} label="实例ID"><span className="font-mono text-xs">{inst.instanceId}</span></DetailField>
+                  <DetailField icon={CircleDot} label="状态"><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${statusColors[detail?.wfStatus || inst.status] || statusColors.unknown}`}>{formatStatus(detail?.wfStatus || inst.status)}</span></DetailField>
                   <DetailField icon={GitBranch} label="工作流">{inst.workflowName}</DetailField>
+                  <DetailField icon={Hash} label="实例ID"><span className="font-mono text-xs">{inst.instanceId}</span></DetailField>
                   <DetailField icon={Clock} label="创建">{formatRelativeTime(inst.createdAt)}</DetailField>
-                  <DetailField icon={FileText} label="输入">{inst.initialInput || '-'}</DetailField>
-                  <DetailField icon={Hash} label="步骤">{inst.step ?? 0}</DetailField>
+                  <DetailField icon={Terminal} label="输入">{inst.initialInput || '-'}</DetailField>
+                  <DetailField icon={ListOrdered} label="步骤">{inst.step ?? 0}</DetailField>
                   <DetailField icon={Repeat} label="循环">{inst.loopCount ?? 0}</DetailField>
                   <DetailField icon={RotateCcw} label="重试">{inst.retryCount ?? 0}</DetailField>
-                  <DetailField icon={Package} label="产物">{inst.artifactCount}</DetailField>
+                  <DetailField icon={Files} label="产物">{inst.artifactCount}</DetailField>
                 </div>
               </div>
 
@@ -377,7 +379,7 @@ const InstanceDetail: FC = () => {
 
               {detail.trace.length > 0 && (
                 <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
-                  <div className="text-sm font-bold text-macos-text mb-3">执行轨迹</div>
+                  <div className="text-sm font-bold text-macos-text mb-3">时间线</div>
                   <TraceTable trace={detail.trace} />
                 </div>
               )}
