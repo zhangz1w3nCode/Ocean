@@ -2,7 +2,7 @@ import type { FC } from 'react'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Search, RefreshCw, ArrowLeft, Activity, FileText, Package, ChevronRight, Clock, Hash, GitBranch, Repeat, RotateCcw, Maximize2, X, Radio } from 'lucide-react'
-import { Button, Dropdown, MarkdownRenderer } from '../components/ui'
+import { Button, Dropdown, MarkdownRenderer, Modal } from '../components/ui'
 import { InstanceFlowGraph } from '../components/workflow'
 import { useWorkflowInstanceStore } from '../stores/workflowInstanceStore'
 import type { WorkflowInstance, InstanceTraceEvent, InstanceArtifact } from '../types'
@@ -416,18 +416,23 @@ const InstanceDetail: FC = () => {
                 </div>
               )}
 
-              {/* 选中产物详情 */}
+              {/* 选中产物弹框 — 复用项目 Modal 组件（拖拽/缩放/双击全屏） */}
               {selectedArtifact && (
-                <div className="col-span-2">
-                  <div className="flex items-center gap-2 mb-2">
-                    <FileText size={14} className="text-macos-text-secondary" strokeWidth={1.5} />
-                    <span className="text-xs font-medium text-macos-text">{selectedArtifact.nodeName}</span>
-                    <span className="text-[10px] font-mono text-macos-text-tertiary">{selectedArtifact.invokeId}</span>
+                <Modal
+                  isOpen={true}
+                  onClose={() => selectArtifact(null)}
+                  title={selectedArtifact.nodeName}
+                  size="lg"
+                  layoutKey="instance-artifact"
+                  persistLayout
+                >
+                  <div className="mb-3 pb-2 border-b border-gray-100">
+                    <span className="text-xs font-mono text-macos-text-tertiary">{selectedArtifact.invokeId}</span>
                   </div>
-                  <div className="bg-gray-50 rounded-lg p-4 border border-gray-100">
+                  <div className="flex-1 min-h-0 overflow-y-auto">
                     <MarkdownRenderer content={selectedArtifact.content} className="text-sm" />
                   </div>
-                </div>
+                </Modal>
               )}
             </div>
           ) : (
@@ -482,6 +487,7 @@ const InstanceDetail: FC = () => {
                 currentName={detail!.currentName}
                 wfStatus={detail!.wfStatus}
                 artifacts={detail!.artifacts}
+                fullHeight
               />
             </div>
 

@@ -46,8 +46,8 @@ interface InstanceFlowGraphProps {
   currentName: string
   wfStatus: string
   artifacts: InstanceArtifact[]
+  fullHeight?: boolean
 }
-
 function parseTraceLog(rawLog: string) {
   const entries = rawLog.split('\n').filter(l => l.trim())
     .map(l => { try { return JSON.parse(l) } catch { return null } })
@@ -66,7 +66,7 @@ function parseTraceLog(rawLog: string) {
   return path
 }
 
-export const InstanceFlowGraph: FC<InstanceFlowGraphProps> = ({ traceLog, flowData, completedNodes, currentName, wfStatus, artifacts }) => {
+export const InstanceFlowGraph: FC<InstanceFlowGraphProps> = ({ traceLog, flowData, completedNodes, currentName, wfStatus, artifacts, fullHeight }) => {
   const [selectedNodeLabel, setSelectedNodeLabel] = useState<string | null>(null)
 
   const path = useMemo(() => parseTraceLog(traceLog), [traceLog])
@@ -190,7 +190,7 @@ export const InstanceFlowGraph: FC<InstanceFlowGraphProps> = ({ traceLog, flowDa
   }
 
   return (
-    <div className="relative w-full h-full">
+    <div className="relative w-full" style={{ height: fullHeight ? '100%' : '300px' }}>
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -201,7 +201,7 @@ export const InstanceFlowGraph: FC<InstanceFlowGraphProps> = ({ traceLog, flowDa
         defaultEdgeOptions={defaultEdgeOptions}
         nodesConnectable={false}
         fitView
-        fitViewOptions={{ padding: 0.2, minZoom: 0.5, maxZoom: 1 }}
+        fitViewOptions={{ padding: 0.2 }}
         minZoom={0.2}
         maxZoom={2}
         defaultViewport={{ x: 0, y: 0, zoom: 0.8 }}
@@ -210,7 +210,6 @@ export const InstanceFlowGraph: FC<InstanceFlowGraphProps> = ({ traceLog, flowDa
         proOptions={{ hideAttribution: true }}
       >
         <Background color="#E5E5E5" gap={20} size={1} variant={BackgroundVariant.Dots} />
-        <Controls className="!bg-white !border !border-gray-200 !shadow-md" />
       </ReactFlow>
 
       {/* 节点产物面板 */}
