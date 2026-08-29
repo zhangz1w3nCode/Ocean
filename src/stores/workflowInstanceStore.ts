@@ -9,6 +9,9 @@ interface InstanceDetail {
   artifacts: InstanceArtifact[]
   traceLog: string
   instanceMd: string
+  flowData: { nodes: any[]; edges: any[] } | null
+  completedNodes: string[]
+  currentName: string
 }
 
 interface WorkflowInstanceState {

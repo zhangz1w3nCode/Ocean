@@ -579,8 +579,27 @@ ipcMain.handle('read-instance-detail', (_, workflowName, instanceId) => {
         }
       }
     }
-    // 读取 instance.md
-    let instanceMd = ''
+    // 解析 process.md frontmatter 获取节点状态信息
+    let completedNodes = []
+    let currentName = ''
+    if (fmMatch) {
+      const yaml = fmMatch[1]
+      const cm = yaml.match(/^completed:\n([\s\S]*?)(?=\n\S|\nlimits:|\n$)/m)
+      if (cm) completedNodes = cm[1].split('\n').map(l => l.replace(/^\s*-\s*/, '').trim()).filter(Boolean)
+      const cnm = yaml.match(/^current_name:\s*(.+)/m)
+      if (cnm) currentName = cnm[1].trim()
+    }
+
+    // 读取工作流定义中的 flow.json（在 workflow 目录的 meta-data 下）
+    let flowData = null
+    const flowPath = path.join(getWorkflowsDir(), workflowName, 'meta-data', 'flow.json')
+    if (fs.existsSync(flowPath)) {
+      try {
+        flowData = JSON.parse(fs.readFileSync(flowPath, 'utf-8'))
+      } catch (e) {
+        console.error('解析 flow.json 失败:', e)
+      }
+    }
     const instMdPath = path.join(instDir, 'instance.md')
     if (fs.existsSync(instMdPath)) {
       instanceMd = fs.readFileSync(instMdPath, 'utf-8')
@@ -616,7 +635,7 @@ ipcMain.handle('read-instance-detail', (_, workflowName, instanceId) => {
     }
     // 按时间排序
     artifacts.sort((a, b) => new Date(a.updatedAt) - new Date(b.updatedAt))
-    return { success: true, detail: { processRaw, mermaid, trace, artifacts, traceLog, instanceMd } }
+    return { success: true, detail: { processRaw, mermaid, trace, artifacts, traceLog, instanceMd, flowData, completedNodes, currentName } }
   } catch (error) {
     console.error('读取实例详情失败:', error)
     return { success: false, error: String(error) }
