@@ -1,26 +1,37 @@
 import { create } from 'zustand'
-import type { WorkflowInstance, InstanceArtifact } from '../types'
+import type { WorkflowInstance, InstanceArtifact, InstanceTraceEvent } from '../types'
 import { isElectron } from '../utils/storage'
+
+interface InstanceDetail {
+  processRaw: string
+  mermaid: string
+  trace: InstanceTraceEvent[]
+  artifacts: InstanceArtifact[]
+  traceLog: string
+  instanceMd: string
+}
 
 interface WorkflowInstanceState {
   instances: WorkflowInstance[]
   isLoaded: boolean
-  selectedInstance: WorkflowInstance | null
-  processContent: string
-  artifacts: InstanceArtifact[]
   isLoadingDetail: boolean
+  selectedInstance: WorkflowInstance | null
+  detail: InstanceDetail | null
+  selectedArtifact: InstanceArtifact | null
   loadInstances: () => Promise<void>
   selectInstance: (instance: WorkflowInstance | null) => void
   loadInstanceDetail: (instance: WorkflowInstance) => Promise<void>
+  selectArtifact: (artifact: InstanceArtifact | null) => void
+  clearDetail: () => void
 }
 
 export const useWorkflowInstanceStore = create<WorkflowInstanceState>((set, get) => ({
   instances: [],
   isLoaded: false,
-  selectedInstance: null,
-  processContent: '',
-  artifacts: [],
   isLoadingDetail: false,
+  selectedInstance: null,
+  detail: null,
+  selectedArtifact: null,
 
   loadInstances: async () => {
     if (!isElectron()) {
@@ -42,11 +53,9 @@ export const useWorkflowInstanceStore = create<WorkflowInstanceState>((set, get)
   },
 
   selectInstance: (instance) => {
-    set({ selectedInstance: instance })
+    set({ selectedInstance: instance, detail: null, selectedArtifact: null })
     if (instance) {
       get().loadInstanceDetail(instance)
-    } else {
-      set({ processContent: '', artifacts: [] })
     }
   },
 
@@ -54,18 +63,24 @@ export const useWorkflowInstanceStore = create<WorkflowInstanceState>((set, get)
     if (!isElectron()) return
     set({ isLoadingDetail: true })
     try {
-      const [processResult, artifactsResult] = await Promise.all([
-        window.electronAPI!.readInstanceFile(instance.workflowName, instance.instanceId, 'process.md'),
-        window.electronAPI!.listInstanceArtifacts(instance.workflowName, instance.instanceId),
-      ])
-      set({
-        processContent: processResult.success ? processResult.content : '无法读取 process.md',
-        artifacts: artifactsResult.success ? artifactsResult.artifacts || [] : [],
-        isLoadingDetail: false,
-      })
+      const result = await window.electronAPI!.readInstanceDetail(instance.workflowName, instance.instanceId)
+      if (result.success && result.detail) {
+        set({ detail: result.detail, isLoadingDetail: false })
+      } else {
+        console.error('加载实例详情失败:', result.error)
+        set({ isLoadingDetail: false })
+      }
     } catch (error) {
       console.error('加载实例详情失败:', error)
       set({ isLoadingDetail: false })
     }
+  },
+
+  selectArtifact: (artifact) => {
+    set({ selectedArtifact: artifact })
+  },
+
+  clearDetail: () => {
+    set({ selectedInstance: null, detail: null, selectedArtifact: null })
   },
 }))

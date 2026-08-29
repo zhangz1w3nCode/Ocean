@@ -25,8 +25,8 @@ const electronAPI = {
   listWorkflowInstances: () => ipcRenderer.invoke('list-workflow-instances'),
   readInstanceFile: (workflowName, instanceId, fileName) =>
     ipcRenderer.invoke('read-instance-file', workflowName, instanceId, fileName),
-  listInstanceArtifacts: (workflowName, instanceId) =>
-    ipcRenderer.invoke('list-instance-artifacts', workflowName, instanceId),
+  readInstanceDetail: (workflowName, instanceId) =>
+    ipcRenderer.invoke('read-instance-detail', workflowName, instanceId),
 
   // 节点文件数据持久化（Markdown 格式，以名称命名文件）
   saveNodeFile: (name, content) => ipcRenderer.invoke('save-node-file', name, content),

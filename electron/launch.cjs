@@ -420,7 +420,7 @@ ipcMain.handle('rename-workflow-folder', (_, oldName, newName) => {
 
 // ===== 工作流实例相关 IPC =====
 
-// 列出所有工作流实例（扫描 .workflows/*/instance/*/ 目录）
+// 列出所有工作流实例（扫描 .workflows/*/instance/*/ 目录，解析 process.md frontmatter）
 ipcMain.handle('list-workflow-instances', () => {
   try {
     const workflowsDir = getWorkflowsDir()
@@ -440,33 +440,53 @@ ipcMain.handle('list-workflow-instances', () => {
       for (const instId of instanceDirs) {
         const instPath = path.join(instanceDir, instId)
         const stat = fs.statSync(instPath)
-        // 列出实例目录下的文件
-        const entries = fs.readdirSync(instPath, { withFileTypes: true })
-        const files = entries.filter(e => e.isFile()).map(e => e.name)
-        const hasArtifacts = entries.some(e => e.isDirectory() && e.name === 'artifacts')
+        // 统计产物数量（artifacts/{node}/{invoke}/detail.md）
         let artifactCount = 0
-        if (hasArtifacts) {
-          const artDir = path.join(instPath, 'artifacts')
-          artifactCount = fs.readdirSync(artDir, { withFileTypes: true })
-            .filter(e => e.isFile()).length
+        const artDir = path.join(instPath, 'artifacts')
+        if (fs.existsSync(artDir)) {
+          const nodeDirs = fs.readdirSync(artDir, { withFileTypes: true }).filter(d => d.isDirectory())
+          for (const nd of nodeDirs) {
+            const invokeDir = path.join(artDir, nd.name)
+            if (fs.existsSync(invokeDir)) {
+              artifactCount += fs.readdirSync(invokeDir, { withFileTypes: true }).filter(d => d.isDirectory()).length
+            }
+          }
         }
-        // 尝试读取 process.md 获取状态
+        // 解析 process.md frontmatter
         let status = 'unknown'
-        let currentStep = ''
+        let initialInput = null
+        let currentName = ''
+        let step = 0
+        let loopCount = 0
+        let retryCount = 0
+        let lastNode = null
+        let completedNodes = []
         const processMdPath = path.join(instPath, 'process.md')
         if (fs.existsSync(processMdPath)) {
           const content = fs.readFileSync(processMdPath, 'utf-8')
-          // 解析状态：查找“状态:”或“status:”行
-          const statusMatch = content.match(/(?:状态|status)[:：]\s*(.+)/i)
-          if (statusMatch) status = statusMatch[1].trim()
-          // 解析当前步骤：查找“当前节点:”或“current:”行
-          const stepMatch = content.match(/(?:当前节点|current)[:：]\s*(.+)/i)
-          if (stepMatch) currentStep = stepMatch[1].trim()
-          // 如果没有显式状态，检查是否有“已完成”字样
-          if (status === 'unknown') {
-            if (/工作流已完成|workflow.*complete/i.test(content)) status = 'completed'
-            else if (/失败|fail/i.test(content)) status = 'failed'
-            else status = 'in-progress'
+          // 提取 YAML frontmatter
+          const fmMatch = content.match(/^---\n([\s\S]*?)\n---/)
+          if (fmMatch) {
+            const yaml = fmMatch[1]
+            const statusMatch = yaml.match(/^status:\s*(.+)/m)
+            if (statusMatch) status = statusMatch[1].trim()
+            const inputMatch = yaml.match(/^initial_input:\s*(.*)/m)
+            if (inputMatch && inputMatch[1].trim()) initialInput = inputMatch[1].trim()
+            const nameMatch = yaml.match(/^current_name:\s*(.+)/m)
+            if (nameMatch) currentName = nameMatch[1].trim()
+            const stepMatch = yaml.match(/^step:\s*(\d+)/m)
+            if (stepMatch) step = parseInt(stepMatch[1])
+            const loopMatch = yaml.match(/^loop_count:\s*(\d+)/m)
+            if (loopMatch) loopCount = parseInt(loopMatch[1])
+            const retryMatch = yaml.match(/^retry_count:\s*(\d+)/m)
+            if (retryMatch) retryCount = parseInt(retryMatch[1])
+            const lastMatch = yaml.match(/^last_node:\s*(.+)/m)
+            if (lastMatch) lastNode = lastMatch[1].trim()
+            // 解析 completed 列表
+            const completedMatch = yaml.match(/^completed:\n([\s\S]*?)(?=\n\S|\nlimits:|\n$)/m)
+            if (completedMatch) {
+              completedNodes = completedMatch[1].split('\n').map(l => l.replace(/^\s*-\s*/, '').trim()).filter(Boolean)
+            }
           }
         }
         instances.push({
@@ -475,13 +495,17 @@ ipcMain.handle('list-workflow-instances', () => {
           createdAt: stat.birthtime.toISOString(),
           updatedAt: stat.mtime.toISOString(),
           status,
-          currentStep,
-          files,
+          initialInput,
+          currentName,
+          step,
+          loopCount,
+          retryCount,
+          lastNode,
+          completedNodes,
           artifactCount,
         })
       }
     }
-    // 按创建时间倒序
     instances.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
     return { success: true, instances }
   } catch (error) {
@@ -505,29 +529,97 @@ ipcMain.handle('read-instance-file', (_, workflowName, instanceId, fileName) => 
   }
 })
 
-// 列出实例的产物文件
-ipcMain.handle('list-instance-artifacts', (_, workflowName, instanceId) => {
+// 读取实例完整详情（process.md + instance.md + trace.jsonl + artifacts 全部内容）
+ipcMain.handle('read-instance-detail', (_, workflowName, instanceId) => {
   try {
-    const artDir = path.join(getWorkflowsDir(), workflowName, 'instance', instanceId, 'artifacts')
-    if (!fs.existsSync(artDir)) {
-      return { success: true, artifacts: [] }
+    const instDir = path.join(getWorkflowsDir(), workflowName, 'instance', instanceId)
+    if (!fs.existsSync(instDir)) {
+      return { success: false, error: 'Instance not found' }
     }
-    const artifacts = fs.readdirSync(artDir, { withFileTypes: true })
-      .filter(e => e.isFile())
-      .map(e => {
-        const fullPath = path.join(artDir, e.name)
-        const stat = fs.statSync(fullPath)
-        return {
-          name: e.name,
-          size: stat.size,
-          updatedAt: stat.mtime.toISOString(),
+    // 读取 process.md
+    let processRaw = ''
+    const processPath = path.join(instDir, 'process.md')
+    if (fs.existsSync(processPath)) {
+      processRaw = fs.readFileSync(processPath, 'utf-8')
+    }
+    // 解析 process.md: frontmatter + mermaid + trace table
+    let mermaid = ''
+    let trace = []
+    const fmMatch = processRaw.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/)
+    if (fmMatch) {
+      const body = fmMatch[2]
+      // 提取 mermaid 代码块
+      const mermaidMatch = body.match(/```mermaid\n([\s\S]*?)```/)
+      if (mermaidMatch) mermaid = mermaidMatch[1].trim()
+      // 解析执行轨迹表
+      const traceSection = body.split('## 执行轨迹')
+      if (traceSection.length > 1) {
+        const lines = traceSection[1].trim().split('\n')
+        for (const line of lines) {
+          if (!line.startsWith('|') || line.includes('---')) continue
+          const cells = line.split('|').map(s => s.trim())
+          if (cells.length < 6) continue
+          const num = cells[1]
+          if (!num || num === '#') continue
+          // 解析节点名和分支
+          let node = cells[3]
+          let branch = null
+          const branchMatch = node.match(/^(.+?)\((.+)\)$/)
+          if (branchMatch) {
+            node = branchMatch[1]
+            branch = branchMatch[2]
+          }
+          trace.push({
+            status: cells[2],
+            node,
+            invoke: cells[4],
+            branch,
+            time: cells[5],
+          })
         }
-      })
-    artifacts.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))
-    return { success: true, artifacts }
+      }
+    }
+    // 读取 instance.md
+    let instanceMd = ''
+    const instMdPath = path.join(instDir, 'instance.md')
+    if (fs.existsSync(instMdPath)) {
+      instanceMd = fs.readFileSync(instMdPath, 'utf-8')
+    }
+    // 读取 trace.jsonl
+    let traceLog = ''
+    const tracePath = path.join(instDir, 'trace', 'trace.jsonl')
+    if (fs.existsSync(tracePath)) {
+      traceLog = fs.readFileSync(tracePath, 'utf-8')
+    }
+    // 读取所有产物（artifacts/{node}/{invoke}/detail.md）
+    const artifacts = []
+    const artDir = path.join(instDir, 'artifacts')
+    if (fs.existsSync(artDir)) {
+      const nodeDirs = fs.readdirSync(artDir, { withFileTypes: true }).filter(d => d.isDirectory())
+      for (const nd of nodeDirs) {
+        const invokeDir = path.join(artDir, nd.name)
+        const invokeDirs = fs.readdirSync(invokeDir, { withFileTypes: true }).filter(d => d.isDirectory())
+        for (const id of invokeDirs) {
+          const detailPath = path.join(invokeDir, id.name, 'detail.md')
+          if (fs.existsSync(detailPath)) {
+            const content = fs.readFileSync(detailPath, 'utf-8')
+            const stat = fs.statSync(detailPath)
+            artifacts.push({
+              nodeName: nd.name,
+              invokeId: id.name,
+              content,
+              updatedAt: stat.mtime.toISOString(),
+            })
+          }
+        }
+      }
+    }
+    // 按时间排序
+    artifacts.sort((a, b) => new Date(a.updatedAt) - new Date(b.updatedAt))
+    return { success: true, detail: { processRaw, mermaid, trace, artifacts, traceLog, instanceMd } }
   } catch (error) {
-    console.error('列出实例产物失败:', error)
-    return { success: false, error: String(error), artifacts: [] }
+    console.error('读取实例详情失败:', error)
+    return { success: false, error: String(error) }
   }
 })
 

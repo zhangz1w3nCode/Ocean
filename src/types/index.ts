@@ -394,13 +394,36 @@ export interface WorkflowInstance {
   createdAt: string
   updatedAt: string
   status: string
-  currentStep: string
-  files: string[]
+  initialInput?: string
+  currentName?: string
+  step?: number
+  loopCount?: number
+  retryCount?: number
+  lastNode?: string
+  completedNodes?: string[]
   artifactCount: number
 }
 
 export interface InstanceArtifact {
-  name: string
-  size: number
+  nodeName: string
+  invokeId: string
+  content: string
   updatedAt: string
+}
+
+export interface InstanceTraceEvent {
+  status: string
+  node: string
+  invoke: string
+  branch?: string
+  time: string
+}
+
+export interface InstanceDetail {
+  processRaw: string
+  mermaid: string
+  trace: InstanceTraceEvent[]
+  artifacts: InstanceArtifact[]
+  traceLog: string
+  instanceMd: string
 }

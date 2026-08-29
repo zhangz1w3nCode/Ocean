@@ -37,7 +37,7 @@ declare global {
       // 工作流实例相关
       listWorkflowInstances: () => Promise<{ success: boolean; instances?: any[]; error?: string }>
       readInstanceFile: (workflowName: string, instanceId: string, fileName: string) => Promise<{ success: boolean; content?: string; error?: string }>
-      listInstanceArtifacts: (workflowName: string, instanceId: string) => Promise<{ success: boolean; artifacts?: any[]; error?: string }>
+      readInstanceDetail: (workflowName: string, instanceId: string) => Promise<{ success: boolean; detail?: any; error?: string }>
       // 节点文件相关（Markdown 格式，以名称命名文件）
       saveNodeFile: (name: string, content: string) => Promise<{ success: boolean; error?: string }>
       loadNodeFile: (name: string) => Promise<{ success: boolean; content: string | null; mtime: string | null; error?: string }>
