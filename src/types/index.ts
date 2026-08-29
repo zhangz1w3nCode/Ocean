@@ -386,3 +386,21 @@ export interface CreateSkillInput {
   references?: { name: string; content: string }[]
   examples?: { name: string; content: string }[]
 }
+
+// 工作流实例
+export interface WorkflowInstance {
+  instanceId: string
+  workflowName: string
+  createdAt: string
+  updatedAt: string
+  status: string
+  currentStep: string
+  files: string[]
+  artifactCount: number
+}
+
+export interface InstanceArtifact {
+  name: string
+  size: number
+  updatedAt: string
+}

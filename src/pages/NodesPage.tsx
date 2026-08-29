@@ -7,7 +7,7 @@ import { useState, useEffect } from 'react'
 import type { NodeDefinition } from '../types'
 import { useToastStore } from '../stores/toastStore'
 
-export const NodesPage: FC = () => {
+export const NodesPage: FC<{ nested?: boolean }> = ({ nested = false }) => {
   const { nodeDefinitions, addNodeDefinition, updateNodeDefinition, deleteNodeDefinition, loadNodeDefinitions } = useNodeStore()
   const { addToast } = useToastStore()
   const [searchQuery, setSearchQuery] = useState('')
@@ -128,70 +128,67 @@ export const NodesPage: FC = () => {
     return matchesSearch
   })
 
-  return (
-    <div className="h-full pl-4 pr-4 pt-4 pb-4">
-      {/* 白色圆角卡片容器 */}
-      <div className="h-full bg-white rounded-2xl shadow-sm flex flex-col overflow-hidden">
-        {/* 页面头部 */}
-        <div className="h-16 px-6 flex items-center justify-end">
-          <div className="flex items-center gap-3">
-            {/* 搜索框 */}
-            <div className="relative">
-              <Search
-                size={16}
-                className="absolute left-3 top-1/2 -translate-y-1/2 text-macos-text-tertiary"
-              />
-              <input
-                type="text"
-                placeholder=""
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9 pr-4 py-2 w-48 text-sm bg-white border border-gray-200 rounded-lg
-                           placeholder:text-macos-text-tertiary focus:outline-none
-                           hover:border-gray-300 focus:border-gray-400
-                           focus:shadow-[0_4px_12px_rgba(0,0,0,0.08)]
-                           transition-[border-color,box-shadow] duration-200"
-              />
-            </div>
-
-            <Button
-              variant="outline"
-              onClick={handleCreateClick}
-              className="group bg-[#E5E7EB] border border-gray-300 text-gray-700 hover:bg-gray-200 hover:border-gray-400 rounded-lg py-2 text-sm overflow-hidden"
-            >
-              <Plus size={16} className="flex-shrink-0" />
-              <span className="max-w-0 group-hover:max-w-[80px] overflow-hidden whitespace-nowrap transition-[max-width,margin] duration-500 ease-in-out group-hover:ml-1.5">
-                新建节点
-              </span>
-            </Button>
+  const innerContent = (
+    <>
+      {/* 页面头部 */}
+      <div className="h-16 px-6 flex items-center justify-end">
+        <div className="flex items-center gap-3">
+          {/* 搜索框 */}
+          <div className="relative">
+            <Search
+              size={16}
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-macos-text-tertiary"
+            />
+            <input
+              type="text"
+              placeholder=""
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-9 pr-4 py-2 w-48 text-sm bg-white border border-gray-200 rounded-lg
+                         placeholder:text-macos-text-tertiary focus:outline-none
+                         hover:border-gray-300 focus:border-gray-400
+                         focus:shadow-[0_4px_12px_rgba(0,0,0,0.08)]
+                         transition-[border-color,box-shadow] duration-200"
+            />
           </div>
-        </div>
 
-        {/* 页面内容 */}
-        <div className="flex-1 p-6 overflow-y-auto">
-          {filteredNodes.length > 0 ? (
-            <div className="max-w-6xl mx-auto">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                {filteredNodes.map((node) => (
-                  <NodeCard
-                    key={node.id}
-                    node={node}
-                    onClick={() => handleCardClick(node)}
-                    onEdit={() => handleEditClick(node)}
-                    onDelete={() => handleDeleteClick(node.id)}
-                  />
-                ))}
-              </div>
-            </div>
-          ) : (
-            /* 空状态 */
-            <div className="h-full flex flex-col items-center justify-center text-center">
-              <div className="w-20 h-20 rounded-full bg-gray-100 flex items-center justify-center">
-                <Layers size={32} className="text-macos-text-tertiary" />
-              </div>
-            </div>
-          )}
+          <Button
+            variant="outline"
+            onClick={handleCreateClick}
+            className="group bg-[#E5E7EB] border border-gray-300 text-gray-700 hover:bg-gray-200 hover:border-gray-400 rounded-lg py-2 text-sm overflow-hidden"
+          >
+            <Plus size={16} className="flex-shrink-0" />
+            <span className="max-w-0 group-hover:max-w-[80px] overflow-hidden whitespace-nowrap transition-[max-width,margin] duration-500 ease-in-out group-hover:ml-1.5">
+              新建节点
+            </span>
+          </Button>
         </div>
+      </div>
+
+      {/* 页面内容 */}
+      <div className="flex-1 p-6 overflow-y-auto">
+        {filteredNodes.length > 0 ? (
+          <div className="max-w-6xl mx-auto">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {filteredNodes.map((node) => (
+                <NodeCard
+                  key={node.id}
+                  node={node}
+                  onClick={() => handleCardClick(node)}
+                  onEdit={() => handleEditClick(node)}
+                  onDelete={() => handleDeleteClick(node.id)}
+                />
+              ))}
+            </div>
+          </div>
+        ) : (
+          /* 空状态 */
+          <div className="h-full flex flex-col items-center justify-center text-center">
+            <div className="w-20 h-20 rounded-full bg-gray-100 flex items-center justify-center">
+              <Layers size={32} className="text-macos-text-tertiary" />
+            </div>
+          </div>
+        )}
       </div>
 
       {/* 创建/编辑节点弹窗 */}
@@ -222,6 +219,18 @@ export const NodesPage: FC = () => {
         onEdit={handleEditFromDetail}
         node={viewingNode}
       />
-    </div>
+    </>
   )
-}
+
+  if (nested) {
+    return innerContent
+  }
+
+  return (
+    <div className="h-full pl-4 pr-4 pt-4 pb-4">
+      {/* 白色圆角卡片容器 */}
+      <div className="h-full bg-white rounded-2xl shadow-sm flex flex-col overflow-hidden">
+        {innerContent}
+      </div>
+    </div>
+  )}

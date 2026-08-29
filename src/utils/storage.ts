@@ -34,6 +34,10 @@ declare global {
       loadAllWorkflowFolders: () => Promise<{ success: boolean; folders?: string[]; error?: string }>
       deleteWorkflowFolder: (name: string) => Promise<{ success: boolean; error?: string }>
       renameWorkflowFolder: (oldName: string, newName: string) => Promise<{ success: boolean; error?: string }>
+      // 工作流实例相关
+      listWorkflowInstances: () => Promise<{ success: boolean; instances?: any[]; error?: string }>
+      readInstanceFile: (workflowName: string, instanceId: string, fileName: string) => Promise<{ success: boolean; content?: string; error?: string }>
+      listInstanceArtifacts: (workflowName: string, instanceId: string) => Promise<{ success: boolean; artifacts?: any[]; error?: string }>
       // 节点文件相关（Markdown 格式，以名称命名文件）
       saveNodeFile: (name: string, content: string) => Promise<{ success: boolean; error?: string }>
       loadNodeFile: (name: string) => Promise<{ success: boolean; content: string | null; mtime: string | null; error?: string }>

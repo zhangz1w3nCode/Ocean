@@ -418,7 +418,119 @@ ipcMain.handle('rename-workflow-folder', (_, oldName, newName) => {
   }
 })
 
-// ===== 节点文件相关 IPC（Markdown 格式）=====
+// ===== 工作流实例相关 IPC =====
+
+// 列出所有工作流实例（扫描 .workflows/*/instance/*/ 目录）
+ipcMain.handle('list-workflow-instances', () => {
+  try {
+    const workflowsDir = getWorkflowsDir()
+    if (!fs.existsSync(workflowsDir)) {
+      return { success: true, instances: [] }
+    }
+    const instances = []
+    const workflowDirs = fs.readdirSync(workflowsDir, { withFileTypes: true })
+      .filter(d => d.isDirectory())
+      .map(d => d.name)
+    for (const wfName of workflowDirs) {
+      const instanceDir = path.join(workflowsDir, wfName, 'instance')
+      if (!fs.existsSync(instanceDir)) continue
+      const instanceDirs = fs.readdirSync(instanceDir, { withFileTypes: true })
+        .filter(d => d.isDirectory())
+        .map(d => d.name)
+      for (const instId of instanceDirs) {
+        const instPath = path.join(instanceDir, instId)
+        const stat = fs.statSync(instPath)
+        // 列出实例目录下的文件
+        const entries = fs.readdirSync(instPath, { withFileTypes: true })
+        const files = entries.filter(e => e.isFile()).map(e => e.name)
+        const hasArtifacts = entries.some(e => e.isDirectory() && e.name === 'artifacts')
+        let artifactCount = 0
+        if (hasArtifacts) {
+          const artDir = path.join(instPath, 'artifacts')
+          artifactCount = fs.readdirSync(artDir, { withFileTypes: true })
+            .filter(e => e.isFile()).length
+        }
+        // 尝试读取 process.md 获取状态
+        let status = 'unknown'
+        let currentStep = ''
+        const processMdPath = path.join(instPath, 'process.md')
+        if (fs.existsSync(processMdPath)) {
+          const content = fs.readFileSync(processMdPath, 'utf-8')
+          // 解析状态：查找“状态:”或“status:”行
+          const statusMatch = content.match(/(?:状态|status)[:：]\s*(.+)/i)
+          if (statusMatch) status = statusMatch[1].trim()
+          // 解析当前步骤：查找“当前节点:”或“current:”行
+          const stepMatch = content.match(/(?:当前节点|current)[:：]\s*(.+)/i)
+          if (stepMatch) currentStep = stepMatch[1].trim()
+          // 如果没有显式状态，检查是否有“已完成”字样
+          if (status === 'unknown') {
+            if (/工作流已完成|workflow.*complete/i.test(content)) status = 'completed'
+            else if (/失败|fail/i.test(content)) status = 'failed'
+            else status = 'in-progress'
+          }
+        }
+        instances.push({
+          instanceId: instId,
+          workflowName: wfName,
+          createdAt: stat.birthtime.toISOString(),
+          updatedAt: stat.mtime.toISOString(),
+          status,
+          currentStep,
+          files,
+          artifactCount,
+        })
+      }
+    }
+    // 按创建时间倒序
+    instances.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+    return { success: true, instances }
+  } catch (error) {
+    console.error('列出工作流实例失败:', error)
+    return { success: false, error: String(error), instances: [] }
+  }
+})
+
+// 读取实例文件内容
+ipcMain.handle('read-instance-file', (_, workflowName, instanceId, fileName) => {
+  try {
+    const filePath = path.join(getWorkflowsDir(), workflowName, 'instance', instanceId, fileName)
+    if (!fs.existsSync(filePath)) {
+      return { success: false, error: 'File not found' }
+    }
+    const content = fs.readFileSync(filePath, 'utf-8')
+    return { success: true, content }
+  } catch (error) {
+    console.error('读取实例文件失败:', error)
+    return { success: false, error: String(error) }
+  }
+})
+
+// 列出实例的产物文件
+ipcMain.handle('list-instance-artifacts', (_, workflowName, instanceId) => {
+  try {
+    const artDir = path.join(getWorkflowsDir(), workflowName, 'instance', instanceId, 'artifacts')
+    if (!fs.existsSync(artDir)) {
+      return { success: true, artifacts: [] }
+    }
+    const artifacts = fs.readdirSync(artDir, { withFileTypes: true })
+      .filter(e => e.isFile())
+      .map(e => {
+        const fullPath = path.join(artDir, e.name)
+        const stat = fs.statSync(fullPath)
+        return {
+          name: e.name,
+          size: stat.size,
+          updatedAt: stat.mtime.toISOString(),
+        }
+      })
+    artifacts.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))
+    return { success: true, artifacts }
+  } catch (error) {
+    console.error('列出实例产物失败:', error)
+    return { success: false, error: String(error), artifacts: [] }
+  }
+})
+
 
 // 保存节点文件（Markdown格式，以名称命名）
 ipcMain.handle('save-node-file', (_, name, content) => {
