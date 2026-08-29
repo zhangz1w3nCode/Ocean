@@ -489,10 +489,20 @@ ipcMain.handle('list-workflow-instances', () => {
             }
           }
         }
+        // 从 trace.jsonl 读取创建时间（比文件系统 birthtime 更准确）
+        let createdAt = stat.birthtime.toISOString()
+        const traceJsonlPath = path.join(instPath, 'trace', 'trace.jsonl')
+        if (fs.existsSync(traceJsonlPath)) {
+          const firstLine = fs.readFileSync(traceJsonlPath, 'utf-8').split('\n')[0]
+          try {
+            const firstEntry = JSON.parse(firstLine)
+            if (firstEntry.ts) createdAt = firstEntry.ts
+          } catch (e) {}
+        }
         instances.push({
           instanceId: instId,
           workflowName: wfName,
-          createdAt: stat.birthtime.toISOString(),
+          createdAt,
           updatedAt: stat.mtime.toISOString(),
           status,
           initialInput,

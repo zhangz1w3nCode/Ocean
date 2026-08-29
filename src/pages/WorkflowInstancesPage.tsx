@@ -15,6 +15,7 @@ const resizeCursors: Record<ResizeDirection, string> = { n: 'ns-resize', s: 'ns-
 const statusColors: Record<string, string> = {
   completed: 'bg-green-50 text-green-600',
   executing: 'bg-blue-50 text-blue-600',
+  awaitingchoice: 'bg-amber-50 text-amber-600',
   awaiting_choice: 'bg-amber-50 text-amber-600',
   aborted: 'bg-red-50 text-red-600',
   idle: 'bg-gray-100 text-gray-500',
@@ -24,6 +25,7 @@ const statusColors: Record<string, string> = {
 const statusDotColors: Record<string, string> = {
   completed: 'bg-green-500',
   executing: 'bg-blue-500',
+  awaitingchoice: 'bg-amber-500',
   awaiting_choice: 'bg-amber-500',
   aborted: 'bg-red-500',
   idle: 'bg-gray-400',
@@ -40,11 +42,11 @@ const InstanceList: FC = () => {
   const [filterStatus, setFilterStatus] = useState('')
 
   useEffect(() => {
-    if (!isLoaded) loadInstances()
-  }, [isLoaded, loadInstances])
+    loadInstances()
+  }, [loadInstances])
 
   const workflowNames = [...new Set(instances.map(i => i.workflowName))]
-  const statusOptions = ['completed', 'executing', 'awaiting_choice', 'aborted', 'idle']
+  const statusOptions = ['completed', 'executing', 'awaitingchoice', 'aborted', 'idle', 'active']
 
   const filtered = instances.filter((inst) => {
     if (filterWorkflow && inst.workflowName !== filterWorkflow) return false
@@ -104,40 +106,36 @@ const InstanceList: FC = () => {
 
       <div className="flex-1 overflow-y-auto px-6 pb-6">
         {filtered.length > 0 ? (
-          <div className="max-w-5xl mx-auto">
-            <div className="flex items-center px-3 py-2.5 text-xs font-medium text-macos-text-tertiary border-b border-gray-100">
-              <span className="flex-1 min-w-0">实例</span>
-              <span className="w-20 flex-shrink-0 text-center">状态</span>
-              <span className="w-28 flex-shrink-0">创建时间</span>
-              <span className="w-12 flex-shrink-0 text-right">操作</span>
+          <div className="w-full">
+            <div className="flex items-center px-3 py-2.5 gap-4 text-xs font-medium text-macos-text-tertiary border-b border-gray-100">
+              <span className="flex-1 min-w-0">实例ID</span>
+              <span className="flex-1 min-w-0">工作流</span>
+              <span className="flex-1 min-w-0">输入信息</span>
+              <span className="flex-1 min-w-0 text-center">状态</span>
+              <span className="flex-1 min-w-0">创建时间</span>
             </div>
             {filtered.map((inst) => (
               <div
                 key={`${inst.workflowName}-${inst.instanceId}`}
-                className="flex items-center px-3 py-3 border-b border-gray-50 hover:bg-gray-50/50 transition-colors cursor-pointer group"
+                className="flex items-center px-3 py-3 gap-4 border-b border-gray-50 hover:bg-gray-50/50 transition-colors cursor-pointer group"
                 onClick={() => selectInstance(inst)}
               >
-                <div className="flex-1 min-w-0 flex items-center gap-3">
+                <div className="flex-1 min-w-0 flex items-center gap-2">
                   <div className={`w-2 h-2 rounded-full flex-shrink-0 ${statusDotColors[inst.status] || statusDotColors.unknown}`} />
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium text-macos-text truncate">{inst.workflowName}</span>
-                      <span className="text-xs text-macos-text-tertiary truncate">{inst.initialInput || ''}</span>
-                    </div>
-                    <span className="text-xs font-mono text-macos-text-tertiary">{inst.instanceId}</span>
-                  </div>
+                  <span className="text-xs font-mono text-macos-text truncate">{inst.instanceId}</span>
                 </div>
-                <div className="w-20 flex-shrink-0 text-center">
+                <span className="flex-1 min-w-0 text-sm text-macos-text truncate">{inst.workflowName}</span>
+                <span className="flex-1 min-w-0 text-xs text-macos-text-secondary truncate" title={inst.initialInput || ''}>
+                  {inst.initialInput || '-'}
+                </span>
+                <div className="flex-1 min-w-0 flex justify-center">
                   <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${statusColors[inst.status] || statusColors.unknown}`}>
                     {formatStatus(inst.status)}
                   </span>
                 </div>
-                <span className="w-28 flex-shrink-0 text-xs text-macos-text-tertiary">
+                <span className="flex-1 min-w-0 text-xs text-macos-text-tertiary">
                   {formatRelativeTime(inst.createdAt)}
                 </span>
-                <div className="w-12 flex-shrink-0 text-right">
-                  <ChevronRight size={16} className="text-macos-text-tertiary opacity-0 group-hover:opacity-100 transition-opacity inline" />
-                </div>
               </div>
             ))}
           </div>
@@ -182,7 +180,7 @@ const TraceTable: FC<{ trace: InstanceTraceEvent[] }> = ({ trace }) => (
             <td className="py-2 pr-4 text-macos-text-tertiary">{i + 1}</td>
             <td className="py-2 pr-4">
               <span className={`inline-block w-1.5 h-1.5 rounded-full mr-1.5 ${statusDotColors[evt.status] || statusDotColors.unknown}`} />
-              <span className="text-macos-text">{evt.status}</span>
+              <span className="text-macos-text">{formatStatus(evt.status)}</span>
             </td>
             <td className="py-2 pr-4 text-macos-text">
               {evt.node}
@@ -333,8 +331,8 @@ const InstanceDetail: FC = () => {
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
                 <h2 className="text-lg font-semibold text-macos-text truncate">{inst.workflowName}</h2>
-                <span className={`text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${statusColors[inst.status] || statusColors.unknown}`}>
-                  {formatStatus(inst.status)}
+                <span className={`text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${statusColors[detail?.wfStatus || inst.status] || statusColors.unknown}`}>
+                  {formatStatus(detail?.wfStatus || inst.status)}
                 </span>
               </div>
               <span className="text-xs font-mono text-macos-text-tertiary">{inst.instanceId}</span>

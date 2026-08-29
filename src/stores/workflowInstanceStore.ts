@@ -31,6 +31,7 @@ interface WorkflowInstanceState {
   clearDetail: () => void
   startLiveRefresh: () => void
   stopLiveRefresh: () => void
+  reset: () => void,
 }
 
 export const useWorkflowInstanceStore = create<WorkflowInstanceState>((set, get) => ({
@@ -110,5 +111,10 @@ export const useWorkflowInstanceStore = create<WorkflowInstanceState>((set, get)
     const timer = get()._pollTimer
     if (timer) clearInterval(timer)
     set({ isLiveRefresh: false, _pollTimer: null })
+  },
+
+  reset: () => {
+    get().stopLiveRefresh()
+    set({ instances: [], isLoaded: false, selectedInstance: null, detail: null, selectedArtifact: null })
   },
 }))
