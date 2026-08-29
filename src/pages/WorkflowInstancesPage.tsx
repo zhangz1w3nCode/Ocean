@@ -176,7 +176,7 @@ const TraceTable: FC<{ trace: InstanceTraceEvent[] }> = ({ trace }) => (
       <thead>
         <tr className="text-macos-text-tertiary border-b border-gray-200">
           <th className="text-left py-2 pr-4 font-medium w-8">#</th>
-          <th className="text-left py-2 pr-4 font-medium w-16">状态</th>
+          <th className="text-left py-2 pr-4 font-medium w-20">状态</th>
           <th className="text-left py-2 pr-4 font-medium">节点</th>
           <th className="text-left py-2 font-medium w-32">执行ID</th>
         </tr>
@@ -351,35 +351,27 @@ const InstanceDetail: FC = () => {
               <p className="text-sm text-macos-text-tertiary">加载中...</p>
             </div>
           ) : detail ? (
-            <div className="grid grid-cols-2 gap-4 items-start">
+            <div className="grid grid-cols-2 gap-4 items-stretch">
               {/* 基本信息 */}
-              <div>
-                <div className="flex items-center gap-2 mb-2">
-                  <FileText size={14} className="text-macos-text-secondary" strokeWidth={1.5} />
-                  <span className="text-xs font-medium text-macos-text">基本信息</span>
-                </div>
-                <div className="bg-gray-50 rounded-lg p-4 border border-gray-100">
-                  <div className="grid grid-cols-2 gap-x-4 gap-y-2.5">
-                    <DetailField icon={Hash} label="实例ID"><span className="font-mono text-xs">{inst.instanceId}</span></DetailField>
-                    <DetailField icon={GitBranch} label="工作流">{inst.workflowName}</DetailField>
-                    <DetailField icon={Clock} label="创建">{formatRelativeTime(inst.createdAt)}</DetailField>
-                    <DetailField icon={FileText} label="输入">{inst.initialInput || '-'}</DetailField>
-                    <DetailField icon={Hash} label="步骤">{inst.step ?? 0}</DetailField>
-                    <DetailField icon={Repeat} label="循环">{inst.loopCount ?? 0}</DetailField>
-                    <DetailField icon={RotateCcw} label="重试">{inst.retryCount ?? 0}</DetailField>
-                    <DetailField icon={Package} label="产物">{inst.artifactCount}</DetailField>
-                  </div>
+              <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+                <div className="text-sm font-bold text-macos-text mb-3">基本信息</div>
+                <div className="flex flex-col gap-2.5">
+                  <DetailField icon={Hash} label="实例ID"><span className="font-mono text-xs">{inst.instanceId}</span></DetailField>
+                  <DetailField icon={GitBranch} label="工作流">{inst.workflowName}</DetailField>
+                  <DetailField icon={Clock} label="创建">{formatRelativeTime(inst.createdAt)}</DetailField>
+                  <DetailField icon={FileText} label="输入">{inst.initialInput || '-'}</DetailField>
+                  <DetailField icon={Hash} label="步骤">{inst.step ?? 0}</DetailField>
+                  <DetailField icon={Repeat} label="循环">{inst.loopCount ?? 0}</DetailField>
+                  <DetailField icon={RotateCcw} label="重试">{inst.retryCount ?? 0}</DetailField>
+                  <DetailField icon={Package} label="产物">{inst.artifactCount}</DetailField>
                 </div>
               </div>
 
               {/* 执行进度 */}
               {detail.flowData && (
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2">
-                      <Activity size={14} className="text-macos-text-secondary" strokeWidth={1.5} />
-                      <span className="text-xs font-medium text-macos-text">执行进度</span>
-                    </div>
+                <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-sm font-bold text-macos-text">执行进度</span>
                     <button
                       onClick={() => setIsFlowFullscreen(true)}
                       className="p-1 rounded-md text-macos-text-tertiary hover:text-macos-text hover:bg-gray-100 transition-colors"
@@ -399,24 +391,16 @@ const InstanceDetail: FC = () => {
               )}
 
               {detail.trace.length > 0 && (
-                <div>
-                  <div className="flex items-center gap-2 mb-2">
-                    <Clock size={14} className="text-macos-text-secondary" strokeWidth={1.5} />
-                    <span className="text-xs font-medium text-macos-text">执行轨迹 ({detail.trace.length})</span>
-                  </div>
-                  <div className="bg-gray-50 rounded-lg p-4 border border-gray-100">
-                    <TraceTable trace={detail.trace} />
-                  </div>
+                <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+                  <div className="text-sm font-bold text-macos-text mb-3">执行轨迹</div>
+                  <TraceTable trace={detail.trace} />
                 </div>
               )}
 
               {/* 节点产物 */}
               {detail.artifacts.length > 0 && (
-                <div>
-                  <div className="flex items-center gap-2 mb-2">
-                    <Package size={14} className="text-macos-text-secondary" strokeWidth={1.5} />
-                    <span className="text-xs font-medium text-macos-text">节点产物 ({detail.artifacts.length})</span>
-                  </div>
+                <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+                  <div className="text-sm font-bold text-macos-text mb-3">节点产物</div>
                   <ArtifactList artifacts={detail.artifacts} selected={selectedArtifact} onSelect={selectArtifact} />
                 </div>
               )}

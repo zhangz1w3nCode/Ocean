@@ -652,7 +652,7 @@ ipcMain.handle('read-instance-detail', (_, workflowName, instanceId) => {
       }
     }
     // 按时间排序
-    artifacts.sort((a, b) => new Date(a.updatedAt) - new Date(b.updatedAt))
+    artifacts.sort((a, b) => a.invokeId.localeCompare(b.invokeId))
     return { success: true, detail: { processRaw, mermaid, trace, artifacts, traceLog, instanceMd, flowData, completedNodes, currentName, wfStatus } }
   } catch (error) {
     console.error('读取实例详情失败:', error)
