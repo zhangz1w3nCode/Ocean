@@ -20,7 +20,6 @@ import {
   BusinessNode,
   LocalNode,
 } from '../flow/nodes'
-import type { ReactFlowNode, ReactFlowEdge } from '../../types/flow'
 
 const nodeTypes = {
   start: StartNode,
@@ -34,78 +33,52 @@ const nodeTypes = {
 const defaultEdgeOptions = {
   type: 'default',
   animated: false,
-  markerEnd: {
-    type: MarkerType.ArrowClosed,
-    width: 15,
-    height: 15,
-    color: '#9CA3AF',
-  },
-  style: {
-    strokeWidth: 2,
-    stroke: '#9CA3AF',
-  },
+  markerEnd: { type: MarkerType.ArrowClosed, width: 15, height: 15, color: '#9CA3AF' },
+  style: { strokeWidth: 2, stroke: '#9CA3AF' },
 }
 
 interface InstanceFlowGraphProps {
-  mermaid: string
+  traceLog: string
   flowData: { nodes: any[]; edges: any[] } | null
+  completedNodes: string[]
+  currentName: string
 }
 
-// ===== Mermaid 解析 =====
+// 解析 trace.jsonl，复刻 workflow-cli executor.rs render_mermaid 的 path 构建逻辑
+function parseTraceLog(rawLog: string) {
+  const entries = rawLog
+    .split('\n')
+    .filter(l => l.trim())
+    .map(l => {
+      try { return JSON.parse(l) } catch { return null }
+    })
+    .filter(Boolean) as Array<{
+      ts: string
+      command: string
+      node?: string
+      invoke?: string
+      status?: string
+      branch?: string
+    }>
 
-function parseMermaid(md: string) {
-  const nodeDefs: { id: string; label: string; shape: 'stadium' | 'rect' | 'diamond' }[] = []
-  const edgeDefs: { source: string; target: string; branch?: string }[] = []
-  const doneIds: string[] = []
-
-  for (const line of md.split('\n')) {
-    const t = line.trim()
-    if (!t || t.startsWith('%%') || t.startsWith('classDef')) continue
-
-    const cls = t.match(/^class\s+(.+?)\s+(done|current)$/)
-    if (cls) {
-      if (cls[2] === 'done') doneIds.push(...cls[1].split(',').map(s => s.trim()))
-      continue
+  // 构建 ordered path: [(node_label, branch?)]
+  const path: Array<{ node: string; branch?: string }> = []
+  for (const entry of entries) {
+    if (!entry.node || !entry.status) continue
+    if (entry.status === 'active') {
+      path.push({ node: entry.node, branch: entry.branch })
+    } else if (entry.status === 'completed' && entry.branch) {
+      const last = path[path.length - 1]
+      if (last) last.branch = entry.branch
     }
-
-    const edge = t.match(/^(.+?)\s*-->\s*(?:\|(.+?)\|\s*)?(.+)$/)
-    if (edge) {
-      edgeDefs.push({ source: edge[1].trim(), target: edge[3].trim(), branch: edge[2]?.trim() })
-      extractNode(edge[1].trim(), nodeDefs)
-      extractNode(edge[3].trim(), nodeDefs)
-      continue
-    }
-    extractNode(t, nodeDefs)
   }
-  return { nodeDefs, edgeDefs, doneIds }
+  return path
 }
 
-function extractNode(text: string, nodes: { id: string; label: string; shape: 'stadium' | 'rect' | 'diamond' }[]) {
-  let m = text.match(/^([\w\u4e00-\u9fff_]+)\(\[(.+?)\]\)$/)
-  if (m) { pushNode(nodes, m[1], m[2], 'stadium'); return }
-  m = text.match(/^([\w\u4e00-\u9fff_]+)\{(.+?)\}$/)
-  if (m) { pushNode(nodes, m[1], m[2], 'diamond'); return }
-  m = text.match(/^([\w\u4e00-\u9fff_]+)\[(.+?)\]$/)
-  if (m) { pushNode(nodes, m[1], m[2], 'rect'); return }
-  const bare = text.match(/^([\w\u4e00-\u9fff_]+)$/)
-  if (bare) pushNode(nodes, bare[1], bare[1], 'rect')
-}
+export const InstanceFlowGraph: FC<InstanceFlowGraphProps> = ({ traceLog, flowData, completedNodes, currentName }) => {
+  const path = useMemo(() => parseTraceLog(traceLog), [traceLog])
 
-function pushNode(nodes: any[], id: string, label: string, shape: string) {
-  if (!nodes.find(n => n.id === id)) nodes.push({ id, label, shape })
-}
-
-function shapeToType(shape: string, flowNode?: any): string {
-  if (shape === 'stadium') return flowNode?.type === 'end' ? 'end' : 'start'
-  if (shape === 'diamond') return 'decision'
-  return flowNode?.type || 'business'
-}
-
-// ===== 组件 =====
-
-export const InstanceFlowGraph: FC<InstanceFlowGraphProps> = ({ mermaid, flowData }) => {
-  const { nodeDefs, edgeDefs, doneIds } = useMemo(() => parseMermaid(mermaid), [mermaid])
-
+  // flow.json 按 label 索引
   const flowMap = useMemo(() => {
     const m = new Map<string, any>()
     if (flowData?.nodes) {
@@ -114,39 +87,109 @@ export const InstanceFlowGraph: FC<InstanceFlowGraphProps> = ({ mermaid, flowDat
     return m
   }, [flowData])
 
-  const initialNodes: Node[] = useMemo(() => {
-    return nodeDefs.map((nd) => {
-      const fn = flowMap.get(nd.label)
-      const type = shapeToType(nd.shape, fn)
-      return {
-        id: nd.id,
-        type,
-        position: fn?.position || { x: Math.random() * 400, y: Math.random() * 200 },
-        data: { label: nd.label, ...(fn?.data || {}) },
-        selected: doneIds.includes(nd.id),
-      } as Node
-    })
-  }, [nodeDefs, flowMap, doneIds])
+  // visited 集合：path 中的节点 + start + end(若 completed)
+  const visited = useMemo(() => {
+    const s = new Set<string>()
+    for (const p of path) s.add(p.node)
+    // start 节点
+    if (flowData?.nodes) {
+      const start = flowData.nodes.find(n => n.type === 'start')
+      if (start) s.add(start.data?.label || '')
+      const end = flowData.nodes.find(n => n.type === 'end')
+      if (end && completedNodes.length > 0) s.add(end.data?.label || '')
+    }
+    return s
+  }, [path, flowData, completedNodes])
 
+  // 构建 ReactFlow nodes
+  const initialNodes: Node[] = useMemo(() => {
+    if (!flowData?.nodes) return []
+    return flowData.nodes
+      .filter(n => visited.has(n.data?.label || ''))
+      .map(n => {
+        const label = n.data?.label || ''
+        const isDone = completedNodes.includes(label) || n.type === 'start'
+        return {
+          id: n.id,
+          type: n.type,
+          position: n.position,
+          data: n.data,
+          selected: isDone,
+        } as Node
+      })
+  }, [flowData, visited, completedNodes])
+
+  // 构建 traversed edges（复刻 executor.rs 逻辑）
   const initialEdges: Edge[] = useMemo(() => {
-    return edgeDefs.map((e, i) => ({
-      id: `e-${i}`,
-      source: e.source,
-      target: e.target,
-      type: 'default',
-    } as Edge))
-  }, [edgeDefs])
+    if (!flowData?.nodes || !flowData?.edges) return []
+
+    const nodeById = new Map(flowData.nodes.map(n => [n.id, n]))
+    const traversed: Edge[] = []
+
+    // 1. path 中每个节点的出边
+    for (const p of path) {
+      const node = flowMap.get(p.node)
+      if (!node) continue
+
+      for (const edge of flowData.edges) {
+        if (edge.source !== node.id) continue
+
+        if (node.type === 'decision') {
+          // decision: 只选 branch 匹配的边
+          if (!p.branch) continue
+          const branch = node.data?.branches?.find((b: any) => b.name === p.branch)
+          if (branch && edge.branchId === branch.id) {
+            traversed.push({ id: edge.id, source: edge.source, target: edge.target, type: 'default' })
+          }
+        } else {
+          // 非 decision: 所有出边
+          traversed.push({ id: edge.id, source: edge.source, target: edge.target, type: 'default' })
+        }
+      }
+    }
+
+    // 2. start → path 第一个节点
+    if (path.length > 0) {
+      const startNode = flowData.nodes.find(n => n.type === 'start')
+      if (startNode) {
+        const firstTarget = flowMap.get(path[0].node)
+        if (firstTarget) {
+          for (const edge of flowData.edges) {
+            if (edge.source === startNode.id && edge.target === firstTarget.id) {
+              traversed.push({ id: edge.id, source: edge.source, target: edge.target, type: 'default' })
+            }
+          }
+        }
+      }
+    }
+
+    // 3. 最后一个节点 → end（若 completed）
+    if (path.length > 0 && completedNodes.length > 0) {
+      const lastNode = flowMap.get(path[path.length - 1].node)
+      const endNode = flowData.nodes.find(n => n.type === 'end')
+      if (lastNode && endNode) {
+        for (const edge of flowData.edges) {
+          if (edge.source === lastNode.id && edge.target === endNode.id) {
+            traversed.push({ id: edge.id, source: edge.source, target: edge.target, type: 'default' })
+          }
+        }
+      }
+    }
+
+    // 去重
+    const seen = new Set(traversed.map(e => e.id))
+    return traversed.filter(e => { if (seen.has(e.id)) { seen.delete(e.id); return true } return false })
+  }, [path, flowData, flowMap, completedNodes])
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes)
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges)
 
-  useEffect(() => {
-    setNodes(initialNodes)
-  }, [initialNodes, setNodes])
+  useEffect(() => { setNodes(initialNodes) }, [initialNodes, setNodes])
+  useEffect(() => { setEdges(initialEdges) }, [initialEdges, setEdges])
 
-  useEffect(() => {
-    setEdges(initialEdges)
-  }, [initialEdges, setEdges])
+  if (!flowData?.nodes?.length || path.length === 0) {
+    return <p className="text-sm text-macos-text-tertiary text-center py-8">无执行进度数据</p>
+  }
 
   return (
     <ReactFlow
@@ -166,13 +209,8 @@ export const InstanceFlowGraph: FC<InstanceFlowGraphProps> = ({ mermaid, flowDat
       panOnScrollMode={undefined}
       proOptions={{ hideAttribution: true }}
     >
-      <Background
-        color="#E5E5E5"
-        gap={20}
-        size={1}
-        variant={BackgroundVariant.Dots}
-      />
+      <Background color="#E5E5E5" gap={20} size={1} variant={BackgroundVariant.Dots} />
       <Controls className="!bg-white !border !border-gray-200 !shadow-md" />
-      </ReactFlow>
+    </ReactFlow>
   )
 }

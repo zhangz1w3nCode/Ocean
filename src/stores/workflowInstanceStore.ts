@@ -21,11 +21,15 @@ interface WorkflowInstanceState {
   selectedInstance: WorkflowInstance | null
   detail: InstanceDetail | null
   selectedArtifact: InstanceArtifact | null
+  isLiveRefresh: boolean
+  _pollTimer: ReturnType<typeof setInterval> | null
   loadInstances: () => Promise<void>
   selectInstance: (instance: WorkflowInstance | null) => void
   loadInstanceDetail: (instance: WorkflowInstance) => Promise<void>
   selectArtifact: (artifact: InstanceArtifact | null) => void
   clearDetail: () => void
+  startLiveRefresh: () => void
+  stopLiveRefresh: () => void
 }
 
 export const useWorkflowInstanceStore = create<WorkflowInstanceState>((set, get) => ({
@@ -35,6 +39,9 @@ export const useWorkflowInstanceStore = create<WorkflowInstanceState>((set, get)
   selectedInstance: null,
   detail: null,
   selectedArtifact: null,
+  isLiveRefresh: false,
+
+  _pollTimer: null as ReturnType<typeof setInterval> | null,
 
   loadInstances: async () => {
     if (!isElectron()) {
@@ -84,6 +91,23 @@ export const useWorkflowInstanceStore = create<WorkflowInstanceState>((set, get)
   },
 
   clearDetail: () => {
+    get().stopLiveRefresh()
     set({ selectedInstance: null, detail: null, selectedArtifact: null })
+  },
+
+  startLiveRefresh: () => {
+    get().stopLiveRefresh()
+    const timer = setInterval(() => {
+      const inst = get().selectedInstance
+      if (!inst) { get().stopLiveRefresh(); return }
+      get().loadInstanceDetail(inst)
+    }, 3000)
+    set({ isLiveRefresh: true, _pollTimer: timer })
+  },
+
+  stopLiveRefresh: () => {
+    const timer = get()._pollTimer
+    if (timer) clearInterval(timer)
+    set({ isLiveRefresh: false, _pollTimer: null })
   },
 }))

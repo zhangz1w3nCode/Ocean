@@ -1,7 +1,7 @@
 import type { FC } from 'react'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Search, RefreshCw, ArrowLeft, Activity, FileText, Package, ChevronRight, Clock, Hash, GitBranch, Repeat, RotateCcw, Maximize2, X } from 'lucide-react'
+import { Search, RefreshCw, ArrowLeft, Activity, FileText, Package, ChevronRight, Clock, Hash, GitBranch, Repeat, RotateCcw, Maximize2, X, Radio } from 'lucide-react'
 import { Button, Dropdown, MarkdownRenderer } from '../components/ui'
 import { InstanceFlowGraph } from '../components/workflow'
 import { useWorkflowInstanceStore } from '../stores/workflowInstanceStore'
@@ -221,7 +221,7 @@ const ArtifactList: FC<{
   )
 
 const InstanceDetail: FC = () => {
-  const { selectedInstance, detail, isLoadingDetail, selectedArtifact, selectInstance, selectArtifact, clearDetail } = useWorkflowInstanceStore()
+  const { selectedInstance, detail, isLoadingDetail, selectedArtifact, selectInstance, selectArtifact, clearDetail, isLiveRefresh, startLiveRefresh, stopLiveRefresh } = useWorkflowInstanceStore()
   const [isFlowFullscreen, setIsFlowFullscreen] = useState(false)
   const [flowPos, setFlowPos] = useState({ x: Math.max(16, (window.innerWidth - 1000) / 2), y: 60 })
   const [flowDim, setFlowDim] = useState({ width: Math.min(1000, window.innerWidth - 32), height: Math.min(600, window.innerHeight - 80) })
@@ -234,7 +234,7 @@ const InstanceDetail: FC = () => {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setIsFlowFullscreen(false) }
     document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
+    return () => { document.removeEventListener('keydown', onKey); stopLiveRefresh() }
   }, [])
 
   // 拖动移动
@@ -310,6 +310,17 @@ const InstanceDetail: FC = () => {
           <ArrowLeft size={16} strokeWidth={1.5} />
           返回
         </button>
+        <button
+          onClick={() => isLiveRefresh ? stopLiveRefresh() : startLiveRefresh()}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-colors ${
+            isLiveRefresh
+              ? 'bg-green-50 text-green-600'
+              : 'text-macos-text-secondary hover:text-macos-text hover:bg-gray-100'
+          }`}
+        >
+          <Radio size={14} strokeWidth={1.5} className={isLiveRefresh ? 'animate-pulse' : ''} />
+          {isLiveRefresh ? '实时刷新中' : '实时刷新'}
+        </button>
       </div>
 
       <div className="flex-1 overflow-y-auto px-6 pb-6">
@@ -357,7 +368,7 @@ const InstanceDetail: FC = () => {
               </div>
 
               {/* 执行进度 */}
-              {detail.mermaid && (
+              {detail.flowData && (
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2">
@@ -372,8 +383,10 @@ const InstanceDetail: FC = () => {
                     </button>
                   </div>
                   <InstanceFlowGraph
-                    mermaid={detail.mermaid}
+                    traceLog={detail.traceLog}
                     flowData={detail.flowData}
+                    completedNodes={detail.completedNodes}
+                    currentName={detail.currentName}
                   />
                 </div>
               )}
@@ -425,7 +438,7 @@ const InstanceDetail: FC = () => {
 
       {/* 浮动窗口 — 可拖动/缩放/双击全屏 */}
       <AnimatePresence>
-        {isFlowFullscreen && detail?.mermaid && (
+        {isFlowFullscreen && detail?.flowData && (
           <motion.div
             initial={{ opacity: 0, scale: 0.97 }}
             animate={{ opacity: 1, scale: 1 }}
@@ -460,7 +473,12 @@ const InstanceDetail: FC = () => {
 
             {/* 画布 */}
             <div className="flex-1 overflow-hidden bg-gray-50">
-              <InstanceFlowGraph mermaid={detail!.mermaid} flowData={detail!.flowData} />
+              <InstanceFlowGraph
+                traceLog={detail!.traceLog}
+                flowData={detail!.flowData}
+                completedNodes={detail!.completedNodes}
+                currentName={detail!.currentName}
+              />
             </div>
 
             {/* 缩放手柄 — 四边 */}
