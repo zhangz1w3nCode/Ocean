@@ -1,7 +1,7 @@
 import type { FC } from 'react'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Search, RefreshCw, ArrowLeft, Activity, FileText, Package, ChevronRight, Clock, Hash, GitBranch, Repeat, RotateCcw, Maximize2, X, Radio, ChevronUp, ChevronDown } from 'lucide-react'
+import { Search, RefreshCw, Activity, FileText, Package, ChevronRight, ChevronLeft, Clock, Hash, GitBranch, Repeat, RotateCcw, Maximize2, X, Radio, ChevronUp, ChevronDown } from 'lucide-react'
 import { Button, Dropdown, MarkdownRenderer, Modal } from '../components/ui'
 import { InstanceFlowGraph } from '../components/workflow'
 import { useWorkflowInstanceStore } from '../stores/workflowInstanceStore'
@@ -310,10 +310,9 @@ const InstanceDetail: FC = () => {
       <div className="h-16 px-6 flex items-center justify-between">
         <button
           onClick={() => clearDetail()}
-          className="flex items-center gap-1.5 text-sm text-macos-text-secondary hover:text-macos-text transition-colors"
+          className="p-1.5 rounded-lg text-macos-text-secondary hover:text-macos-text hover:bg-gray-100 transition-colors"
         >
-          <ArrowLeft size={16} strokeWidth={1.5} />
-          返回
+          <ChevronLeft size={16} strokeWidth={1.5} />
         </button>
         <button
           onClick={() => isLiveRefresh ? stopLiveRefresh() : startLiveRefresh()}
@@ -329,22 +328,7 @@ const InstanceDetail: FC = () => {
       </div>
 
       <div className="flex-1 overflow-y-auto px-6 pb-6">
-        <div className="max-w-5xl mx-auto">
-          {/* 标题区 */}
-          <div className="flex items-center gap-3 pb-4 mb-4 border-b border-gray-100">
-            <div className="w-12 h-12 rounded-xl bg-gray-100 flex items-center justify-center flex-shrink-0">
-              <Activity size={24} className="text-macos-text-secondary" strokeWidth={1.5} />
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
-                <h2 className="text-lg font-semibold text-macos-text truncate">{inst.workflowName}</h2>
-                <span className={`text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${statusColors[detail?.wfStatus || inst.status] || statusColors.unknown}`}>
-                  {formatStatus(detail?.wfStatus || inst.status)}
-                </span>
-              </div>
-              <span className="text-xs font-mono text-macos-text-tertiary">{inst.instanceId}</span>
-            </div>
-          </div>
+        <div className="w-full">
 
           {isLoadingDetail ? (
             <div className="py-20 text-center">
@@ -356,6 +340,7 @@ const InstanceDetail: FC = () => {
               <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
                 <div className="text-sm font-bold text-macos-text mb-3">基本信息</div>
                 <div className="flex flex-col gap-2.5">
+                  <DetailField icon={GitBranch} label="状态"><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${statusColors[detail?.wfStatus || inst.status] || statusColors.unknown}`}>{formatStatus(detail?.wfStatus || inst.status)}</span></DetailField>
                   <DetailField icon={Hash} label="实例ID"><span className="font-mono text-xs">{inst.instanceId}</span></DetailField>
                   <DetailField icon={GitBranch} label="工作流">{inst.workflowName}</DetailField>
                   <DetailField icon={Clock} label="创建">{formatRelativeTime(inst.createdAt)}</DetailField>
