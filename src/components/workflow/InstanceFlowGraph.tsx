@@ -190,7 +190,7 @@ export const InstanceFlowGraph: FC<InstanceFlowGraphProps> = ({ traceLog, flowDa
   }
 
   return (
-    <div className="relative w-full" style={{ height: fullHeight ? '100%' : '300px' }}>
+    <div className="relative w-full rounded-lg border border-gray-200 overflow-hidden" style={{ height: fullHeight ? '100%' : '300px' }}>
       <ReactFlow
         nodes={nodes}
         edges={edges}
