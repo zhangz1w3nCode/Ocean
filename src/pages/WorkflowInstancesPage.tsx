@@ -1,7 +1,7 @@
 import type { FC } from 'react'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Search, RefreshCw, ArrowLeft, Activity, FileText, Package, ChevronRight, Clock, Hash, GitBranch, Repeat, RotateCcw, Maximize2, X, Radio } from 'lucide-react'
+import { Search, RefreshCw, ArrowLeft, Activity, FileText, Package, ChevronRight, Clock, Hash, GitBranch, Repeat, RotateCcw, Maximize2, X, Radio, ChevronUp, ChevronDown } from 'lucide-react'
 import { Button, Dropdown, MarkdownRenderer, Modal } from '../components/ui'
 import { InstanceFlowGraph } from '../components/workflow'
 import { useWorkflowInstanceStore } from '../stores/workflowInstanceStore'
@@ -40,6 +40,7 @@ const InstanceList: FC = () => {
   const [searchQuery, setSearchQuery] = useState('')
   const [filterWorkflow, setFilterWorkflow] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
+  const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc')
 
   useEffect(() => {
     loadInstances()
@@ -56,6 +57,9 @@ const InstanceList: FC = () => {
       inst.workflowName.toLowerCase().includes(q) ||
       inst.status.toLowerCase().includes(q) ||
       (inst.initialInput || '').toLowerCase().includes(q)
+  }).sort((a, b) => {
+    const cmp = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+    return sortOrder === 'desc' ? -cmp : cmp
   })
 
   return (
@@ -108,11 +112,14 @@ const InstanceList: FC = () => {
         {filtered.length > 0 ? (
           <div className="w-full">
             <div className="flex items-center px-3 py-2.5 gap-4 text-xs font-medium text-macos-text-tertiary border-b border-gray-100">
-              <span className="flex-1 min-w-0">实例ID</span>
-              <span className="flex-1 min-w-0">工作流</span>
-              <span className="flex-1 min-w-0">输入信息</span>
+              <span className="flex-1 min-w-0 text-center">实例ID</span>
+              <span className="flex-1 min-w-0 text-center">工作流</span>
+              <span className="flex-1 min-w-0 text-center">输入信息</span>
               <span className="flex-1 min-w-0 text-center">状态</span>
-              <span className="flex-1 min-w-0">创建时间</span>
+              <button onClick={() => setSortOrder(sortOrder === 'desc' ? 'asc' : 'desc')} className="flex-1 min-w-0 flex items-center justify-center gap-1 cursor-pointer hover:text-macos-text transition-colors">
+                创建时间
+                {sortOrder === 'desc' ? <ChevronDown size={12} /> : <ChevronUp size={12} />}
+              </button>
             </div>
             {filtered.map((inst) => (
               <div
@@ -120,12 +127,12 @@ const InstanceList: FC = () => {
                 className="flex items-center px-3 py-3 gap-4 border-b border-gray-50 hover:bg-gray-50/50 transition-colors cursor-pointer group"
                 onClick={() => selectInstance(inst)}
               >
-                <div className="flex-1 min-w-0 flex items-center gap-2">
+                <div className="flex-1 min-w-0 flex items-center justify-center gap-2">
                   <div className={`w-2 h-2 rounded-full flex-shrink-0 ${statusDotColors[inst.status] || statusDotColors.unknown}`} />
                   <span className="text-xs font-mono text-macos-text truncate">{inst.instanceId}</span>
                 </div>
-                <span className="flex-1 min-w-0 text-sm text-macos-text truncate">{inst.workflowName}</span>
-                <span className="flex-1 min-w-0 text-xs text-macos-text-secondary truncate" title={inst.initialInput || ''}>
+                <span className="flex-1 min-w-0 text-sm text-macos-text truncate text-center">{inst.workflowName}</span>
+                <span className="flex-1 min-w-0 text-xs text-macos-text-secondary truncate text-center" title={inst.initialInput || ''}>
                   {inst.initialInput || '-'}
                 </span>
                 <div className="flex-1 min-w-0 flex justify-center">
@@ -133,7 +140,7 @@ const InstanceList: FC = () => {
                     {formatStatus(inst.status)}
                   </span>
                 </div>
-                <span className="flex-1 min-w-0 text-xs text-macos-text-tertiary">
+                <span className="flex-1 min-w-0 text-xs text-macos-text-tertiary text-center">
                   {formatRelativeTime(inst.createdAt)}
                 </span>
               </div>
