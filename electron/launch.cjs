@@ -556,47 +556,22 @@ ipcMain.handle('read-instance-detail', (_, workflowName, instanceId) => {
     if (fs.existsSync(processPath)) {
       processRaw = fs.readFileSync(processPath, 'utf-8')
     }
-    // 解析 process.md: frontmatter + mermaid + trace table
+    // 解析 process.md: frontmatter + mermaid
     let mermaid = ''
-    let trace = []
     const fmMatch = processRaw.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/)
     if (fmMatch) {
       const body = fmMatch[2]
       // 提取 mermaid 代码块
       const mermaidMatch = body.match(/```mermaid\n([\s\S]*?)```/)
       if (mermaidMatch) mermaid = mermaidMatch[1].trim()
-      // 解析执行轨迹表
-      const traceSection = body.split('## 执行轨迹')
-      if (traceSection.length > 1) {
-        const lines = traceSection[1].trim().split('\n')
-        for (const line of lines) {
-          if (!line.startsWith('|') || line.includes('---')) continue
-          const cells = line.split('|').map(s => s.trim())
-          if (cells.length < 6) continue
-          const num = cells[1]
-          if (!num || num === '#') continue
-          // 解析节点名和分支
-          let node = cells[3]
-          let branch = null
-          const branchMatch = node.match(/^(.+?)\((.+)\)$/)
-          if (branchMatch) {
-            node = branchMatch[1]
-            branch = branchMatch[2]
-          }
-          trace.push({
-            status: cells[2],
-            node,
-            invoke: cells[4],
-            branch,
-            time: cells[5],
-          })
-        }
-      }
     }
     // 解析 process.md frontmatter 获取节点状态信息
     let completedNodes = []
     let currentName = ''
     let wfStatus = 'unknown'
+    let wfStep = 0
+    let wfLoopCount = 0
+    let wfRetryCount = 0
     if (fmMatch) {
       const yaml = fmMatch[1]
       const cm = yaml.match(/^completed:\n([\s\S]*?)(?=\n[a-z]|\n$)/m)
@@ -605,6 +580,12 @@ ipcMain.handle('read-instance-detail', (_, workflowName, instanceId) => {
       if (cnm) currentName = cnm[1].trim()
       const stm = yaml.match(/^status:\s*(.+)/m)
       if (stm) wfStatus = stm[1].trim()
+      const spm = yaml.match(/^step:\s*(\d+)/m)
+      if (spm) wfStep = parseInt(spm[1])
+      const lpm = yaml.match(/^loop_count:\s*(\d+)/m)
+      if (lpm) wfLoopCount = parseInt(lpm[1])
+      const rpm = yaml.match(/^retry_count:\s*(\d+)/m)
+      if (rpm) wfRetryCount = parseInt(rpm[1])
     }
 
     // 读取工作流定义中的 flow.json（在 workflow 目录的 meta-data 下）
@@ -624,9 +605,34 @@ ipcMain.handle('read-instance-detail', (_, workflowName, instanceId) => {
     }
     // 读取 trace.jsonl
     let traceLog = ''
+    let trace = []
     const tracePath = path.join(instDir, 'trace', 'trace.jsonl')
     if (fs.existsSync(tracePath)) {
       traceLog = fs.readFileSync(tracePath, 'utf-8')
+      // 从 trace.jsonl 构建 timeline（复刻 Rust reconstruct_trace_from_jsonl）
+      // 按 (node, invoke) 去重 upsert：首次出现取 ts 作为执行时间，后续更新 status/branch
+      for (const line of traceLog.split('\n')) {
+        if (!line.trim()) continue
+        try {
+          const entry = JSON.parse(line)
+          if (!entry.node || !entry.invoke || !entry.status) continue
+          const existing = trace.find(e => e.node === entry.node && e.invoke === entry.invoke)
+          if (existing) {
+            existing.status = entry.status
+            if (entry.branch) existing.branch = entry.branch
+            if (entry.status === 'completed') existing.completedTime = entry.ts
+          } else {
+            trace.push({
+              status: entry.status,
+              node: entry.node,
+              invoke: entry.invoke,
+              branch: entry.branch || null,
+              time: entry.ts,
+              completedTime: null,
+            })
+          }
+        } catch (e) {}
+      }
     }
     // 读取所有产物（artifacts/{node}/{invoke}/detail.md）
     const artifacts = []
@@ -653,7 +659,7 @@ ipcMain.handle('read-instance-detail', (_, workflowName, instanceId) => {
     }
     // 按时间排序
     artifacts.sort((a, b) => a.invokeId.localeCompare(b.invokeId))
-    return { success: true, detail: { processRaw, mermaid, trace, artifacts, traceLog, instanceMd, flowData, completedNodes, currentName, wfStatus } }
+    return { success: true, detail: { processRaw, mermaid, trace, artifacts, traceLog, instanceMd, flowData, completedNodes, currentName, wfStatus, wfStep, wfLoopCount, wfRetryCount } }
   } catch (error) {
     console.error('读取实例详情失败:', error)
     return { success: false, error: String(error) }

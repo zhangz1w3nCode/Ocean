@@ -13,6 +13,9 @@ interface InstanceDetail {
   completedNodes: string[]
   currentName: string
   wfStatus: string
+  wfStep: number
+  wfLoopCount: number
+  wfRetryCount: number
 }
 
 interface WorkflowInstanceState {

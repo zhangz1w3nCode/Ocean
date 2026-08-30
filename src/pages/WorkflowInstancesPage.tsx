@@ -170,34 +170,69 @@ const DetailField: FC<{ icon: typeof Hash; label: string; children: React.ReactN
   </div>
 )
 
-const TraceTable: FC<{ trace: InstanceTraceEvent[] }> = ({ trace }) => (
+const typeLabels: Record<string, string> = { start: '开始', end: '结束', business: '业务', decision: '决策', process: '处理', local: '局部' }
+
+function formatDuration(start: string, end: string): string {
+  if (!start || !end) return '-'
+  const diff = new Date(end).getTime() - new Date(start).getTime()
+  if (isNaN(diff) || diff < 0) return '-'
+  if (diff < 1000) return `${diff}ms`
+  if (diff < 60000) return `${Math.round(diff / 1000)}s`
+  const m = Math.floor(diff / 60000)
+  const s = Math.round((diff % 60000) / 1000)
+  return `${m}m${s}s`
+}
+
+const TraceTable: FC<{ trace: InstanceTraceEvent[]; artifacts: InstanceArtifact[]; flowData: { nodes: any[]; edges: any[] } | null }> = ({ trace, artifacts, flowData }) => (
   <div className="overflow-x-auto">
     <table className="w-full text-xs">
       <thead>
         <tr className="text-macos-text-tertiary border-b border-gray-200">
-          <th className="text-left py-2 pr-4 font-medium w-8">#</th>
-          <th className="text-left py-2 pr-4 font-medium w-20">状态</th>
           <th className="text-left py-2 pr-4 font-medium">节点</th>
+          <th className="text-left py-2 pr-4 font-medium w-12">类型</th>
+          <th className="text-left py-2 pr-4 font-medium w-20">状态</th>
           <th className="text-left py-2 pr-4 font-medium w-32">执行ID</th>
-          <th className="text-left py-2 font-medium w-28">执行时间</th>
+          <th className="text-left py-2 pr-4 font-medium w-28">执行时间</th>
+          <th className="text-left py-2 pr-4 font-medium w-28">完成时间</th>
+          <th className="text-left py-2 pr-4 font-medium w-10">耗时</th>
+          <th className="text-left py-2 font-medium w-12">产物</th>
         </tr>
       </thead>
       <tbody>
-        {trace.map((evt, i) => (
+        {trace.map((evt, i) => {
+          const art = artifacts.find(a => a.nodeName === evt.node && a.invokeId === evt.invoke)
+          const flowNode = flowData?.nodes?.find(n => n.data?.label === evt.node)
+          const nodeType = flowNode ? (typeLabels[flowNode.type] || flowNode.type) : '-'
+          const duration = formatDuration(evt.time, evt.completedTime || '')
+          return (
           <tr key={i} className="border-b border-gray-100 last:border-0">
-            <td className="py-2 pr-4 text-macos-text-tertiary">{i + 1}</td>
-            <td className="py-2 pr-4">
-              <span className={`inline-block w-1.5 h-1.5 rounded-full mr-1.5 ${statusDotColors[evt.status] || statusDotColors.unknown}`} />
-              <span className="text-macos-text">{formatStatus(evt.status)}</span>
-            </td>
             <td className="py-2 pr-4 text-macos-text">
               {evt.node}
               {evt.branch && <span className="text-macos-text-tertiary ml-1">({evt.branch})</span>}
             </td>
+            <td className="py-2 pr-4 text-xs text-macos-text-tertiary">{nodeType}</td>
+            <td className="py-2 pr-4">
+              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${statusColors[evt.status] || statusColors.unknown}`}>
+                {formatStatus(evt.status)}
+              </span>
+            </td>
             <td className="py-2 font-mono text-macos-text-tertiary text-[10px] pr-4">{evt.invoke}</td>
-            <td className="py-2 text-xs text-macos-text-tertiary">{evt.time}</td>
+            <td className="py-2 text-xs text-macos-text-tertiary pr-4">{evt.time}</td>
+            <td className="py-2 text-xs text-macos-text-tertiary pr-4">{evt.completedTime || '-'}</td>
+            <td className="py-2 text-xs text-macos-text-tertiary pr-4">{duration}</td>
+            <td className="py-2">
+              {art ? (
+                <button onClick={() => {
+                  const inst = useWorkflowInstanceStore.getState().selectedInstance
+                  if (inst) useWorkflowInstanceStore.getState().selectArtifact(art)
+                }} className="text-xs text-blue-500 hover:text-blue-600 hover:underline cursor-pointer">查看</button>
+              ) : (
+                <span className="text-xs text-macos-text-tertiary">-</span>
+              )}
+            </td>
           </tr>
-        ))}
+          )
+        })}
       </tbody>
     </table>
   </div>
@@ -347,10 +382,10 @@ const InstanceDetail: FC = () => {
                   <DetailField icon={Hash} label="实例ID"><span className="font-mono text-xs">{inst.instanceId}</span></DetailField>
                   <DetailField icon={Clock} label="创建">{formatRelativeTime(inst.createdAt)}</DetailField>
                   <DetailField icon={Terminal} label="输入">{inst.initialInput || '-'}</DetailField>
-                  <DetailField icon={ListOrdered} label="步骤">{inst.step ?? 0}</DetailField>
-                  <DetailField icon={Repeat} label="循环">{inst.loopCount ?? 0}</DetailField>
-                  <DetailField icon={RotateCcw} label="重试">{inst.retryCount ?? 0}</DetailField>
-                  <DetailField icon={Files} label="产物">{inst.artifactCount}</DetailField>
+                  <DetailField icon={ListOrdered} label="步骤">{detail.wfStep ?? 0}</DetailField>
+                  <DetailField icon={Repeat} label="循环">{detail.wfLoopCount ?? 0}</DetailField>
+                  <DetailField icon={RotateCcw} label="重试">{detail.wfRetryCount ?? 0}</DetailField>
+                  <DetailField icon={Files} label="产物">{detail.artifacts.length}</DetailField>
                 </div>
               </div>
 
@@ -380,7 +415,7 @@ const InstanceDetail: FC = () => {
               {detail.trace.length > 0 && (
                 <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
                   <div className="text-sm font-bold text-macos-text mb-3">时间线</div>
-                  <TraceTable trace={detail.trace} />
+                  <TraceTable trace={detail.trace} artifacts={detail.artifacts} flowData={detail.flowData} />
                 </div>
               )}
 

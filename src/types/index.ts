@@ -417,6 +417,7 @@ export interface InstanceTraceEvent {
   invoke: string
   branch?: string
   time: string
+  completedTime?: string | null
 }
 
 export interface InstanceDetail {
