@@ -386,3 +386,45 @@ export interface CreateSkillInput {
   references?: { name: string; content: string }[]
   examples?: { name: string; content: string }[]
 }
+
+// 工作流实例
+export interface WorkflowInstance {
+  instanceId: string
+  workflowName: string
+  createdAt: string
+  updatedAt: string
+  status: string
+  initialInput?: string
+  currentName?: string
+  step?: number
+  loopCount?: number
+  retryCount?: number
+  lastNode?: string
+  completedNodes?: string[]
+  artifactCount: number
+}
+
+export interface InstanceArtifact {
+  nodeName: string
+  invokeId: string
+  content: string
+  updatedAt: string
+}
+
+export interface InstanceTraceEvent {
+  status: string
+  node: string
+  invoke: string
+  branch?: string
+  time: string
+  completedTime?: string | null
+}
+
+export interface InstanceDetail {
+  processRaw: string
+  mermaid: string
+  trace: InstanceTraceEvent[]
+  artifacts: InstanceArtifact[]
+  traceLog: string
+  instanceMd: string
+}

@@ -4,8 +4,11 @@ import type { AppConfig } from '../types'
 
 export type PageType = 'project' | 'agents' | 'workflows' | 'nodes' | 'resources' | 'knowledges' | 'skills' | 'settings'
 
+// 工作流区域二级导航子页面
+export type WorkflowSubPage = 'nodes' | 'workflows' | 'instances' | 'settings'
+
 // 默认导航顺序
-const DEFAULT_NAV_ORDER: PageType[] = ['agents', 'skills', 'knowledges', 'workflows', 'nodes', 'resources', 'settings']
+const DEFAULT_NAV_ORDER: PageType[] = ['agents', 'skills', 'knowledges', 'workflows', 'resources', 'settings']
 
 interface AppState {
   currentPage: PageType
@@ -27,6 +30,9 @@ interface AppState {
   isSidebarCollapsed: boolean
   toggleSidebar: () => void
   initSidebarCollapsed: (collapsed?: boolean) => void
+  // 工作流二级导航
+  workflowSubPage: WorkflowSubPage
+  setWorkflowSubPage: (page: WorkflowSubPage) => void
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -102,4 +108,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   initSidebarCollapsed: (collapsed) => {
     set({ isSidebarCollapsed: !!collapsed })
   },
+  // 工作流二级导航 - 默认展示工作流列表
+  workflowSubPage: 'workflows',
+  setWorkflowSubPage: (page) => set({ workflowSubPage: page }),
 }))
