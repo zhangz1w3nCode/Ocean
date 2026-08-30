@@ -3,6 +3,8 @@ const { app, BrowserWindow, ipcMain, dialog } = require('electron')
 const path = require('path')
 const fs = require('fs')
 const crypto = require('crypto')
+const child_process = require('child_process')
+const os = require('os')
 
 let mainWindow = null
 let currentProjectPath = null  // 当前项目路径
@@ -66,6 +68,14 @@ const getProjectRoot = () => {
 // 设置项目路径
 const setProjectPath = (projectPath) => {
   currentProjectPath = projectPath
+  // 同步更新 CLI 默认 root 配置，wrapper 脚本会读取
+  try {
+    const cliRootDir = path.join(os.homedir(), '.ocean')
+    fs.mkdirSync(cliRootDir, { recursive: true })
+    fs.writeFileSync(path.join(cliRootDir, 'cli-root'), projectPath)
+  } catch {
+    // 忽略写入失败
+  }
   // 迁移数据
   migrateDataDir(projectPath)
 }
@@ -1410,6 +1420,154 @@ ipcMain.handle('test-executable-path', async (_, filePath) => {
     }
   }
 })
+
+/**
+ * 检查 workflow-cli 是否已安装
+ */
+ipcMain.handle('check-cli-installed', async () => {
+  const homeDir = os.homedir()
+  const wrapperPath = path.join(homeDir, '.ocean', 'bin', 'workflow')
+  const wrapperExists = fs.existsSync(wrapperPath)
+
+  // 检查 workflow 命令是否在 PATH 中可用
+  let onPath = false
+  let commandPath = null
+  try {
+    commandPath = child_process.execSync('command -v workflow', { encoding: 'utf-8' }).trim()
+    onPath = true
+  } catch {
+    // not on PATH
+  }
+
+  // 验证 wrapper 是否可正常运行——只要有输出就说明 wrapper 可执行
+  // root 用当前打开的项目路径，没有则回退 homeDir
+  let working = false
+  if (onPath) {
+    const checkRoot = currentProjectPath || homeDir
+    try {
+      const out = child_process.execSync(`workflow list --root "${checkRoot}"`, { encoding: 'utf-8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] })
+      // 有 stdout 输出即认为可用（空列表也是有效输出）
+      working = out !== undefined
+    } catch (e) {
+      // 有 stderr 输出也说明 wrapper 能跑、node 能找到、workflow.js 能加载
+      working = e.stderr ? e.stderr.length > 0 : false
+    }
+  }
+
+  return {
+    installed: onPath,
+    working,
+    commandPath,
+    wrapperPath: wrapperExists ? wrapperPath : null,
+  }
+})
+
+/**
+ * 安装 workflow-cli wrapper 脚本到 ~/.ocean/bin/workflow
+ */
+ipcMain.handle('install-cli', async () => {
+  const homeDir = os.homedir()
+  const workflowJsPath = path.join(__dirname, 'dist', 'bin', 'workflow.js')
+  if (!fs.existsSync(workflowJsPath)) {
+    return { success: false, error: `workflow.js 未找到: ${workflowJsPath}，请先编译 (tsc -p electron/tsconfig.json)` }
+  }
+
+  // 解析 node 绝对路径（NVM 安装的 node 不在 Electron 默认 PATH 中）
+  let nodePath = 'node'
+  try {
+    nodePath = child_process.execSync('which node', { encoding: 'utf-8' }).trim()
+  } catch {
+    // fallback: 尝试 nvm 默认路径
+    const nvmNode = path.join(homeDir, '.nvm', 'versions', 'node')
+    if (fs.existsSync(nvmNode)) {
+      const versions = fs.readdirSync(nvmNode)
+      if (versions.length > 0) {
+        nodePath = path.join(nvmNode, versions[0], 'bin', 'node')
+      }
+    }
+  }
+
+  // 写入当前项目路径作为 CLI 默认 root
+  if (currentProjectPath) {
+    try {
+      fs.mkdirSync(path.join(homeDir, '.ocean'), { recursive: true })
+      fs.writeFileSync(path.join(homeDir, '.ocean', 'cli-root'), currentProjectPath)
+    } catch {
+      // 忽略
+    }
+  }
+
+  const wrapperContent = `#!/bin/sh\nexec "${nodePath}" "${workflowJsPath}" "$@"\n`
+
+  // 1. 尝试 /usr/local/bin（macOS 默认在 PATH 上）
+  const globalBin = '/usr/local/bin'
+  if (fs.existsSync(globalBin)) {
+    try {
+      fs.writeFileSync(path.join(globalBin, 'workflow'), wrapperContent)
+      fs.chmodSync(path.join(globalBin, 'workflow'), 0o755)
+      return { success: true, path: path.join(globalBin, 'workflow'), note: '已全局安装，可直接使用 workflow 命令' }
+    } catch {
+      // 权限不足，尝试下一个
+    }
+  }
+
+  // 2. 尝试 /opt/homebrew/bin（Apple Silicon Homebrew）
+  const homebrewBin = '/opt/homebrew/bin'
+  if (fs.existsSync(homebrewBin)) {
+    try {
+      fs.writeFileSync(path.join(homebrewBin, 'workflow'), wrapperContent)
+      fs.chmodSync(path.join(homebrewBin, 'workflow'), 0o755)
+      return { success: true, path: path.join(homebrewBin, 'workflow'), note: '已全局安装，可直接使用 workflow 命令' }
+    } catch {
+      // 权限不足，尝试下一个
+    }
+  }
+
+  // 3. 回退到 ~/.ocean/bin 并自动写入 .zshrc / .bashrc
+  const binDir = path.join(homeDir, '.ocean', 'bin')
+  const wrapperPath = path.join(binDir, 'workflow')
+  try {
+    fs.mkdirSync(binDir, { recursive: true })
+    fs.writeFileSync(wrapperPath, wrapperContent)
+    fs.chmodSync(wrapperPath, 0o755)
+
+    // 自动添加 PATH 到 shell 配置
+    const zshrc = path.join(homeDir, '.zshrc')
+    const bashrc = path.join(homeDir, '.bashrc')
+    const exportLine = 'export PATH="$HOME/.ocean/bin:$PATH"'
+    let addedToShell = false
+
+    for (const rcFile of [zshrc, bashrc]) {
+      if (fs.existsSync(rcFile)) {
+        const content = fs.readFileSync(rcFile, 'utf-8')
+        if (!content.includes('.ocean/bin')) {
+          fs.appendFileSync(rcFile, `\n# Ocean workflow-cli\n${exportLine}\n`)
+          addedToShell = true
+        } else {
+          addedToShell = true // 已存在
+        }
+        break
+      }
+    }
+
+    // 如果没有 .zshrc 也没有 .bashrc，创建 .zshrc
+    if (!addedToShell) {
+      fs.writeFileSync(zshrc, `# Ocean workflow-cli\n${exportLine}\n`)
+      addedToShell = true
+    }
+
+    return {
+      success: true,
+      path: wrapperPath,
+      note: addedToShell
+        ? '已安装并自动配置 PATH，请重新打开终端后使用 workflow 命令'
+        : '已安装，请将 ~/.ocean/bin 添加到 PATH',
+    }
+  } catch (error) {
+    return { success: false, error: error.message || String(error) }
+  }
+})
+
 /**
  * 调用 LLM API (使用原生 fetch)
  */
