@@ -22,6 +22,15 @@ const statusColors: Record<string, string> = {
   unknown: 'bg-gray-100 text-gray-500',
 }
 
+const typeColors: Record<string, string> = {
+  start: 'bg-green-50 text-green-600',
+  end: 'bg-red-50 text-red-600',
+  process: 'bg-blue-50 text-blue-600',
+  decision: 'bg-amber-50 text-amber-600',
+  business: 'bg-purple-50 text-purple-600',
+  local: 'bg-gray-100 text-gray-500',
+}
+
 const statusDotColors: Record<string, string> = {
   completed: 'bg-green-500',
   executing: 'bg-blue-500',
@@ -136,7 +145,7 @@ const InstanceList: FC = () => {
                   {inst.initialInput || '-'}
                 </span>
                 <div className="flex-1 min-w-0 flex justify-center">
-                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${statusColors[inst.status] || statusColors.unknown}`}>
+                  <span className={`text-xs px-2 py-0.5 rounded-md font-medium ${statusColors[inst.status] || statusColors.unknown}`}>
                     {formatStatus(inst.status)}
                   </span>
                 </div>
@@ -183,19 +192,55 @@ function formatDuration(start: string, end: string): string {
   return `${m}m${s}s`
 }
 
-const TraceTable: FC<{ trace: InstanceTraceEvent[]; artifacts: InstanceArtifact[]; flowData: { nodes: any[]; edges: any[] } | null }> = ({ trace, artifacts, flowData }) => (
+function formatDurationMs(start: string, end: string): number {
+  if (!start || !end) return 0
+  const diff = new Date(end).getTime() - new Date(start).getTime()
+  return isNaN(diff) || diff < 0 ? 0 : diff
+}
+
+const TraceTable: FC<{ trace: InstanceTraceEvent[]; artifacts: InstanceArtifact[]; flowData: { nodes: any[]; edges: any[] } | null }> = ({ trace, artifacts, flowData }) => {
+  const [sortCol, setSortCol] = useState<'time' | 'duration'>('time')
+  const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('asc')
+
+  const handleSort = (col: 'time' | 'duration') => {
+    if (sortCol === col) {
+      setSortOrder(sortOrder === 'desc' ? 'asc' : 'desc')
+    } else {
+      setSortCol(col)
+      setSortOrder('desc')
+    }
+  }
+
+  const sorted = [...trace].sort((a, b) => {
+    if (!sortCol) return 0
+    if (sortCol === 'time') {
+      const cmp = new Date(a.time).getTime() - new Date(b.time).getTime()
+      return sortOrder === 'desc' ? -cmp : cmp
+    }
+    if (sortCol === 'duration') {
+      const da = formatDurationMs(a.time, a.completedTime || '')
+      const db = formatDurationMs(b.time, b.completedTime || '')
+      const cmp = da - db
+      return sortOrder === 'desc' ? -cmp : cmp
+    }
+    return 0
+  })
+
+  const sortIcon = (col: 'time' | 'duration') => sortCol === col ? (sortOrder === 'desc' ? <ChevronDown size={12} /> : <ChevronUp size={12} />) : null
+
+  return (
   <div className="w-full">
     <div className="flex items-center px-3 py-2.5 gap-4 text-xs font-medium text-macos-text-tertiary border-b border-gray-100">
       <span className="flex-1 min-w-0 text-center">节点</span>
       <span className="flex-1 min-w-0 text-center">类型</span>
       <span className="flex-1 min-w-0 text-center">状态</span>
       <span className="flex-1 min-w-0 text-center">执行ID</span>
-      <span className="flex-1 min-w-0 text-center">执行时间</span>
+      <button onClick={() => handleSort('time')} className="flex-1 min-w-0 flex items-center justify-center gap-1 cursor-pointer hover:text-macos-text transition-colors">执行时间{sortIcon('time')}</button>
       <span className="flex-1 min-w-0 text-center">完成时间</span>
-      <span className="flex-1 min-w-0 text-center">耗时</span>
+      <button onClick={() => handleSort('duration')} className="flex-1 min-w-0 flex items-center justify-center gap-1 cursor-pointer hover:text-macos-text transition-colors">耗时{sortIcon('duration')}</button>
       <span className="flex-1 min-w-0 text-center">产物</span>
     </div>
-    {trace.map((evt, i) => {
+    {sorted.map((evt, i) => {
       const art = artifacts.find(a => a.nodeName === evt.node && a.invokeId === evt.invoke)
       const flowNode = flowData?.nodes?.find(n => n.data?.label === evt.node)
       const nodeType = flowNode ? (typeLabels[flowNode.type] || flowNode.type) : '-'
@@ -206,9 +251,15 @@ const TraceTable: FC<{ trace: InstanceTraceEvent[]; artifacts: InstanceArtifact[
             {evt.node}
             {evt.branch && <span className="text-macos-text-tertiary ml-1">({evt.branch})</span>}
           </span>
-          <span className="flex-1 min-w-0 text-xs text-macos-text-tertiary truncate text-center">{nodeType}</span>
           <div className="flex-1 min-w-0 flex justify-center">
-            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${statusColors[evt.status] || statusColors.unknown}`}>
+            {flowNode ? (
+              <span className={`text-xs px-2 py-0.5 rounded-md font-medium ${typeColors[flowNode.type] || 'bg-gray-100 text-gray-500'}`}>{nodeType}</span>
+            ) : (
+              <span className="text-xs text-macos-text-tertiary">-</span>
+            )}
+          </div>
+          <div className="flex-1 min-w-0 flex justify-center">
+            <span className={`text-xs px-2 py-0.5 rounded-md font-medium ${statusColors[evt.status] || statusColors.unknown}`}>
               {formatStatus(evt.status)}
             </span>
           </div>
@@ -229,7 +280,8 @@ const TraceTable: FC<{ trace: InstanceTraceEvent[]; artifacts: InstanceArtifact[
       )
     })}
   </div>
-)
+  )
+}
 
 const ArtifactList: FC<{
   artifacts: InstanceArtifact[]
@@ -370,7 +422,7 @@ const InstanceDetail: FC = () => {
               <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
                 <div className="text-sm font-bold text-macos-text mb-3">基本信息</div>
                 <div className="flex flex-col gap-2.5">
-                  <DetailField icon={CircleDot} label="状态"><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${statusColors[detail?.wfStatus || inst.status] || statusColors.unknown}`}>{formatStatus(detail?.wfStatus || inst.status)}</span></DetailField>
+                  <DetailField icon={CircleDot} label="状态"><span className={`text-xs px-2 py-0.5 rounded-md font-medium ${statusColors[detail?.wfStatus || inst.status] || statusColors.unknown}`}>{formatStatus(detail?.wfStatus || inst.status)}</span></DetailField>
                   <DetailField icon={GitBranch} label="工作流">{inst.workflowName}</DetailField>
                   <DetailField icon={Hash} label="实例ID"><span className="font-mono text-xs">{inst.instanceId}</span></DetailField>
                   <DetailField icon={Clock} label="创建">{formatRelativeTime(inst.createdAt)}</DetailField>
