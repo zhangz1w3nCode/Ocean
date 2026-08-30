@@ -5,7 +5,7 @@ import { useAppStore, type WorkflowSubPage } from '../../stores/appStore'
 
 const subNavItems: { id: WorkflowSubPage; label: string; icon: typeof Box }[] = [
   { id: 'nodes', label: '节点', icon: Box },
-  { id: 'workflows', label: '定义', icon: FileCode2 },
+  { id: 'workflows', label: '设计', icon: FileCode2 },
   { id: 'instances', label: '实例', icon: Activity },
   { id: 'settings', label: '设置', icon: Settings },
 ]
