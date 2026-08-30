@@ -546,7 +546,16 @@ ipcMain.handle('read-instance-file', (_, workflowName, instanceId, fileName) => 
 // 读取实例完整详情（process.md + instance.md + trace.jsonl + artifacts 全部内容）
 ipcMain.handle('read-instance-detail', (_, workflowName, instanceId) => {
   try {
+    // 防止路径穿越
+    if (workflowName.includes('..') || instanceId.includes('..')) {
+      return { success: false, error: 'Invalid path' }
+    }
     const instDir = path.join(getWorkflowsDir(), workflowName, 'instance', instanceId)
+    // 二次校验：解析后路径必须位于工作流目录下
+    const resolvedInstDir = path.resolve(instDir)
+    if (!resolvedInstDir.startsWith(path.resolve(getWorkflowsDir()) + path.sep)) {
+      return { success: false, error: 'Invalid path' }
+    }
     if (!fs.existsSync(instDir)) {
       return { success: false, error: 'Instance not found' }
     }
