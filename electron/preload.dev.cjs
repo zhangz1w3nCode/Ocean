@@ -94,6 +94,9 @@ const electronAPI = {
   testLLMConnection: (provider) => ipcRenderer.invoke('test-llm-connection', provider),
   testExecutablePath: (filePath) => ipcRenderer.invoke('test-executable-path', filePath),
 
+  // workflow-cli 安装管理 API
+  checkCliInstalled: () => ipcRenderer.invoke('check-cli-installed'),
+  installCli: () => ipcRenderer.invoke('install-cli'),
   // LLM 调用 API (绑过 CORS)
   callLLMApi: (provider, prompt, model) => ipcRenderer.invoke('call-llm-api', { provider, prompt, model }),
   // LLM 配置文件 API
