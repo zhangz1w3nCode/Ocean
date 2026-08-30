@@ -314,6 +314,7 @@ const InstanceDetail: FC = () => {
   const [isFlowFullscreen, setIsFlowFullscreen] = useState(false)
   const [isContextFullscreen, setIsContextFullscreen] = useState(false)
   const [diffData, setDiffData] = useState<{ nodeName: string; pairs: { oldContent: string; newContent: string; fromInvoke: string; toInvoke: string }[] } | null>(null)
+  const [artifactSearch, setArtifactSearch] = useState('')
   const [flowPos, setFlowPos] = useState({ x: Math.max(16, (window.innerWidth - 1000) / 2), y: 60 })
   const [flowDim, setFlowDim] = useState({ width: Math.min(1000, window.innerWidth - 32), height: Math.min(600, window.innerHeight - 80) })
   const [isFlowMax, setIsFlowMax] = useState(false)
@@ -489,26 +490,50 @@ const InstanceDetail: FC = () => {
               {/* 产物 */}
               {detail.artifacts.length > 0 && (
                 <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 col-span-2">
-                  <div className="text-sm font-bold text-macos-text mb-3">产物 ({detail.artifacts.length})</div>
-                  <div className="flex flex-col gap-2">
+                  <div className="flex items-center justify-between mb-4">
+                    <span className="text-sm font-bold text-macos-text">产物 ({detail.artifacts.length})</span>
+                    <div className="relative">
+                      <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-macos-text-tertiary" />
+                      <input
+                        type="text"
+                        placeholder="搜索产物内容"
+                        value={artifactSearch}
+                        onChange={(e) => setArtifactSearch(e.target.value)}
+                        className="pl-8 pr-3 py-1.5 w-48 text-xs bg-white border border-gray-200 rounded-lg placeholder:text-macos-text-tertiary focus:outline-none hover:border-gray-300 focus:border-gray-400 transition-[border-color] duration-200"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                     {Object.entries(
                       detail.artifacts.reduce((acc, art) => {
                         if (!acc[art.nodeName]) acc[art.nodeName] = []
                         acc[art.nodeName].push(art)
                         return acc
                       }, {} as Record<string, InstanceArtifact[]>)
-                    ).map(([nodeName, arts]) => (
-                      <div key={nodeName} className="flex items-center px-3 py-2.5 gap-4 border-b border-gray-50 last:border-0">
-                        <span className="flex-1 min-w-0 text-sm text-macos-text truncate text-center">{nodeName}</span>
-                        <span className="flex-1 min-w-0 text-xs text-macos-text-tertiary text-center">{arts.length} 个产物</span>
-                        <div className="flex-1 min-w-0 flex justify-center gap-2">
-                          {arts.map((art, i) => (
-                            <button
-                              key={i}
-                              onClick={() => selectArtifact(art)}
-                              className="text-xs text-blue-500 hover:text-blue-600 hover:underline cursor-pointer"
-                            >{art.invokeId.replace('invoke-', '').slice(-8)}</button>
-                          ))}
+                    ).filter(([nodeName, arts]) => {
+                      if (!artifactSearch) return true
+                      const q = artifactSearch.toLowerCase()
+                      return nodeName.toLowerCase().includes(q) || arts.some(a => a.content.toLowerCase().includes(q))
+                    }).map(([nodeName, arts]) => {
+                      const flowNode = detail.flowData?.nodes?.find(n => n.data?.label === nodeName)
+                      const nodeType = flowNode ? (typeLabels[flowNode.type] || flowNode.type) : '-'
+                      const isMatched = artifactSearch && (nodeName.toLowerCase().includes(artifactSearch.toLowerCase()) || arts.some(a => a.content.toLowerCase().includes(artifactSearch.toLowerCase())))
+                      return (
+                        <div key={nodeName} className={`rounded-lg border p-3 transition-colors ${isMatched ? 'border-blue-300 bg-blue-50/30' : 'border-gray-100 hover:border-gray-200 hover:bg-gray-50/50'}`}>
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-sm font-medium text-macos-text truncate">{nodeName}</span>
+                            {flowNode && <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-medium ${typeColors[flowNode.type] || 'bg-gray-100 text-gray-500'}`}>{nodeType}</span>}
+                          </div>
+                          <div className="text-xs text-macos-text-tertiary mb-2">{arts.length} 个产物</div>
+                          <div className="flex flex-wrap gap-1.5">
+                            {arts.map((art, i) => (
+                              <button
+                                key={i}
+                                onClick={() => selectArtifact(art)}
+                                className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-gray-100 text-macos-text-secondary hover:bg-blue-100 hover:text-blue-600 transition-colors cursor-pointer"
+                              >{art.invokeId.replace('invoke-', '').slice(-8)}</button>
+                            ))}
+                          </div>
                           {arts.length > 1 && (
                             <button
                               onClick={() => {
@@ -518,12 +543,12 @@ const InstanceDetail: FC = () => {
                                 }
                                 setDiffData({ nodeName, pairs })
                               }}
-                              className="text-xs text-amber-500 hover:text-amber-600 hover:underline cursor-pointer ml-2"
-                            >对比</button>
+                              className="mt-2 text-xs text-amber-500 hover:text-amber-600 hover:underline cursor-pointer"
+                            >对比 {arts.length} 次执行</button>
                           )}
                         </div>
-                      </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 </div>
               )}
