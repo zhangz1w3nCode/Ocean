@@ -21,6 +21,13 @@ const electronAPI = {
   deleteWorkflowFolder: (name) => ipcRenderer.invoke('delete-workflow-folder', name),
   renameWorkflowFolder: (oldName, newName) => ipcRenderer.invoke('rename-workflow-folder', oldName, newName),
 
+  // 工作流实例操作 API
+  listWorkflowInstances: () => ipcRenderer.invoke('list-workflow-instances'),
+  readInstanceFile: (workflowName, instanceId, fileName) =>
+    ipcRenderer.invoke('read-instance-file', workflowName, instanceId, fileName),
+  readInstanceDetail: (workflowName, instanceId) =>
+    ipcRenderer.invoke('read-instance-detail', workflowName, instanceId),
+
   // 节点文件数据持久化（Markdown 格式，以名称命名文件）
   saveNodeFile: (name, content) => ipcRenderer.invoke('save-node-file', name, content),
   loadNodeFile: (name) => ipcRenderer.invoke('load-node-file', name),
