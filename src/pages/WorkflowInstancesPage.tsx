@@ -3,10 +3,11 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Search, RefreshCw, Activity, FileText, Package, ChevronRight, ChevronLeft, Clock, Hash, GitBranch, Repeat, RotateCcw, Maximize2, X, Radio, ChevronUp, ChevronDown, CircleDot, ListOrdered, Files, Terminal } from 'lucide-react'
 import { Button, Dropdown, MarkdownRenderer, Modal } from '../components/ui'
-import { InstanceFlowGraph } from '../components/workflow'
+import ReactDiffViewer from 'react-diff-viewer-continued'
 import { useWorkflowInstanceStore } from '../stores/workflowInstanceStore'
 import type { WorkflowInstance, InstanceTraceEvent, InstanceArtifact } from '../types'
 import { formatStatus, formatRelativeTime } from '../utils/format'
+import { InstanceFlowGraph } from '../components/workflow'
 
 type ResizeDirection = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw'
 const MIN_W = 600, MIN_H = 300
@@ -198,6 +199,7 @@ function formatDurationMs(start: string, end: string): number {
   return isNaN(diff) || diff < 0 ? 0 : diff
 }
 
+
 const TraceTable: FC<{ trace: InstanceTraceEvent[]; artifacts: InstanceArtifact[]; flowData: { nodes: any[]; edges: any[] } | null }> = ({ trace, artifacts, flowData }) => {
   const [sortCol, setSortCol] = useState<'time' | 'duration'>('time')
   const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('asc')
@@ -311,6 +313,7 @@ const InstanceDetail: FC = () => {
   const { selectedInstance, detail, isLoadingDetail, selectedArtifact, selectInstance, selectArtifact, clearDetail, isLiveRefresh, startLiveRefresh, stopLiveRefresh } = useWorkflowInstanceStore()
   const [isFlowFullscreen, setIsFlowFullscreen] = useState(false)
   const [isContextFullscreen, setIsContextFullscreen] = useState(false)
+  const [diffData, setDiffData] = useState<{ nodeName: string; pairs: { oldContent: string; newContent: string; fromInvoke: string; toInvoke: string }[] } | null>(null)
   const [flowPos, setFlowPos] = useState({ x: Math.max(16, (window.innerWidth - 1000) / 2), y: 60 })
   const [flowDim, setFlowDim] = useState({ width: Math.min(1000, window.innerWidth - 32), height: Math.min(600, window.innerHeight - 80) })
   const [isFlowMax, setIsFlowMax] = useState(false)
@@ -483,6 +486,48 @@ const InstanceDetail: FC = () => {
                 </div>
               )}
 
+              {/* 产物 */}
+              {detail.artifacts.length > 0 && (
+                <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 col-span-2">
+                  <div className="text-sm font-bold text-macos-text mb-3">产物 ({detail.artifacts.length})</div>
+                  <div className="flex flex-col gap-2">
+                    {Object.entries(
+                      detail.artifacts.reduce((acc, art) => {
+                        if (!acc[art.nodeName]) acc[art.nodeName] = []
+                        acc[art.nodeName].push(art)
+                        return acc
+                      }, {} as Record<string, InstanceArtifact[]>)
+                    ).map(([nodeName, arts]) => (
+                      <div key={nodeName} className="flex items-center px-3 py-2.5 gap-4 border-b border-gray-50 last:border-0">
+                        <span className="flex-1 min-w-0 text-sm text-macos-text truncate text-center">{nodeName}</span>
+                        <span className="flex-1 min-w-0 text-xs text-macos-text-tertiary text-center">{arts.length} 个产物</span>
+                        <div className="flex-1 min-w-0 flex justify-center gap-2">
+                          {arts.map((art, i) => (
+                            <button
+                              key={i}
+                              onClick={() => selectArtifact(art)}
+                              className="text-xs text-blue-500 hover:text-blue-600 hover:underline cursor-pointer"
+                            >{art.invokeId.replace('invoke-', '').slice(-8)}</button>
+                          ))}
+                          {arts.length > 1 && (
+                            <button
+                              onClick={() => {
+                                const pairs: { oldContent: string; newContent: string; fromInvoke: string; toInvoke: string }[] = []
+                                for (let i = 1; i < arts.length; i++) {
+                                  pairs.push({ oldContent: arts[i - 1].content, newContent: arts[i].content, fromInvoke: arts[i - 1].invokeId, toInvoke: arts[i].invokeId })
+                                }
+                                setDiffData({ nodeName, pairs })
+                              }}
+                              className="text-xs text-amber-500 hover:text-amber-600 hover:underline cursor-pointer ml-2"
+                            >对比</button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* 选中产物弹框 — 复用项目 Modal 组件（拖拽/缩放/双击全屏） */}
               {selectedArtifact && (
                 <Modal
@@ -498,6 +543,36 @@ const InstanceDetail: FC = () => {
                   </div>
                   <div className="flex-1 min-h-0 overflow-y-auto">
                     <MarkdownRenderer content={selectedArtifact.content} className="text-sm" />
+                  </div>
+                </Modal>
+              )}
+
+              {/* 产物 diff 弹框 */}
+              {diffData && (
+                <Modal
+                  isOpen={true}
+                  onClose={() => setDiffData(null)}
+                  title={`产物对比 - ${diffData.nodeName}`}
+                  size="xl"
+                  layoutKey="instance-diff"
+                  persistLayout
+                >
+                  <div className="flex flex-col gap-4">
+                    {diffData.pairs.map((pair, i) => (
+                      <div key={i}>
+                        <div className="text-xs text-macos-text-tertiary mb-2 pb-1 border-b border-gray-100">
+                          {pair.fromInvoke.replace('invoke-', '')} → {pair.toInvoke.replace('invoke-', '')}
+                        </div>
+                        <ReactDiffViewer
+                          oldValue={pair.oldContent}
+                          newValue={pair.newContent}
+                          splitView={true}
+                          useDarkTheme={false}
+                          hideLineNumbers={false}
+                          styles={{ contentText: { fontSize: '12px', fontFamily: 'monospace' } }}
+                        />
+                      </div>
+                    ))}
                   </div>
                 </Modal>
               )}
