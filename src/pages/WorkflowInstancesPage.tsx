@@ -184,57 +184,50 @@ function formatDuration(start: string, end: string): string {
 }
 
 const TraceTable: FC<{ trace: InstanceTraceEvent[]; artifacts: InstanceArtifact[]; flowData: { nodes: any[]; edges: any[] } | null }> = ({ trace, artifacts, flowData }) => (
-  <div className="overflow-x-auto">
-    <table className="w-full text-xs">
-      <thead>
-        <tr className="text-macos-text-tertiary border-b border-gray-200">
-          <th className="text-left py-2 pr-4 font-medium">节点</th>
-          <th className="text-left py-2 pr-4 font-medium w-12">类型</th>
-          <th className="text-left py-2 pr-4 font-medium w-20">状态</th>
-          <th className="text-left py-2 pr-4 font-medium w-32">执行ID</th>
-          <th className="text-left py-2 pr-4 font-medium w-28">执行时间</th>
-          <th className="text-left py-2 pr-4 font-medium w-28">完成时间</th>
-          <th className="text-left py-2 pr-4 font-medium w-10">耗时</th>
-          <th className="text-left py-2 font-medium w-12">产物</th>
-        </tr>
-      </thead>
-      <tbody>
-        {trace.map((evt, i) => {
-          const art = artifacts.find(a => a.nodeName === evt.node && a.invokeId === evt.invoke)
-          const flowNode = flowData?.nodes?.find(n => n.data?.label === evt.node)
-          const nodeType = flowNode ? (typeLabels[flowNode.type] || flowNode.type) : '-'
-          const duration = formatDuration(evt.time, evt.completedTime || '')
-          return (
-          <tr key={i} className="border-b border-gray-100 last:border-0">
-            <td className="py-2 pr-4 text-macos-text">
-              {evt.node}
-              {evt.branch && <span className="text-macos-text-tertiary ml-1">({evt.branch})</span>}
-            </td>
-            <td className="py-2 pr-4 text-xs text-macos-text-tertiary">{nodeType}</td>
-            <td className="py-2 pr-4">
-              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${statusColors[evt.status] || statusColors.unknown}`}>
-                {formatStatus(evt.status)}
-              </span>
-            </td>
-            <td className="py-2 font-mono text-macos-text-tertiary text-[10px] pr-4">{evt.invoke}</td>
-            <td className="py-2 text-xs text-macos-text-tertiary pr-4">{evt.time}</td>
-            <td className="py-2 text-xs text-macos-text-tertiary pr-4">{evt.completedTime || '-'}</td>
-            <td className="py-2 text-xs text-macos-text-tertiary pr-4">{duration}</td>
-            <td className="py-2">
-              {art ? (
-                <button onClick={() => {
-                  const inst = useWorkflowInstanceStore.getState().selectedInstance
-                  if (inst) useWorkflowInstanceStore.getState().selectArtifact(art)
-                }} className="text-xs text-blue-500 hover:text-blue-600 hover:underline cursor-pointer">查看</button>
-              ) : (
-                <span className="text-xs text-macos-text-tertiary">-</span>
-              )}
-            </td>
-          </tr>
-          )
-        })}
-      </tbody>
-    </table>
+  <div className="w-full">
+    <div className="flex items-center px-3 py-2.5 gap-4 text-xs font-medium text-macos-text-tertiary border-b border-gray-100">
+      <span className="flex-1 min-w-0 text-center">节点</span>
+      <span className="flex-1 min-w-0 text-center">类型</span>
+      <span className="flex-1 min-w-0 text-center">状态</span>
+      <span className="flex-1 min-w-0 text-center">执行ID</span>
+      <span className="flex-1 min-w-0 text-center">执行时间</span>
+      <span className="flex-1 min-w-0 text-center">完成时间</span>
+      <span className="flex-1 min-w-0 text-center">耗时</span>
+      <span className="flex-1 min-w-0 text-center">产物</span>
+    </div>
+    {trace.map((evt, i) => {
+      const art = artifacts.find(a => a.nodeName === evt.node && a.invokeId === evt.invoke)
+      const flowNode = flowData?.nodes?.find(n => n.data?.label === evt.node)
+      const nodeType = flowNode ? (typeLabels[flowNode.type] || flowNode.type) : '-'
+      const duration = formatDuration(evt.time, evt.completedTime || '')
+      return (
+        <div key={i} className="flex items-center px-3 py-3 gap-4 border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
+          <span className="flex-1 min-w-0 text-xs text-macos-text truncate text-center" title={evt.node}>
+            {evt.node}
+            {evt.branch && <span className="text-macos-text-tertiary ml-1">({evt.branch})</span>}
+          </span>
+          <span className="flex-1 min-w-0 text-xs text-macos-text-tertiary truncate text-center">{nodeType}</span>
+          <div className="flex-1 min-w-0 flex justify-center">
+            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${statusColors[evt.status] || statusColors.unknown}`}>
+              {formatStatus(evt.status)}
+            </span>
+          </div>
+          <span className="flex-1 min-w-0 text-xs font-mono text-macos-text-tertiary truncate text-center" title={evt.invoke}>{evt.invoke}</span>
+          <span className="flex-1 min-w-0 text-xs text-macos-text-tertiary text-center">{evt.time}</span>
+          <span className="flex-1 min-w-0 text-xs text-macos-text-tertiary text-center">{evt.completedTime || '-'}</span>
+          <span className="flex-1 min-w-0 text-xs text-macos-text-tertiary text-center">{duration}</span>
+          <div className="flex-1 min-w-0 flex justify-center">
+            {art ? (
+              <button onClick={() => {
+                if (useWorkflowInstanceStore.getState().selectedInstance) useWorkflowInstanceStore.getState().selectArtifact(art)
+              }} className="text-xs text-blue-500 hover:text-blue-600 hover:underline cursor-pointer">查看</button>
+            ) : (
+              <span className="text-xs text-macos-text-tertiary">-</span>
+            )}
+          </div>
+        </div>
+      )
+    })}
   </div>
 )
 
@@ -413,19 +406,12 @@ const InstanceDetail: FC = () => {
               )}
 
               {detail.trace.length > 0 && (
-                <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+                <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 col-span-2">
                   <div className="text-sm font-bold text-macos-text mb-3">时间线</div>
                   <TraceTable trace={detail.trace} artifacts={detail.artifacts} flowData={detail.flowData} />
                 </div>
               )}
 
-              {/* 节点产物 */}
-              {detail.artifacts.length > 0 && (
-                <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
-                  <div className="text-sm font-bold text-macos-text mb-3">节点产物</div>
-                  <ArtifactList artifacts={detail.artifacts} selected={selectedArtifact} onSelect={selectArtifact} />
-                </div>
-              )}
 
               {/* 选中产物弹框 — 复用项目 Modal 组件（拖拽/缩放/双击全屏） */}
               {selectedArtifact && (
