@@ -470,26 +470,30 @@ const InstanceDetail: FC = () => {
               )}
 
               {/* 上下文 */}
-              {detail.contextMd && (
-                <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
-                  <div className="flex items-center justify-between mb-3">
-                    <span className="text-sm font-bold text-macos-text">上下文</span>
-                    <button
-                      onClick={() => setIsContextFullscreen(true)}
-                      className="p-1 rounded-md text-macos-text-tertiary hover:text-macos-text hover:bg-gray-100 transition-colors"
-                    >
-                      <Maximize2 size={14} strokeWidth={1.5} />
-                    </button>
-                  </div>
-                  <div className="max-h-200 overflow-y-auto">
-                    <MarkdownRenderer content={detail.contextMd} className="text-sm" />
-                  </div>
+              <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-sm font-bold text-macos-text">上下文</span>
+                  {detail.contextMd && (
+                  <button
+                    onClick={() => setIsContextFullscreen(true)}
+                    className="p-1 rounded-md text-macos-text-tertiary hover:text-macos-text hover:bg-gray-100 transition-colors"
+                  >
+                    <Maximize2 size={14} strokeWidth={1.5} />
+                  </button>
+                  )}
                 </div>
-              )}
+                <div className="max-h-200 overflow-y-auto">
+                  {detail.contextMd ? (
+                    <MarkdownRenderer content={detail.contextMd} className="text-sm" />
+                  ) : (
+                    <p className="text-sm text-macos-text-tertiary text-center py-8">暂无上下文</p>
+                  )}
+                </div>
+              </div>
 
               {/* 产物 */}
               {detail.artifacts.length > 0 && (
-                <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 col-span-2">
+                <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
                   <div className="flex items-center justify-between mb-4">
                     <span className="text-sm font-bold text-macos-text">产物 ({detail.artifacts.length})</span>
                     <div className="relative">
