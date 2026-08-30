@@ -658,8 +658,14 @@ ipcMain.handle('read-instance-detail', (_, workflowName, instanceId) => {
       }
     }
     // 按时间排序
+    // 读取 context.md（Agent 暂存上下文）
+    let contextMd = ''
+    const contextPath = path.join(instDir, 'context.md')
+    if (fs.existsSync(contextPath)) {
+      contextMd = fs.readFileSync(contextPath, 'utf-8')
+    }
     artifacts.sort((a, b) => a.invokeId.localeCompare(b.invokeId))
-    return { success: true, detail: { processRaw, mermaid, trace, artifacts, traceLog, instanceMd, flowData, completedNodes, currentName, wfStatus, wfStep, wfLoopCount, wfRetryCount } }
+    return { success: true, detail: { processRaw, mermaid, trace, artifacts, traceLog, instanceMd, flowData, completedNodes, currentName, wfStatus, wfStep, wfLoopCount, wfRetryCount, contextMd } }
   } catch (error) {
     console.error('读取实例详情失败:', error)
     return { success: false, error: String(error) }

@@ -310,6 +310,7 @@ const ArtifactList: FC<{
 const InstanceDetail: FC = () => {
   const { selectedInstance, detail, isLoadingDetail, selectedArtifact, selectInstance, selectArtifact, clearDetail, isLiveRefresh, startLiveRefresh, stopLiveRefresh } = useWorkflowInstanceStore()
   const [isFlowFullscreen, setIsFlowFullscreen] = useState(false)
+  const [isContextFullscreen, setIsContextFullscreen] = useState(false)
   const [flowPos, setFlowPos] = useState({ x: Math.max(16, (window.innerWidth - 1000) / 2), y: 60 })
   const [flowDim, setFlowDim] = useState({ width: Math.min(1000, window.innerWidth - 32), height: Math.min(600, window.innerHeight - 80) })
   const [isFlowMax, setIsFlowMax] = useState(false)
@@ -464,6 +465,23 @@ const InstanceDetail: FC = () => {
                 </div>
               )}
 
+              {/* 上下文 */}
+              {detail.contextMd && (
+                <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-sm font-bold text-macos-text">上下文</span>
+                    <button
+                      onClick={() => setIsContextFullscreen(true)}
+                      className="p-1 rounded-md text-macos-text-tertiary hover:text-macos-text hover:bg-gray-100 transition-colors"
+                    >
+                      <Maximize2 size={14} strokeWidth={1.5} />
+                    </button>
+                  </div>
+                  <div className="max-h-200 overflow-y-auto">
+                    <MarkdownRenderer content={detail.contextMd} className="text-sm" />
+                  </div>
+                </div>
+              )}
 
               {/* 选中产物弹框 — 复用项目 Modal 组件（拖拽/缩放/双击全屏） */}
               {selectedArtifact && (
@@ -550,6 +568,30 @@ const InstanceDetail: FC = () => {
             <div onMouseDown={handleFlowResizeStart('ne')} className="absolute top-0 right-0 w-3 h-3 cursor-nesw-resize z-20" />
             <div onMouseDown={handleFlowResizeStart('sw')} className="absolute bottom-0 left-0 w-3 h-3 cursor-nesw-resize z-20" />
             <div onMouseDown={handleFlowResizeStart('se')} className="absolute bottom-0 right-0 w-3 h-3 cursor-nwse-resize z-20" />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* 上下文全屏浮窗 */}
+      <AnimatePresence>
+        {isContextFullscreen && detail?.contextMd && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.97 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.97 }}
+            transition={{ duration: 0.2 }}
+            style={{ position: 'fixed', left: 16, top: 40, width: 'calc(100vw - 32px)', height: 'calc(100vh - 56px)' }}
+            className="fixed z-[60] bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden pointer-events-auto"
+          >
+            <div className="flex items-center justify-between px-6 h-14 flex-shrink-0 border-b border-gray-100 cursor-default">
+              <span className="text-sm font-medium text-macos-text">上下文</span>
+              <button onClick={() => setIsContextFullscreen(false)} className="p-2 rounded-lg text-macos-text-secondary hover:text-macos-text hover:bg-gray-100 transition-colors">
+                <X size={20} strokeWidth={1.5} />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-6">
+              <MarkdownRenderer content={detail.contextMd} className="text-sm" />
+            </div>
           </motion.div>
         )}
       </AnimatePresence>

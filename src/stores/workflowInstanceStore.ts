@@ -16,6 +16,7 @@ interface InstanceDetail {
   wfStep: number
   wfLoopCount: number
   wfRetryCount: number
+  contextMd: string
 }
 
 interface WorkflowInstanceState {
