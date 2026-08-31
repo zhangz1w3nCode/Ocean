@@ -1459,8 +1459,8 @@ ipcMain.handle('check-cli-installed', async () => {
       // 有 stdout 输出即认为可用（空列表也是有效输出）
       working = out !== undefined
     } catch (e) {
-      // 有 stderr 输出也说明 wrapper 能跑、node 能找到、workflow.js 能加载
-      working = e.stderr ? e.stderr.length > 0 : false
+      // 有 stderr 输出（可能是警告或错误）说明 wrapper 已启动，暂视为可运行
+      working = e?.stderr?.length > 0
     }
   }
 
