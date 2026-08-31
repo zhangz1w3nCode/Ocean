@@ -1467,7 +1467,10 @@ ipcMain.handle('check-cli-installed', async () => {
  */
 ipcMain.handle('install-cli', async () => {
   const homeDir = os.homedir()
-  const workflowJsPath = path.join(__dirname, 'dist', 'bin', 'workflow.js')
+  // 打包后 CLI 由 extraResources 复制到 Contents/Resources/cli/，系统 Node 读不到 asar 内路径
+  const workflowJsPath = app.isPackaged
+    ? path.join(process.resourcesPath, 'cli', 'bin', 'workflow.js')
+    : path.join(__dirname, 'dist', 'bin', 'workflow.js')
   if (!fs.existsSync(workflowJsPath)) {
     return { success: false, error: `workflow.js 未找到: ${workflowJsPath}，请先编译 (tsc -p electron/tsconfig.json)` }
   }
