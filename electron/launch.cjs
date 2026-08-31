@@ -1426,26 +1426,36 @@ ipcMain.handle('test-executable-path', async (_, filePath) => {
  */
 ipcMain.handle('check-cli-installed', async () => {
   const homeDir = os.homedir()
-  const wrapperPath = path.join(homeDir, '.ocean', 'bin', 'workflow')
-  const wrapperExists = fs.existsSync(wrapperPath)
 
-  // 检查 workflow 命令是否在 PATH 中可用
-  let onPath = false
+  // 从 PATH 与已知安装位置找 workflow wrapper
+  // GUI 启动的 Electron App PATH 不含 /opt/homebrew/bin，不能只靠 command -v
+  const candidatePaths = [
+    path.join(homeDir, '.ocean', 'bin', 'workflow'),
+    '/usr/local/bin/workflow',
+    '/opt/homebrew/bin/workflow',
+  ]
+
   let commandPath = null
   try {
     commandPath = child_process.execSync('command -v workflow', { encoding: 'utf-8' }).trim()
-    onPath = true
   } catch {
-    // not on PATH
+    // 不在 App 的 PATH 中，回退到已知安装位置
+  }
+  if (!commandPath) {
+    for (const p of candidatePaths) {
+      if (fs.existsSync(p)) {
+        commandPath = p
+        break
+      }
+    }
   }
 
-  // 验证 wrapper 是否可正常运行——只要有输出就说明 wrapper 可执行
-  // root 用当前打开的项目路径，没有则回退 homeDir
+  // 用找到的绝对路径验证可运行，不依赖 App 的 PATH
   let working = false
-  if (onPath) {
+  if (commandPath) {
     const checkRoot = currentProjectPath || homeDir
     try {
-      const out = child_process.execSync(`workflow list --root "${checkRoot}"`, { encoding: 'utf-8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] })
+      const out = child_process.execSync(`"${commandPath}" list --root "${checkRoot}"`, { encoding: 'utf-8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] })
       // 有 stdout 输出即认为可用（空列表也是有效输出）
       working = out !== undefined
     } catch (e) {
@@ -1455,10 +1465,10 @@ ipcMain.handle('check-cli-installed', async () => {
   }
 
   return {
-    installed: onPath,
+    installed: !!commandPath,
     working,
     commandPath,
-    wrapperPath: wrapperExists ? wrapperPath : null,
+    wrapperPath: commandPath,
   }
 })
 
