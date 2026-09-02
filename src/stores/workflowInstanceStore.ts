@@ -27,7 +27,7 @@ interface WorkflowInstanceState {
   detail: InstanceDetail | null
   selectedArtifact: InstanceArtifact | null
   isLiveRefresh: boolean
-  _pollTimer: ReturnType<typeof setInterval> | null
+  _unsubDelta: (() => void) | null
   loadInstances: () => Promise<void>
   selectInstance: (instance: WorkflowInstance | null) => void
   loadInstanceDetail: (instance: WorkflowInstance) => Promise<void>
@@ -47,7 +47,7 @@ export const useWorkflowInstanceStore = create<WorkflowInstanceState>((set, get)
   selectedArtifact: null,
   isLiveRefresh: false,
 
-  _pollTimer: null as ReturnType<typeof setInterval> | null,
+  _unsubDelta: null as (() => void) | null,
 
   loadInstances: async () => {
     if (!isElectron()) {
@@ -105,18 +105,24 @@ export const useWorkflowInstanceStore = create<WorkflowInstanceState>((set, get)
 
   startLiveRefresh: () => {
     get().stopLiveRefresh()
-    const timer = setInterval(() => {
-      const inst = get().selectedInstance
-      if (!inst) { get().stopLiveRefresh(); return }
-      get().loadInstanceDetail(inst)
-    }, 1000)
-    set({ isLiveRefresh: true, _pollTimer: timer })
+    const inst = get().selectedInstance
+    if (!inst) return
+    // 订阅主进程 fs.watch 推送：文件真正变化时才收到增量 delta（替代 1s 全量轮询）
+    window.electronAPI?.subscribeInstanceDetail?.(inst.workflowName, inst.instanceId).then(res => {
+      if (res?.success && res.detail) set({ detail: res.detail, isLoadingDetail: false })
+    })
+    const unsub = window.electronAPI?.onInstanceDetailDelta?.(delta => {
+      // 结构共享：仅用 delta 覆盖变化字段，未变字段保持原引用 → memo 子组件跳过重渲染
+      set(state => ({ detail: state.detail ? { ...state.detail, ...delta } : state.detail }))
+    })
+    set({ isLiveRefresh: true, _unsubDelta: unsub ?? null })
   },
 
   stopLiveRefresh: () => {
-    const timer = get()._pollTimer
-    if (timer) clearInterval(timer)
-    set({ isLiveRefresh: false, _pollTimer: null })
+    const unsub = get()._unsubDelta
+    if (unsub) unsub()
+    window.electronAPI?.unsubscribeInstanceDetail?.()
+    set({ isLiveRefresh: false, _unsubDelta: null })
   },
 
   reset: () => {

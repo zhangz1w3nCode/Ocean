@@ -27,6 +27,16 @@ const electronAPI = {
     ipcRenderer.invoke('read-instance-file', workflowName, instanceId, fileName),
   readInstanceDetail: (workflowName, instanceId) =>
     ipcRenderer.invoke('read-instance-detail', workflowName, instanceId),
+  // 实例详情实时推送：fs.watch 监听文件变化，主进程主动推增量 delta
+  subscribeInstanceDetail: (workflowName, instanceId) =>
+    ipcRenderer.invoke('subscribe-instance-detail', workflowName, instanceId),
+  unsubscribeInstanceDetail: () =>
+    ipcRenderer.invoke('unsubscribe-instance-detail'),
+  onInstanceDetailDelta: (callback) => {
+    const listener = (_event, data) => callback(data)
+    ipcRenderer.on('instance-detail-delta', listener)
+    return () => ipcRenderer.removeListener('instance-detail-delta', listener)
+  },
 
   // 节点文件数据持久化（Markdown 格式，以名称命名文件）
   saveNodeFile: (name, content) => ipcRenderer.invoke('save-node-file', name, content),

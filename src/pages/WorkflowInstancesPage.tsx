@@ -1,5 +1,5 @@
 import type { FC } from 'react'
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, memo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Search, RefreshCw, Activity, FileText, Package, ChevronRight, ChevronLeft, Clock, Hash, GitBranch, Repeat, RotateCcw, Maximize2, X, Radio, ChevronUp, ChevronDown, CircleDot, ListOrdered, Files, Terminal } from 'lucide-react'
 import { Button, Dropdown, MarkdownRenderer, Modal } from '../components/ui'
@@ -200,7 +200,7 @@ function formatDurationMs(start: string, end: string): number {
 }
 
 
-const TraceTable: FC<{ trace: InstanceTraceEvent[]; artifacts: InstanceArtifact[]; flowData: { nodes: any[]; edges: any[] } | null }> = ({ trace, artifacts, flowData }) => {
+const TraceTable = memo(({ trace, artifacts, flowData }: { trace: InstanceTraceEvent[]; artifacts: InstanceArtifact[]; flowData: { nodes: any[]; edges: any[] } | null }) => {
   const [sortCol, setSortCol] = useState<'time' | 'duration'>('time')
   const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('asc')
 
@@ -283,13 +283,9 @@ const TraceTable: FC<{ trace: InstanceTraceEvent[]; artifacts: InstanceArtifact[
     })}
   </div>
   )
-}
+})
 
-const ArtifactList: FC<{
-  artifacts: InstanceArtifact[]
-  selected: InstanceArtifact | null
-  onSelect: (a: InstanceArtifact | null) => void
-}> = ({ artifacts, selected, onSelect }) => (
+const ArtifactList = memo(({ artifacts, selected, onSelect }: { artifacts: InstanceArtifact[]; selected: InstanceArtifact | null; onSelect: (a: InstanceArtifact | null) => void }) => (
     <div className="flex flex-col gap-1.5">
       {artifacts.map((art, i) => (
         <button
@@ -308,6 +304,7 @@ const ArtifactList: FC<{
       ))}
     </div>
   )
+)
 
 const InstanceDetail: FC = () => {
   const { selectedInstance, detail, isLoadingDetail, selectedArtifact, selectInstance, selectArtifact, clearDetail, isLiveRefresh, startLiveRefresh, stopLiveRefresh } = useWorkflowInstanceStore()

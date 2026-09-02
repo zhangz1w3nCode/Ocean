@@ -553,8 +553,8 @@ ipcMain.handle('read-instance-file', (_, workflowName, instanceId, fileName) => 
   }
 })
 
-// 读取实例完整详情（process.md + instance.md + trace.jsonl + artifacts 全部内容）
-ipcMain.handle('read-instance-detail', (_, workflowName, instanceId) => {
+// 实例详情构建：被 read-instance-detail（一次性读）与 subscribe-instance-detail（fs.watch 推送）共用
+function buildInstanceDetail(workflowName, instanceId) {
   try {
     // 防止路径穿越
     if (workflowName.includes('..') || instanceId.includes('..')) {
@@ -689,6 +689,65 @@ ipcMain.handle('read-instance-detail', (_, workflowName, instanceId) => {
     console.error('读取实例详情失败:', error)
     return { success: false, error: String(error) }
   }
+}
+
+ipcMain.handle('read-instance-detail', (_, workflowName, instanceId) => buildInstanceDetail(workflowName, instanceId))
+
+// ===== 实例详情实时推送（fs.watch → webContents.send，替代 1s 轮询） =====
+// 空闲时零开销；文件真正变化才推送变化字段（增量 delta），渲染进程做结构共享合并，
+// 未变字段保持原引用 → memo 子组件跳过重渲染，消除「一直闪」。
+let _instanceWatcher = null
+function diffDetail(old, fresh) {
+  if (!old) return fresh || {}
+  const delta = {}
+  for (const k of Object.keys(fresh || {})) {
+    const ov = old[k], nv = fresh[k]
+    if (typeof nv === 'string') { if (ov !== nv) delta[k] = nv }
+    else if (Array.isArray(nv)) { if (!Array.isArray(ov) || ov.length !== nv.length || JSON.stringify(ov) !== JSON.stringify(nv)) delta[k] = nv }
+    else if (nv && typeof nv === 'object') { if (ov !== nv) delta[k] = nv }
+    else { if (ov !== nv) delta[k] = nv }
+  }
+  return delta
+}
+function stopInstanceWatcher() {
+  if (!_instanceWatcher) return
+  if (_instanceWatcher.watcher) _instanceWatcher.watcher.close()
+  if (_instanceWatcher.timer) clearTimeout(_instanceWatcher.timer)
+  _instanceWatcher = null
+}
+ipcMain.handle('subscribe-instance-detail', (_event, workflowName, instanceId) => {
+  stopInstanceWatcher()
+  const initial = buildInstanceDetail(workflowName, instanceId)
+  if (!initial.success) return initial
+  const instDir = path.join(getWorkflowsDir(), workflowName, 'instance', instanceId)
+  _instanceWatcher = { workflowName, instanceId, lastSnapshot: initial.detail, watcher: null, timer: null }
+  let pending = false
+  try {
+    // macOS fs.watch recursive 覆盖 trace.jsonl / process.md / artifacts/ / context.md / instance.md
+    _instanceWatcher.watcher = fs.watch(instDir, { recursive: true }, () => {
+      if (pending) return
+      pending = true
+      _instanceWatcher.timer = setTimeout(() => {
+        pending = false
+        const w = _instanceWatcher
+        if (!w || w.workflowName !== workflowName || w.instanceId !== instanceId) return
+        const fresh = buildInstanceDetail(workflowName, instanceId)
+        if (!fresh.success) return
+        const delta = diffDetail(w.lastSnapshot, fresh.detail)
+        w.lastSnapshot = fresh.detail
+        if (Object.keys(delta).length > 0) {
+          mainWindow?.webContents?.send('instance-detail-delta', delta)
+        }
+      }, 150)
+    })
+  } catch (e) {
+    console.error('实例详情 fs.watch 失败:', e)
+  }
+  return initial
+})
+ipcMain.handle('unsubscribe-instance-detail', () => {
+  stopInstanceWatcher()
+  return { success: true }
 })
 
 

@@ -38,6 +38,10 @@ declare global {
       listWorkflowInstances: () => Promise<{ success: boolean; instances?: any[]; error?: string }>
       readInstanceFile: (workflowName: string, instanceId: string, fileName: string) => Promise<{ success: boolean; content?: string; error?: string }>
       readInstanceDetail: (workflowName: string, instanceId: string) => Promise<{ success: boolean; detail?: any; error?: string }>
+      // 实例详情实时推送（fs.watch → 增量 delta）
+      subscribeInstanceDetail: (workflowName: string, instanceId: string) => Promise<{ success: boolean; detail?: any; error?: string }>
+      unsubscribeInstanceDetail: () => Promise<{ success: boolean }>
+      onInstanceDetailDelta: (callback: (delta: Record<string, any>) => void) => () => void
       // 节点文件相关（Markdown 格式，以名称命名文件）
       saveNodeFile: (name: string, content: string) => Promise<{ success: boolean; error?: string }>
       loadNodeFile: (name: string) => Promise<{ success: boolean; content: string | null; mtime: string | null; error?: string }>
