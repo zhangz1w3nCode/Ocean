@@ -35,12 +35,6 @@ module.exports = {
           },
         },
       },
-      keyframes: {
-        'node-breathing': {
-          '0%, 100%': { opacity: '1', 'box-shadow': '0 0 0 0 rgba(59, 130, 246, 0.4)' },
-          '50%': { opacity: '0.85', 'box-shadow': '0 0 0 8px rgba(59, 130, 246, 0)' },
-        },
-      },
       animation: {
         'node-breathing': 'node-breathing 1.5s ease-in-out infinite',
       },

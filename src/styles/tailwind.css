@@ -52,6 +52,16 @@
   }
 }
 
+/* 正在执行的节点呼吸发光：打在内层子元素（有圆角），颜色用 CSS 变量按节点类型传入 */
+@keyframes node-breathing {
+  0%, 100% { box-shadow: 0 0 0 3px var(--breathing-color, rgba(168, 85, 247, 0.25)); }
+  50% { box-shadow: 0 0 0 8px var(--breathing-color, rgba(168, 85, 247, 0.08)); }
+}
+
+.react-flow__node.node-breathing > * {
+  animation: node-breathing 1.5s ease-in-out infinite;
+}
+
 /* 连接线动态虚线动画 */
 @keyframes dash {
   to {

@@ -162,7 +162,17 @@ export const InstanceFlowGraph: FC<InstanceFlowGraphProps> = ({ traceLog, flowDa
     return flowData.nodes.filter(n => visited.has(n.data?.label || '')).map(n => {
       const label = n.data?.label || ''
       const isCurrent = currentName === label
-      return { id: n.id, type: n.type, position: n.position, data: n.data, selected: isCurrent, className: isCurrent ? 'animate-node-breathing' : undefined } as Node
+      // 呼吸发光颜色按节点类型走，与 selected 边框色一致
+      const breathingColors: Record<string, string> = {
+        business: 'rgba(168, 85, 247, 0.25)', process: 'rgba(59, 130, 246, 0.25)',
+        decision: 'rgba(249, 115, 22, 0.25)', start: 'rgba(34, 197, 94, 0.25)',
+        end: 'rgba(239, 68, 68, 0.25)', local: 'rgba(107, 114, 128, 0.25)',
+      }
+      return {
+        id: n.id, type: n.type, position: n.position, data: n.data, selected: isCurrent,
+        className: isCurrent ? 'node-breathing' : undefined,
+        style: isCurrent ? { '--breathing-color': breathingColors[n.type] || breathingColors.business } as React.CSSProperties : undefined,
+      } as Node
     })
   }, [flowData, visited, currentName])
 
