@@ -1,5 +1,5 @@
 import type { FC } from 'react'
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, memo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Search, RefreshCw, Activity, FileText, Package, ChevronRight, ChevronLeft, Clock, Hash, GitBranch, Repeat, RotateCcw, Maximize2, X, Radio, ChevronUp, ChevronDown, CircleDot, ListOrdered, Files, Terminal } from 'lucide-react'
 import { Button, Dropdown, MarkdownRenderer, Modal } from '../components/ui'
@@ -200,7 +200,7 @@ function formatDurationMs(start: string, end: string): number {
 }
 
 
-const TraceTable: FC<{ trace: InstanceTraceEvent[]; artifacts: InstanceArtifact[]; flowData: { nodes: any[]; edges: any[] } | null }> = ({ trace, artifacts, flowData }) => {
+const TraceTable = memo(({ trace, artifacts, flowData }: { trace: InstanceTraceEvent[]; artifacts: InstanceArtifact[]; flowData: { nodes: any[]; edges: any[] } | null }) => {
   const [sortCol, setSortCol] = useState<'time' | 'duration'>('time')
   const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('asc')
 
@@ -283,13 +283,9 @@ const TraceTable: FC<{ trace: InstanceTraceEvent[]; artifacts: InstanceArtifact[
     })}
   </div>
   )
-}
+})
 
-const ArtifactList: FC<{
-  artifacts: InstanceArtifact[]
-  selected: InstanceArtifact | null
-  onSelect: (a: InstanceArtifact | null) => void
-}> = ({ artifacts, selected, onSelect }) => (
+const ArtifactList = memo(({ artifacts, selected, onSelect }: { artifacts: InstanceArtifact[]; selected: InstanceArtifact | null; onSelect: (a: InstanceArtifact | null) => void }) => (
     <div className="flex flex-col gap-1.5">
       {artifacts.map((art, i) => (
         <button
@@ -308,6 +304,7 @@ const ArtifactList: FC<{
       ))}
     </div>
   )
+)
 
 const InstanceDetail: FC = () => {
   const { selectedInstance, detail, isLoadingDetail, selectedArtifact, selectInstance, selectArtifact, clearDetail, isLiveRefresh, startLiveRefresh, stopLiveRefresh } = useWorkflowInstanceStore()
@@ -389,6 +386,18 @@ const InstanceDetail: FC = () => {
     }
   }, [isFlowMax, flowPos, flowDim])
 
+  // 点击放大：直接以全屏尺寸打开浮窗（同时缓存窗口态，双击标题栏可回退到普通窗口尺寸）
+  const openFlowFullscreen = useCallback(() => {
+    flowPrevLayout.current = {
+      pos: { x: Math.max(16, (window.innerWidth - 1000) / 2), y: 60 },
+      dim: { width: Math.min(1000, window.innerWidth - 32), height: Math.min(600, window.innerHeight - 80) },
+    }
+    setFlowPos({ x: 16, y: 40 })
+    setFlowDim({ width: window.innerWidth - 32, height: window.innerHeight - 56 })
+    setIsFlowMax(true)
+    setIsFlowFullscreen(true)
+  }, [])
+
   if (!selectedInstance) return null
   const inst = selectedInstance
 
@@ -403,14 +412,19 @@ const InstanceDetail: FC = () => {
         </button>
         <button
           onClick={() => isLiveRefresh ? stopLiveRefresh() : startLiveRefresh()}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-colors ${
+          title={isLiveRefresh ? '实时刷新中' : '实时刷新'}
+          className={`flex items-center justify-center p-2 rounded-lg transition-colors ${
             isLiveRefresh
               ? 'bg-green-50 text-green-600'
               : 'text-macos-text-secondary hover:text-macos-text hover:bg-gray-100'
           }`}
         >
-          <Radio size={14} strokeWidth={1.5} className={isLiveRefresh ? 'animate-pulse' : ''} />
-          {isLiveRefresh ? '实时刷新中' : '实时刷新'}
+          <motion.span
+            animate={isLiveRefresh ? { scale: [1, 1.15, 1], opacity: [0.5, 1, 0.5] } : { scale: 1, opacity: 1 }}
+            transition={isLiveRefresh ? { duration: 1.5, repeat: Infinity, ease: 'easeInOut' } : { duration: 0.2 }}
+          >
+            <Radio size={20} strokeWidth={1.5} />
+          </motion.span>
         </button>
       </div>
 
@@ -431,7 +445,6 @@ const InstanceDetail: FC = () => {
                   <DetailField icon={GitBranch} label="工作流">{inst.workflowName}</DetailField>
                   <DetailField icon={Hash} label="实例ID"><span className="font-mono text-xs">{inst.instanceId}</span></DetailField>
                   <DetailField icon={Clock} label="创建">{formatRelativeTime(inst.createdAt)}</DetailField>
-                  <DetailField icon={Terminal} label="输入">{inst.initialInput || '-'}</DetailField>
                   <DetailField icon={ListOrdered} label="步骤">{detail.wfStep ?? 0}</DetailField>
                   <DetailField icon={Repeat} label="循环">{detail.wfLoopCount ?? 0}</DetailField>
                   <DetailField icon={RotateCcw} label="重试">{detail.wfRetryCount ?? 0}</DetailField>
@@ -445,7 +458,7 @@ const InstanceDetail: FC = () => {
                   <div className="flex items-center justify-between mb-3">
                     <span className="text-sm font-bold text-macos-text">执行进度</span>
                     <button
-                      onClick={() => setIsFlowFullscreen(true)}
+                      onClick={openFlowFullscreen}
                       className="p-1 rounded-md text-macos-text-tertiary hover:text-macos-text hover:bg-gray-100 transition-colors"
                     >
                       <Maximize2 size={14} strokeWidth={1.5} />
@@ -462,31 +475,14 @@ const InstanceDetail: FC = () => {
                 </div>
               )}
 
-              {detail.trace.length > 0 && (
-                <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 col-span-2">
-                  <div className="text-sm font-bold text-macos-text mb-3">时间线</div>
-                  <TraceTable trace={detail.trace} artifacts={detail.artifacts} flowData={detail.flowData} />
-                </div>
-              )}
-
-              {/* 上下文 */}
+              {/* 用户输入 */}
               <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-sm font-bold text-macos-text">上下文</span>
-                  {detail.contextMd && (
-                  <button
-                    onClick={() => setIsContextFullscreen(true)}
-                    className="p-1 rounded-md text-macos-text-tertiary hover:text-macos-text hover:bg-gray-100 transition-colors"
-                  >
-                    <Maximize2 size={14} strokeWidth={1.5} />
-                  </button>
-                  )}
-                </div>
+                <div className="text-sm font-bold text-macos-text mb-3">用户输入</div>
                 <div className="max-h-200 overflow-y-auto">
-                  {detail.contextMd ? (
-                    <MarkdownRenderer content={detail.contextMd} className="text-sm" />
+                  {inst.initialInput ? (
+                    <MarkdownRenderer content={inst.initialInput} className="text-sm" />
                   ) : (
-                    <p className="text-sm text-macos-text-tertiary text-center py-8">暂无上下文</p>
+                    <p className="text-sm text-macos-text-tertiary text-center py-8">暂无用户输入</p>
                   )}
                 </div>
               </div>
@@ -556,6 +552,36 @@ const InstanceDetail: FC = () => {
                   </div>
                 </div>
               )}
+
+              {/* 时间线 */}
+              {detail.trace.length > 0 && (
+                <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 col-span-2">
+                  <div className="text-sm font-bold text-macos-text mb-3">时间线</div>
+                  <TraceTable trace={detail.trace} artifacts={detail.artifacts} flowData={detail.flowData} />
+                </div>
+              )}
+
+              {/* 上下文 — 独占一行 */}
+              <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 col-span-2">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-sm font-bold text-macos-text">上下文</span>
+                  {detail.contextMd && (
+                  <button
+                    onClick={() => setIsContextFullscreen(true)}
+                    className="p-1 rounded-md text-macos-text-tertiary hover:text-macos-text hover:bg-gray-100 transition-colors"
+                  >
+                    <Maximize2 size={14} strokeWidth={1.5} />
+                  </button>
+                  )}
+                </div>
+                <div className="max-h-200 overflow-y-auto">
+                  {detail.contextMd ? (
+                    <MarkdownRenderer content={detail.contextMd} className="text-sm" />
+                  ) : (
+                    <p className="text-sm text-macos-text-tertiary text-center py-8">暂无上下文</p>
+                  )}
+                </div>
+              </div>
 
               {/* 选中产物弹框 — 复用项目 Modal 组件（拖拽/缩放/双击全屏） */}
               {selectedArtifact && (

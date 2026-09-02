@@ -35,6 +35,9 @@ module.exports = {
           },
         },
       },
+      animation: {
+        'node-breathing': 'node-breathing 1.5s ease-in-out infinite',
+      },
     },
   },
   plugins: [
