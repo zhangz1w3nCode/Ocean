@@ -312,7 +312,9 @@ export const InstanceFlowGraph: FC<InstanceFlowGraphProps> = ({ traceLog, flowDa
         maxZoom={FIT_MAX_ZOOM}
         panOnScroll
         panOnScrollMode={undefined}
-        onMoveStart={() => { userInteracted.current = true }}
+        // onMove 而非 onMoveStart：d3-zoom 的 .start() 对程序性 setViewport 也触发，
+        // 而 onMove 的 sourceEvent 在程序性变换时为 null，真实用户交互才有 event
+        onMove={(event) => { if (event) userInteracted.current = true }}
         proOptions={{ hideAttribution: true }}
       >
         <Background color="#E5E5E5" gap={20} size={1} variant={BackgroundVariant.Dots} />
