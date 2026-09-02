@@ -65,8 +65,10 @@ const PANEL_EDGE_GAP = 32
 // 而我们的 user nodes 不带 measured，重新 adopt 会把已测得的尺寸清空导致 nodesInitialized 反复翻转。
 //
 // fit 只在两个时机触发：① 首次挂载并测量完成（进入详情页 / 打开放大浮窗）② 容器尺寸变化（拖边框 / 全屏）。
-// 实时刷新新增节点不触发：用户会在执行期间自己平移缩放画布看各节点详情，自动复位会打断他们。
-const FlowFitController: FC<{ box: { w: number; h: number } }> = ({ box }) => {
+// 实时刷新新增节点也触发动态等比 fit，但一旦用户手动拖动/缩放画布就停止自动调整。
+// 用 onMoveStart 捕获用户交互 → userInteracted.current=true → 后续节点增长不再复位，
+// 避免打断用户正在探索的视角。首次挂载和容器 resize 仍始终 fit。
+const FlowFitController: FC<{ box: { w: number; h: number }; fitKey: string; userInteracted: React.MutableRefObject<boolean> }> = ({ box, fitKey, userInteracted }) => {
   const rf = useReactFlow()
   const store = useStoreApi()
   const total = useStore(s => s.nodeLookup.size)
@@ -82,7 +84,9 @@ const FlowFitController: FC<{ box: { w: number; h: number } }> = ({ box }) => {
     if (box.w < 2 || box.h < 2) return
     const isFirst = fittedBox.current === null
     const isResize = !!fittedBox.current && (fittedBox.current.w !== box.w || fittedBox.current.h !== box.h)
-    if (!isFirst && !isResize) return
+    // 节点集合变化（新增节点）时动态 fit，但用户手动操作过就不再自动调整
+    const isNodeGrowth = !!fittedBox.current && !isResize && !userInteracted.current
+    if (!isFirst && !isResize && !isNodeGrowth) return
     if (total === 0 || measured !== total) return
     const { nodeLookup, nodeOrigin } = store.getState()
     const ids: string[] = []
@@ -96,7 +100,7 @@ const FlowFitController: FC<{ box: { w: number; h: number } }> = ({ box }) => {
       { duration: isFirst ? 0 : FIT_ANIMATE_MS },
     )
     fittedBox.current = { w: box.w, h: box.h }
-  }, [rf, store, box.w, box.h, total, measured])
+  }, [rf, store, box.w, box.h, fitKey, total, measured])
 
   return null
 }
@@ -230,6 +234,9 @@ export const InstanceFlowGraph: FC<InstanceFlowGraphProps> = ({ traceLog, flowDa
   useEffect(() => { setEdges(initialEdges) }, [initialEdges, setEdges])
 
   const hasGraph = !!flowData?.nodes?.length && path.length > 0
+  // 可见节点 id 集合变化时触发动态 fit（但用户手动操作后停止）
+  const fitKey = useMemo(() => initialNodes.map(n => n.id).join('|'), [initialNodes])
+  const userInteracted = useRef(false)
   const containerRef = useRef<HTMLDivElement>(null)
   const [box, setBox] = useState({ w: 0, h: 0 })
   useEffect(() => {
@@ -305,10 +312,11 @@ export const InstanceFlowGraph: FC<InstanceFlowGraphProps> = ({ traceLog, flowDa
         maxZoom={FIT_MAX_ZOOM}
         panOnScroll
         panOnScrollMode={undefined}
+        onMoveStart={() => { userInteracted.current = true }}
         proOptions={{ hideAttribution: true }}
       >
         <Background color="#E5E5E5" gap={20} size={1} variant={BackgroundVariant.Dots} />
-        <FlowFitController box={box} />
+        <FlowFitController box={box} fitKey={fitKey} userInteracted={userInteracted} />
       </ReactFlow>
 
       {/* 节点产物面板 */}
