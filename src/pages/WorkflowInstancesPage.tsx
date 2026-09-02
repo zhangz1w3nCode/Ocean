@@ -389,6 +389,18 @@ const InstanceDetail: FC = () => {
     }
   }, [isFlowMax, flowPos, flowDim])
 
+  // 点击放大：直接以全屏尺寸打开浮窗（同时缓存窗口态，双击标题栏可回退到普通窗口尺寸）
+  const openFlowFullscreen = useCallback(() => {
+    flowPrevLayout.current = {
+      pos: { x: Math.max(16, (window.innerWidth - 1000) / 2), y: 60 },
+      dim: { width: Math.min(1000, window.innerWidth - 32), height: Math.min(600, window.innerHeight - 80) },
+    }
+    setFlowPos({ x: 16, y: 40 })
+    setFlowDim({ width: window.innerWidth - 32, height: window.innerHeight - 56 })
+    setIsFlowMax(true)
+    setIsFlowFullscreen(true)
+  }, [])
+
   if (!selectedInstance) return null
   const inst = selectedInstance
 
@@ -445,7 +457,7 @@ const InstanceDetail: FC = () => {
                   <div className="flex items-center justify-between mb-3">
                     <span className="text-sm font-bold text-macos-text">执行进度</span>
                     <button
-                      onClick={() => setIsFlowFullscreen(true)}
+                      onClick={openFlowFullscreen}
                       className="p-1 rounded-md text-macos-text-tertiary hover:text-macos-text hover:bg-gray-100 transition-colors"
                     >
                       <Maximize2 size={14} strokeWidth={1.5} />

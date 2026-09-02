@@ -77,7 +77,9 @@ export const useWorkflowInstanceStore = create<WorkflowInstanceState>((set, get)
 
   loadInstanceDetail: async (instance) => {
     if (!isElectron()) return
-    set({ isLoadingDetail: true })
+    // 轮询刷新时不再置 isLoadingDetail：详情页是 `isLoadingDetail ? 加载中 : 渲染图`，
+    // 每次置 true 会让 ReactFlow 整棵卸载再重挂载，把用户正在看的画布视角打回初始状态
+    if (!get().detail) set({ isLoadingDetail: true })
     try {
       const result = await window.electronAPI!.readInstanceDetail(instance.workflowName, instance.instanceId)
       if (result.success && result.detail) {

@@ -1,11 +1,16 @@
 import type { FC } from 'react'
-import { useState, useMemo, useEffect, useCallback } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 import { X, FileText } from 'lucide-react'
+import { motion, AnimatePresence } from 'framer-motion'
 import {
   ReactFlow,
   Background,
   Controls,
+  getNodesBounds,
+  getViewportForBounds,
+  useReactFlow,
+  useStore,
+  useStoreApi,
   useEdgesState,
   applyNodeChanges,
   BackgroundVariant,
@@ -37,6 +42,63 @@ const defaultEdgeOptions = {
   animated: false,
   markerEnd: { type: MarkerType.ArrowClosed, width: 15, height: 15, color: '#9CA3AF' },
   style: { strokeWidth: 2, stroke: '#9CA3AF' },
+}
+
+const FIT_PADDING = 0.2
+// fit 的下限必须足够低：节点多的横向 DAG 在窄容器里需要的 zoom 会低于 ReactFlow 默认 0.2 地板，
+// 一旦被 minZoom 截断，图就溢出容器无法完整居中展示，表现为「放大容器但图不变大/看不到全图」。
+// 这里单独给 fit 一个更低的地板，同时把画板 minZoom 一起下调，避免 setViewport 被 scaleExtent 反向钉住。
+const FIT_MIN_ZOOM = 0.05
+const FIT_MAX_ZOOM = 2.5
+const FIT_ANIMATE_MS = 250
+
+// 产物面板宽度：默认比原来的 w-72(288px) 宽，左边缘可拖拽调宽
+const PANEL_DEFAULT_W = 420
+const PANEL_MIN_W = 300
+const PANEL_MAX_W = 880
+const PANEL_EDGE_GAP = 32
+
+// ReactFlow 的 fitView prop 是一次性的：store 的 fitViewQueued 在首次节点测量完成后被消费并置回 false，
+// 之后容器 resize 只会更新 store 的 width/height（useResizeHandler），不重算 viewport transform。
+// 这里用容器实测尺寸 + 节点 bounds 自行算 viewport 再写入：getViewportForBounds 输出单一 zoom（天然等比）
+// 并把 bounds 中心对齐到视口中心（天然居中）。不用 rf.fitView() 是因为它内部会 setNodes，
+// 而我们的 user nodes 不带 measured，重新 adopt 会把已测得的尺寸清空导致 nodesInitialized 反复翻转。
+//
+// fit 只在两个时机触发：① 首次挂载并测量完成（进入详情页 / 打开放大浮窗）② 容器尺寸变化（拖边框 / 全屏）。
+// 实时刷新新增节点不触发：用户会在执行期间自己平移缩放画布看各节点详情，自动复位会打断他们。
+const FlowFitController: FC<{ box: { w: number; h: number } }> = ({ box }) => {
+  const rf = useReactFlow()
+  const store = useStoreApi()
+  const total = useStore(s => s.nodeLookup.size)
+  const measured = useStore(s => {
+    let n = 0
+    s.nodeLookup.forEach(v => { if (v.measured.width && v.measured.height) n += 1 })
+    return n
+  })
+  // 记录上次 fit 时的容器尺寸；null 表示还没 fit 过
+  const fittedBox = useRef<{ w: number; h: number } | null>(null)
+
+  useEffect(() => {
+    if (box.w < 2 || box.h < 2) return
+    const isFirst = fittedBox.current === null
+    const isResize = !!fittedBox.current && (fittedBox.current.w !== box.w || fittedBox.current.h !== box.h)
+    if (!isFirst && !isResize) return
+    if (total === 0 || measured !== total) return
+    const { nodeLookup, nodeOrigin } = store.getState()
+    const ids: string[] = []
+    nodeLookup.forEach(nd => { if (!nd.hidden) ids.push(nd.id) })
+    if (!ids.length) return
+    const bounds = getNodesBounds(ids, { nodeLookup, nodeOrigin })
+    if (!Number.isFinite(bounds.width) || !Number.isFinite(bounds.height)) return
+    if (bounds.width <= 0 || bounds.height <= 0) return
+    rf.setViewport(
+      getViewportForBounds(bounds, box.w, box.h, FIT_MIN_ZOOM, FIT_MAX_ZOOM, FIT_PADDING),
+      { duration: isFirst ? 0 : FIT_ANIMATE_MS },
+    )
+    fittedBox.current = { w: box.w, h: box.h }
+  }, [rf, store, box.w, box.h, total, measured])
+
+  return null
 }
 
 interface InstanceFlowGraphProps {
@@ -163,10 +225,49 @@ export const InstanceFlowGraph: FC<InstanceFlowGraphProps> = ({ traceLog, flowDa
 
   const [nodes, setNodes] = useState(initialNodes)
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges)
-
   // 实时刷新时同步新数据到 state
   useEffect(() => { setNodes(initialNodes) }, [initialNodes, setNodes])
   useEffect(() => { setEdges(initialEdges) }, [initialEdges, setEdges])
+
+  const hasGraph = !!flowData?.nodes?.length && path.length > 0
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [box, setBox] = useState({ w: 0, h: 0 })
+  useEffect(() => {
+    if (!hasGraph) return
+    const el = containerRef.current
+    if (!el) return
+    // clientWidth/Height 是布局盒，不受浮窗外层 framer-motion scale 动画影响
+    const measure = () => {
+      const w = el.clientWidth
+      const h = el.clientHeight
+      setBox(prev => (prev.w === w && prev.h === h ? prev : { w, h }))
+    }
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [hasGraph])
+
+  const [panelWidth, setPanelWidth] = useState(PANEL_DEFAULT_W)
+  const handlePanelResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    const startX = e.clientX
+    const startWidth = panelWidth
+    const onMove = (ev: MouseEvent) => {
+      const delta = startX - ev.clientX // 向左拖动增加宽度
+      const avail = (containerRef.current?.clientWidth || startWidth + PANEL_EDGE_GAP) - PANEL_EDGE_GAP
+      const maxW = Math.max(PANEL_MIN_W, Math.min(PANEL_MAX_W, avail))
+      setPanelWidth(Math.round(Math.min(maxW, Math.max(PANEL_MIN_W, startWidth + delta))))
+    }
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+    }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+  }, [panelWidth])
+  // 窄容器（卡片内联视图）下不能超出画布宽度
+  const panelW = Math.max(PANEL_MIN_W, Math.min(panelWidth, (box.w || panelWidth + PANEL_EDGE_GAP) - PANEL_EDGE_GAP))
 
   // 过滤 selection 变更，防止 ReactFlow 清除程序设置的 selected 高亮
   const onNodesChange = useCallback((changes: NodeChange[]) => {
@@ -185,12 +286,12 @@ export const InstanceFlowGraph: FC<InstanceFlowGraphProps> = ({ traceLog, flowDa
     return artifacts.filter(a => a.nodeName === selectedNodeLabel)
   }, [selectedNodeLabel, artifacts])
 
-  if (!flowData?.nodes?.length || path.length === 0) {
+  if (!hasGraph) {
     return <p className="text-sm text-macos-text-tertiary text-center py-8">无执行进度数据</p>
   }
 
   return (
-    <div className="relative w-full rounded-lg overflow-hidden" style={{ height: fullHeight ? '100%' : '300px' }}>
+    <div ref={containerRef} className="relative w-full rounded-lg overflow-hidden" style={{ height: fullHeight ? '100%' : '300px' }}>
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -200,16 +301,14 @@ export const InstanceFlowGraph: FC<InstanceFlowGraphProps> = ({ traceLog, flowDa
         nodeTypes={nodeTypes}
         defaultEdgeOptions={defaultEdgeOptions}
         nodesConnectable={false}
-        fitView
-        fitViewOptions={{ padding: 0.2 }}
-        minZoom={0.2}
-        maxZoom={2}
-        defaultViewport={{ x: 0, y: 0, zoom: 0.8 }}
+        minZoom={FIT_MIN_ZOOM}
+        maxZoom={FIT_MAX_ZOOM}
         panOnScroll
         panOnScrollMode={undefined}
         proOptions={{ hideAttribution: true }}
       >
         <Background color="#E5E5E5" gap={20} size={1} variant={BackgroundVariant.Dots} />
+        <FlowFitController box={box} />
       </ReactFlow>
 
       {/* 节点产物面板 */}
@@ -220,8 +319,14 @@ export const InstanceFlowGraph: FC<InstanceFlowGraphProps> = ({ traceLog, flowDa
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 20 }}
             transition={{ duration: 0.15 }}
-            className="absolute right-4 top-4 bottom-4 w-72 bg-white rounded-xl border border-gray-200 shadow-lg z-10 flex flex-col overflow-hidden"
+            className="absolute right-4 top-4 bottom-4 bg-white rounded-xl border border-gray-200 shadow-lg z-10 flex flex-col overflow-hidden"
+            style={{ width: panelW }}
           >
+            {/* 左边缘拖拽调宽手柄：纯透明热区，只靠鼠标指针反馈（与 Modal.tsx / 技能卡片一致） */}
+            <div
+              onMouseDown={handlePanelResizeStart}
+              className="absolute left-0 top-0 bottom-0 w-1.5 cursor-col-resize z-20"
+            />
             <div className="flex items-center justify-between px-4 h-12 flex-shrink-0 border-b border-gray-100">
               <div className="flex items-center gap-2 min-w-0">
                 <FileText size={14} className="text-macos-text-secondary flex-shrink-0" strokeWidth={1.5} />
