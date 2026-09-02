@@ -148,10 +148,10 @@ export const InstanceFlowGraph: FC<InstanceFlowGraphProps> = ({ traceLog, flowDa
       const start = flowData.nodes.find(n => n.type === 'start')
       if (start) s.add(start.data?.label || '')
       const end = flowData.nodes.find(n => n.type === 'end')
-      if (end && completedNodes.length > 0) s.add(end.data?.label || '')
+      if (end && wfStatus === 'completed') s.add(end.data?.label || '')
     }
     return s
-  }, [path, flowData, completedNodes, currentName])
+  }, [path, flowData, currentName, wfStatus])
 
   const initialNodes: Node[] = useMemo(() => {
     if (!flowData?.nodes) return []
@@ -209,7 +209,7 @@ export const InstanceFlowGraph: FC<InstanceFlowGraphProps> = ({ traceLog, flowDa
       }
     }
 
-    if (path.length > 0 && completedNodes.length > 0) {
+    if (path.length > 0 && wfStatus === 'completed') {
       const lastNode = flowMap.get(path[path.length - 1].node)
       const endNode = flowData.nodes.find(n => n.type === 'end')
       if (lastNode && endNode) for (const edge of flowData.edges) {
