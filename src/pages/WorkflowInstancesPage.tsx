@@ -445,7 +445,6 @@ const InstanceDetail: FC = () => {
                   <DetailField icon={GitBranch} label="工作流">{inst.workflowName}</DetailField>
                   <DetailField icon={Hash} label="实例ID"><span className="font-mono text-xs">{inst.instanceId}</span></DetailField>
                   <DetailField icon={Clock} label="创建">{formatRelativeTime(inst.createdAt)}</DetailField>
-                  <DetailField icon={Terminal} label="输入">{inst.initialInput || '-'}</DetailField>
                   <DetailField icon={ListOrdered} label="步骤">{detail.wfStep ?? 0}</DetailField>
                   <DetailField icon={Repeat} label="循环">{detail.wfLoopCount ?? 0}</DetailField>
                   <DetailField icon={RotateCcw} label="重试">{detail.wfRetryCount ?? 0}</DetailField>
@@ -476,31 +475,14 @@ const InstanceDetail: FC = () => {
                 </div>
               )}
 
-              {detail.trace.length > 0 && (
-                <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 col-span-2">
-                  <div className="text-sm font-bold text-macos-text mb-3">时间线</div>
-                  <TraceTable trace={detail.trace} artifacts={detail.artifacts} flowData={detail.flowData} />
-                </div>
-              )}
-
-              {/* 上下文 */}
+              {/* 用户输入 */}
               <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-sm font-bold text-macos-text">上下文</span>
-                  {detail.contextMd && (
-                  <button
-                    onClick={() => setIsContextFullscreen(true)}
-                    className="p-1 rounded-md text-macos-text-tertiary hover:text-macos-text hover:bg-gray-100 transition-colors"
-                  >
-                    <Maximize2 size={14} strokeWidth={1.5} />
-                  </button>
-                  )}
-                </div>
+                <div className="text-sm font-bold text-macos-text mb-3">用户输入</div>
                 <div className="max-h-200 overflow-y-auto">
-                  {detail.contextMd ? (
-                    <MarkdownRenderer content={detail.contextMd} className="text-sm" />
+                  {inst.initialInput ? (
+                    <MarkdownRenderer content={inst.initialInput} className="text-sm" />
                   ) : (
-                    <p className="text-sm text-macos-text-tertiary text-center py-8">暂无上下文</p>
+                    <p className="text-sm text-macos-text-tertiary text-center py-8">暂无用户输入</p>
                   )}
                 </div>
               </div>
@@ -570,6 +552,36 @@ const InstanceDetail: FC = () => {
                   </div>
                 </div>
               )}
+
+              {/* 时间线 */}
+              {detail.trace.length > 0 && (
+                <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 col-span-2">
+                  <div className="text-sm font-bold text-macos-text mb-3">时间线</div>
+                  <TraceTable trace={detail.trace} artifacts={detail.artifacts} flowData={detail.flowData} />
+                </div>
+              )}
+
+              {/* 上下文 — 独占一行 */}
+              <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 col-span-2">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-sm font-bold text-macos-text">上下文</span>
+                  {detail.contextMd && (
+                  <button
+                    onClick={() => setIsContextFullscreen(true)}
+                    className="p-1 rounded-md text-macos-text-tertiary hover:text-macos-text hover:bg-gray-100 transition-colors"
+                  >
+                    <Maximize2 size={14} strokeWidth={1.5} />
+                  </button>
+                  )}
+                </div>
+                <div className="max-h-200 overflow-y-auto">
+                  {detail.contextMd ? (
+                    <MarkdownRenderer content={detail.contextMd} className="text-sm" />
+                  ) : (
+                    <p className="text-sm text-macos-text-tertiary text-center py-8">暂无上下文</p>
+                  )}
+                </div>
+              </div>
 
               {/* 选中产物弹框 — 复用项目 Modal 组件（拖拽/缩放/双击全屏） */}
               {selectedArtifact && (
