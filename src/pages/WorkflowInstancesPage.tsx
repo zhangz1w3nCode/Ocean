@@ -412,14 +412,19 @@ const InstanceDetail: FC = () => {
         </button>
         <button
           onClick={() => isLiveRefresh ? stopLiveRefresh() : startLiveRefresh()}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-colors ${
+          title={isLiveRefresh ? '实时刷新中' : '实时刷新'}
+          className={`flex items-center justify-center p-2 rounded-lg transition-colors ${
             isLiveRefresh
               ? 'bg-green-50 text-green-600'
               : 'text-macos-text-secondary hover:text-macos-text hover:bg-gray-100'
           }`}
         >
-          <Radio size={14} strokeWidth={1.5} className={isLiveRefresh ? 'animate-pulse' : ''} />
-          {isLiveRefresh ? '实时刷新中' : '实时刷新'}
+          <motion.span
+            animate={isLiveRefresh ? { scale: [1, 1.15, 1], opacity: [0.5, 1, 0.5] } : { scale: 1, opacity: 1 }}
+            transition={isLiveRefresh ? { duration: 1.5, repeat: Infinity, ease: 'easeInOut' } : { duration: 0.2 }}
+          >
+            <Radio size={20} strokeWidth={1.5} />
+          </motion.span>
         </button>
       </div>
 
