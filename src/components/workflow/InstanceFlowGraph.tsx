@@ -162,7 +162,7 @@ export const InstanceFlowGraph: FC<InstanceFlowGraphProps> = ({ traceLog, flowDa
     return flowData.nodes.filter(n => visited.has(n.data?.label || '')).map(n => {
       const label = n.data?.label || ''
       const isCurrent = currentName === label
-      return { id: n.id, type: n.type, position: n.position, data: n.data, selected: isCurrent } as Node
+      return { id: n.id, type: n.type, position: n.position, data: n.data, selected: isCurrent, className: isCurrent ? 'animate-node-breathing' : undefined } as Node
     })
   }, [flowData, visited, currentName])
 
