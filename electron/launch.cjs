@@ -553,138 +553,125 @@ ipcMain.handle('read-instance-file', (_, workflowName, instanceId, fileName) => 
   }
 })
 
-// 实例详情构建：被 read-instance-detail（一次性读）与 subscribe-instance-detail（fs.watch 推送）共用
-function buildInstanceDetail(workflowName, instanceId) {
-  try {
-    // 防止路径穿越
-    if (workflowName.includes('..') || instanceId.includes('..')) {
-      return { success: false, error: 'Invalid path' }
-    }
-    const instDir = path.join(getWorkflowsDir(), workflowName, 'instance', instanceId)
-    // 二次校验：解析后路径必须位于工作流目录下
-    const resolvedInstDir = path.resolve(instDir)
-    if (!resolvedInstDir.startsWith(path.resolve(getWorkflowsDir()) + path.sep)) {
-      return { success: false, error: 'Invalid path' }
-    }
-    if (!fs.existsSync(instDir)) {
-      return { success: false, error: 'Instance not found' }
-    }
-    // 读取 process.md
-    let processRaw = ''
-    const processPath = path.join(instDir, 'process.md')
-    if (fs.existsSync(processPath)) {
-      processRaw = fs.readFileSync(processPath, 'utf-8')
-    }
-    // 解析 process.md: frontmatter + mermaid
-    let mermaid = ''
-    const fmMatch = processRaw.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/)
-    if (fmMatch) {
-      const body = fmMatch[2]
-      // 提取 mermaid 代码块
-      const mermaidMatch = body.match(/```mermaid\n([\s\S]*?)```/)
-      if (mermaidMatch) mermaid = mermaidMatch[1].trim()
-    }
-    // 解析 process.md frontmatter 获取节点状态信息
-    let completedNodes = []
-    let currentName = ''
-    let wfStatus = 'unknown'
-    let wfStep = 0
-    let wfLoopCount = 0
-    let wfRetryCount = 0
-    if (fmMatch) {
-      const yaml = fmMatch[1]
-      const cm = yaml.match(/^completed:\n([\s\S]*?)(?=\n[a-z]|\n$)/m)
-      if (cm) completedNodes = cm[1].split('\n').map(l => l.replace(/^\s*-\s*/, '').trim()).filter(Boolean)
-      const cnm = yaml.match(/^current_name:\s*(.+)/m)
-      if (cnm) currentName = cnm[1].trim()
-      const stm = yaml.match(/^status:\s*(.+)/m)
-      if (stm) wfStatus = stm[1].trim()
-      const spm = yaml.match(/^step:\s*(\d+)/m)
-      if (spm) wfStep = parseInt(spm[1])
-      const lpm = yaml.match(/^loop_count:\s*(\d+)/m)
-      if (lpm) wfLoopCount = parseInt(lpm[1])
-      const rpm = yaml.match(/^retry_count:\s*(\d+)/m)
-      if (rpm) wfRetryCount = parseInt(rpm[1])
-    }
+// ===== 按文件的独立解析器（供 buildInstanceDetail 全量读和 watcher 按需增量读共用） =====
+// filename → 字段映射，watcher 只读变化的文件，不需全量重读 + diffDetail 比较
 
-    // 读取工作流定义中的 flow.json（在 workflow 目录的 meta-data 下）
-    let flowData = null
-    const flowPath = path.join(getWorkflowsDir(), workflowName, 'meta-data', 'flow.json')
-    if (fs.existsSync(flowPath)) {
+function parseProcess(instDir) {
+  let processRaw = ''
+  const processPath = path.join(instDir, 'process.md')
+  if (fs.existsSync(processPath)) processRaw = fs.readFileSync(processPath, 'utf-8')
+  let mermaid = ''
+  const fmMatch = processRaw.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/)
+  if (fmMatch) {
+    const mermaidMatch = fmMatch[2].match(/```mermaid\n([\s\S]*?)```/)
+    if (mermaidMatch) mermaid = mermaidMatch[1].trim()
+  }
+  let completedNodes = []
+  let currentName = ''
+  let wfStatus = 'unknown'
+  let wfStep = 0, wfLoopCount = 0, wfRetryCount = 0
+  if (fmMatch) {
+    const yaml = fmMatch[1]
+    const cm = yaml.match(/^completed:\n([\s\S]*?)(?=\n[a-z]|\n$)/m)
+    if (cm) completedNodes = cm[1].split('\n').map(l => l.replace(/^\s*-\s*/, '').trim()).filter(Boolean)
+    const cnm = yaml.match(/^current_name:\s*(.+)/m); if (cnm) currentName = cnm[1].trim()
+    const stm = yaml.match(/^status:\s*(.+)/m); if (stm) wfStatus = stm[1].trim()
+    const spm = yaml.match(/^step:\s*(\d+)/m); if (spm) wfStep = parseInt(spm[1])
+    const lpm = yaml.match(/^loop_count:\s*(\d+)/m); if (lpm) wfLoopCount = parseInt(lpm[1])
+    const rpm = yaml.match(/^retry_count:\s*(\d+)/m); if (rpm) wfRetryCount = parseInt(rpm[1])
+  }
+  return { processRaw, mermaid, completedNodes, currentName, wfStatus, wfStep, wfLoopCount, wfRetryCount }
+}
+
+function parseTrace(instDir) {
+  let traceLog = ''
+  let trace = []
+  const tracePath = path.join(instDir, 'trace', 'trace.jsonl')
+  if (fs.existsSync(tracePath)) {
+    traceLog = fs.readFileSync(tracePath, 'utf-8')
+    for (const line of traceLog.split('\n')) {
+      if (!line.trim()) continue
       try {
-        flowData = JSON.parse(fs.readFileSync(flowPath, 'utf-8'))
-      } catch (e) {
-        console.error('解析 flow.json 失败:', e)
-      }
+        const entry = JSON.parse(line)
+        if (!entry.node || !entry.invoke || !entry.status) continue
+        const existing = trace.find(e => e.node === entry.node && e.invoke === entry.invoke)
+        if (existing) {
+          existing.status = entry.status
+          if (entry.branch) existing.branch = entry.branch
+          if (entry.status === 'completed') existing.completedTime = entry.ts
+        } else {
+          trace.push({ status: entry.status, node: entry.node, invoke: entry.invoke, branch: entry.branch || null, time: entry.ts, completedTime: null })
+        }
+      } catch (e) {}
     }
-    let instanceMd = ''
-    const instMdPath = path.join(instDir, 'instance.md')
-    if (fs.existsSync(instMdPath)) {
-      instanceMd = fs.readFileSync(instMdPath, 'utf-8')
-    }
-    // 读取 trace.jsonl
-    let traceLog = ''
-    let trace = []
-    const tracePath = path.join(instDir, 'trace', 'trace.jsonl')
-    if (fs.existsSync(tracePath)) {
-      traceLog = fs.readFileSync(tracePath, 'utf-8')
-      // 从 trace.jsonl 构建 timeline（复刻 Rust reconstruct_trace_from_jsonl）
-      // 按 (node, invoke) 去重 upsert：首次出现取 ts 作为执行时间，后续更新 status/branch
-      for (const line of traceLog.split('\n')) {
-        if (!line.trim()) continue
-        try {
-          const entry = JSON.parse(line)
-          if (!entry.node || !entry.invoke || !entry.status) continue
-          const existing = trace.find(e => e.node === entry.node && e.invoke === entry.invoke)
-          if (existing) {
-            existing.status = entry.status
-            if (entry.branch) existing.branch = entry.branch
-            if (entry.status === 'completed') existing.completedTime = entry.ts
-          } else {
-            trace.push({
-              status: entry.status,
-              node: entry.node,
-              invoke: entry.invoke,
-              branch: entry.branch || null,
-              time: entry.ts,
-              completedTime: null,
-            })
-          }
-        } catch (e) {}
-      }
-    }
-    // 读取所有产物（artifacts/{node}/{invoke}/detail.md）
-    const artifacts = []
-    const artDir = path.join(instDir, 'artifacts')
-    if (fs.existsSync(artDir)) {
-      const nodeDirs = fs.readdirSync(artDir, { withFileTypes: true }).filter(d => d.isDirectory())
-      for (const nd of nodeDirs) {
-        const invokeDir = path.join(artDir, nd.name)
-        const invokeDirs = fs.readdirSync(invokeDir, { withFileTypes: true }).filter(d => d.isDirectory())
-        for (const id of invokeDirs) {
-          const detailPath = path.join(invokeDir, id.name, 'detail.md')
-          if (fs.existsSync(detailPath)) {
-            const content = fs.readFileSync(detailPath, 'utf-8')
-            const stat = fs.statSync(detailPath)
-            artifacts.push({
-              nodeName: nd.name,
-              invokeId: id.name,
-              content,
-              updatedAt: stat.mtime.toISOString(),
-            })
-          }
+  }
+  return { traceLog, trace }
+}
+
+function parseArtifacts(instDir) {
+  const artifacts = []
+  const artDir = path.join(instDir, 'artifacts')
+  if (fs.existsSync(artDir)) {
+    const nodeDirs = fs.readdirSync(artDir, { withFileTypes: true }).filter(d => d.isDirectory())
+    for (const nd of nodeDirs) {
+      const invokeDir = path.join(artDir, nd.name)
+      const invokeDirs = fs.readdirSync(invokeDir, { withFileTypes: true }).filter(d => d.isDirectory())
+      for (const id of invokeDirs) {
+        const detailPath = path.join(invokeDir, id.name, 'detail.md')
+        if (fs.existsSync(detailPath)) {
+          const content = fs.readFileSync(detailPath, 'utf-8')
+          const stat = fs.statSync(detailPath)
+          artifacts.push({ nodeName: nd.name, invokeId: id.name, content, updatedAt: stat.mtime.toISOString() })
         }
       }
     }
-    // 按时间排序
-    // 读取 context.md（Agent 暂存上下文）
-    let contextMd = ''
-    const contextPath = path.join(instDir, 'context.md')
-    if (fs.existsSync(contextPath)) {
-      contextMd = fs.readFileSync(contextPath, 'utf-8')
+  }
+  artifacts.sort((a, b) => a.invokeId.localeCompare(b.invokeId))
+  return { artifacts }
+}
+
+function parseContext(instDir) {
+  let contextMd = ''
+  const contextPath = path.join(instDir, 'context.md')
+  if (fs.existsSync(contextPath)) contextMd = fs.readFileSync(contextPath, 'utf-8')
+  return { contextMd }
+}
+
+function parseInstanceMd(instDir) {
+  let instanceMd = ''
+  const instMdPath = path.join(instDir, 'instance.md')
+  if (fs.existsSync(instMdPath)) instanceMd = fs.readFileSync(instMdPath, 'utf-8')
+  return { instanceMd }
+}
+
+function readFlowData(workflowName) {
+  let flowData = null
+  const flowPath = path.join(getWorkflowsDir(), workflowName, 'meta-data', 'flow.json')
+  if (fs.existsSync(flowPath)) {
+    try { flowData = JSON.parse(fs.readFileSync(flowPath, 'utf-8')) } catch (e) { console.error('解析 flow.json 失败:', e) }
+  }
+  return { flowData }
+}
+
+// 实例详情构建：被 read-instance-detail（一次性读）与 subscribe-instance-detail（fs.watch 推送初始快照）共用
+function buildInstanceDetail(workflowName, instanceId) {
+  try {
+    if (workflowName.includes('..') || instanceId.includes('..')) return { success: false, error: 'Invalid path' }
+    const instDir = path.join(getWorkflowsDir(), workflowName, 'instance', instanceId)
+    const resolvedInstDir = path.resolve(instDir)
+    if (!resolvedInstDir.startsWith(path.resolve(getWorkflowsDir()) + path.sep)) return { success: false, error: 'Invalid path' }
+    if (!fs.existsSync(instDir)) return { success: false, error: 'Instance not found' }
+    return {
+      success: true,
+      detail: {
+        ...parseProcess(instDir),
+        ...parseTrace(instDir),
+        ...parseArtifacts(instDir),
+        ...parseContext(instDir),
+        ...parseInstanceMd(instDir),
+        ...readFlowData(workflowName),
+      },
     }
-    artifacts.sort((a, b) => a.invokeId.localeCompare(b.invokeId))
-    return { success: true, detail: { processRaw, mermaid, trace, artifacts, traceLog, instanceMd, flowData, completedNodes, currentName, wfStatus, wfStep, wfLoopCount, wfRetryCount, contextMd } }
   } catch (error) {
     console.error('读取实例详情失败:', error)
     return { success: false, error: String(error) }
@@ -693,49 +680,69 @@ function buildInstanceDetail(workflowName, instanceId) {
 
 ipcMain.handle('read-instance-detail', (_, workflowName, instanceId) => buildInstanceDetail(workflowName, instanceId))
 
-// ===== 实例详情实时推送（fs.watch → webContents.send，替代 1s 轮询） =====
-// 空闲时零开销；文件真正变化才推送变化字段（增量 delta），渲染进程做结构共享合并，
-// 未变字段保持原引用 → memo 子组件跳过重渲染，消除「一直闪」。
+// ===== 实例详情实时推送（fs.watch → 按 filename 路由只读变化文件 → webContents.send） =====
+// fs.watch 回调提供 filename，按文件路由只重读变化的文件并计算其字段，
+// 不再全量重读所有文件 + diffDetail 比较。filename 为 null 或未识别时兜底全量重读。
 let _instanceWatcher = null
-function diffDetail(old, fresh) {
-  if (!old) return fresh || {}
-  const delta = {}
-  for (const k of Object.keys(fresh || {})) {
-    const ov = old[k], nv = fresh[k]
-    if (typeof nv === 'string') { if (ov !== nv) delta[k] = nv }
-    else if (Array.isArray(nv)) { if (!Array.isArray(ov) || ov.length !== nv.length || JSON.stringify(ov) !== JSON.stringify(nv)) delta[k] = nv }
-    else if (nv && typeof nv === 'object') { if (ov !== nv) delta[k] = nv }
-    else { if (ov !== nv) delta[k] = nv }
-  }
-  return delta
-}
+
 function stopInstanceWatcher() {
   if (!_instanceWatcher) return
   if (_instanceWatcher.watcher) _instanceWatcher.watcher.close()
   if (_instanceWatcher.timer) clearTimeout(_instanceWatcher.timer)
   _instanceWatcher = null
 }
+
+// filename → 解析器映射；返回 null 表示需要全量兜底
+function parseByFilename(instDir, workflowName, filename) {
+  if (!filename) return null
+  const f = filename.replace(/\\\\/g, '/')
+  if (f.includes('trace')) return parseTrace(instDir)
+  if (f.includes('process.md')) return parseProcess(instDir)
+  if (f.includes('artifacts')) return parseArtifacts(instDir)
+  if (f.includes('context.md')) return parseContext(instDir)
+  if (f.includes('instance.md')) return parseInstanceMd(instDir)
+  if (f.includes('flow.json')) return readFlowData(workflowName)
+  return null
+}
+
 ipcMain.handle('subscribe-instance-detail', (_event, workflowName, instanceId) => {
   stopInstanceWatcher()
   const initial = buildInstanceDetail(workflowName, instanceId)
   if (!initial.success) return initial
   const instDir = path.join(getWorkflowsDir(), workflowName, 'instance', instanceId)
-  _instanceWatcher = { workflowName, instanceId, lastSnapshot: initial.detail, watcher: null, timer: null }
-  let pending = false
+  _instanceWatcher = { workflowName, instanceId, watcher: null, timer: null, changedFiles: new Set() }
   try {
-    // macOS fs.watch recursive 覆盖 trace.jsonl / process.md / artifacts/ / context.md / instance.md
-    _instanceWatcher.watcher = fs.watch(instDir, { recursive: true }, () => {
-      if (pending) return
-      pending = true
-      _instanceWatcher.timer = setTimeout(() => {
-        pending = false
-        const w = _instanceWatcher
-        if (!w || w.workflowName !== workflowName || w.instanceId !== instanceId) return
-        const fresh = buildInstanceDetail(workflowName, instanceId)
-        if (!fresh.success) return
-        const delta = diffDetail(w.lastSnapshot, fresh.detail)
-        w.lastSnapshot = fresh.detail
-        if (Object.keys(delta).length > 0) {
+    // macOS fs.watch recursive 覆盖 trace/process.md/artifacts/context.md/instance.md
+    _instanceWatcher.watcher = fs.watch(instDir, { recursive: true }, (_eventType, filename) => {
+      const w = _instanceWatcher
+      if (!w || w.workflowName !== workflowName || w.instanceId !== instanceId) return
+      // 收集变化的 filename 到 Set，debounce 后统一处理
+      w.changedFiles.add(filename)
+      if (w.timer) clearTimeout(w.timer)
+      w.timer = setTimeout(() => {
+        const w2 = _instanceWatcher
+        if (!w2 || w2.workflowName !== workflowName || w2.instanceId !== instanceId) return
+        const files = w2.changedFiles
+        w2.changedFiles = new Set()
+        w2.timer = null
+        if (!files.size) return
+        // 遍历变化的文件，只读变化的文件并计算其字段
+        let needFullRebuild = false
+        const delta = {}
+        for (const fn of files) {
+          const partial = parseByFilename(instDir, workflowName, fn)
+          if (partial) {
+            Object.assign(delta, partial)
+          } else {
+            // filename 为 null 或未识别 → 全量兜底
+            needFullRebuild = true
+            break
+          }
+        }
+        if (needFullRebuild) {
+          const fresh = buildInstanceDetail(workflowName, instanceId)
+          if (fresh.success) mainWindow?.webContents?.send('instance-detail-delta', fresh.detail)
+        } else if (Object.keys(delta).length > 0) {
           mainWindow?.webContents?.send('instance-detail-delta', delta)
         }
       }, 150)
