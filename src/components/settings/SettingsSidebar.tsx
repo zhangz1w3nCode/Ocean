@@ -1,5 +1,5 @@
 import type { FC } from 'react'
-import { Cpu, Bot, Wand2, BookOpen, Layers, LucideIcon } from 'lucide-react'
+import { Cpu, Bot, Wand2, BookOpen, Layers, Settings, LucideIcon } from 'lucide-react'
 import { useSettingsStore } from '../../stores/settingsStore'
 import type { SettingsCategory } from '../../types'
 
@@ -42,6 +42,11 @@ export const SettingsSidebar: FC = () => {
   const { currentCategory, setCurrentCategory } = useSettingsStore()
 
   const settingsItems = [
+    {
+      id: 'general' as SettingsCategory,
+      label: '通用',
+      icon: Settings,
+    },
     {
       id: 'llm' as SettingsCategory,
       label: 'LLM',

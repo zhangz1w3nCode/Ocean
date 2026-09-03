@@ -7,6 +7,7 @@ import { AgenticSettings } from '../components/settings/AgenticSettings'
 import { SkillSettings } from '../components/settings/SkillSettings'
 import { KnowledgeSettings } from '../components/settings/KnowledgeSettings'
 import { AssetSourceSettings } from '../components/settings/AssetSourceSettings'
+import { GeneralSettings } from '../components/settings/GeneralSettings'
 
 export const SettingsPage: FC = () => {
   const { currentCategory, loadLLMProviders, loadAgenticConfig, loadAssetRoot } = useSettingsStore()
@@ -31,7 +32,8 @@ export const SettingsPage: FC = () => {
         return <KnowledgeSettings />
       case 'asset':
         return <AssetSourceSettings />
-        return <LLMSettings />
+      case 'general':
+        return <GeneralSettings />
     }
   }
 

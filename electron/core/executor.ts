@@ -638,6 +638,24 @@ export function resolveRoot(explicit?: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// resolve_asset_dir — read .ocean/asset-root.json, return '.pi' or '.claude'
+// ---------------------------------------------------------------------------
+
+export function resolveAssetDir(root: string): string {
+  try {
+    const configPath = path.join(root, '.ocean', 'asset-root.json')
+    if (fs.existsSync(configPath)) {
+      const content = fs.readFileSync(configPath, 'utf-8')
+      const config = JSON.parse(content)
+      if (config.assetRoot === 'pi') return '.pi'
+    }
+  } catch {
+    // ignore
+  }
+  return '.claude'
+}
+
+// ---------------------------------------------------------------------------
 // read_output (from main.rs)
 // ---------------------------------------------------------------------------
 
