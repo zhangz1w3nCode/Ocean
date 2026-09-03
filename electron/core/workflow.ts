@@ -503,13 +503,13 @@ export function autoLayout(root: string, wfName: string): void {
   }
   nodes.forEach(n => calcSubtreeSize(n.id))
 
-  // 4. DFS assign Y (user-preference: decisions above, fixes below)
+  // 4. DFS assign Y (user-preference: main flow flat, decisions above, fixes below)
   const HORIZONTAL_GAP = 260
   const VERTICAL_GAP = 120
   const START_X = 80
-  const START_Y = 80
-  const DECISION_Y_OFFSET = 120   // decision placed above flow
-  const FIX_Y_OFFSET = 260        // fix/retry placed below flow
+  const START_Y = 260
+  const DECISION_Y_OFFSET = 80    // decision slightly above main flow
+  const FIX_Y_OFFSET = 240        // fix/retry placed below main flow
   const nodeY: Record<string, number> = {}
   const visitingY = new Set<string>()
 
@@ -527,25 +527,23 @@ export function autoLayout(root: string, wfName: string): void {
     }
 
     if (node?.type === 'decision') {
-      // decision placed above flow
+      // decision slightly above main flow
       const decY = flowY - DECISION_Y_OFFSET
       nodeY[nodeId] = decY
-      // happy path (first child) continues upward at decision level
-      // fix/retry (other children) placed well below
       let fixY = flowY + FIX_Y_OFFSET
       children.forEach((childId, index) => {
         if (index === 0) {
-          // happy path: near decision level
-          assignY(childId, decY)
+          // happy path: return to main flow level (not decision level)
+          assignY(childId, flowY)
         } else {
-          // fix/retry: well below flow
+          // fix/retry: below main flow
           nodeY[childId] = fixY
           fixY += VERTICAL_GAP
         }
       })
       visitingY.delete(nodeId)
-      // flow continues at decision level (going up)
-      return decY + VERTICAL_GAP
+      // flow continues at main flow level (stays flat, not climbing)
+      return flowY + VERTICAL_GAP
     } else {
       // non-decision: children continue at current flow level
       nodeY[nodeId] = flowY
@@ -574,10 +572,9 @@ export function autoLayout(root: string, wfName: string): void {
   }
 
   // 5. Collect positions — larger gap after decision nodes
-  const DECISION_GAP_BONUS = 100
+  const DECISION_GAP_BONUS = 280  // decision->target gap = 260+280 = 540
   flow.nodes = nodes.map(node => {
     const level = levels[node.id] ?? 0
-    // check if previous level has a decision node
     const prevLevelNodes = levelNodes[level - 1] || []
     const prevHasDecision = prevLevelNodes.some(id => nodeMap.get(id)?.type === 'decision')
     const gapBonus = prevHasDecision ? DECISION_GAP_BONUS : 0
