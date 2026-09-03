@@ -420,3 +420,162 @@ export function delLocalNode(root: string, wfName: string, nodeName: string): vo
   const p = path.join(localNodesDir(root, wfName), `${nodeName}.md`)
   if (fs.existsSync(p)) fs.unlinkSync(p)
 }
+
+// --- auto layout (ported from GUI flowEditorStore.ts:431-625) ---
+
+export function autoLayout(root: string, wfName: string): void {
+  const flow = readFlowJson(root, wfName)
+  const nodes: any[] = flow.nodes || []
+  const edges: any[] = flow.edges || []
+  if (nodes.length === 0) return
+
+  const nodeMap = new Map(nodes.map(n => [n.id, n]))
+  const outgoingEdges: Record<string, string[]> = {}
+  const incomingEdges: Record<string, string[]> = {}
+
+  nodes.forEach(n => {
+    outgoingEdges[n.id] = []
+    incomingEdges[n.id] = []
+  })
+
+  edges.forEach(e => {
+    if (outgoingEdges[e.source]) outgoingEdges[e.source].push(e.target)
+    if (incomingEdges[e.target]) incomingEdges[e.target].push(e.source)
+  })
+
+  // 1. BFS layering
+  const startNode = nodes.find(n => n.type === 'start')
+  const levels: Record<string, number> = {}
+  const visited = new Set<string>()
+
+  const assignLevel = (nodeId: string, level: number) => {
+    if (visited.has(nodeId)) {
+      levels[nodeId] = Math.max(levels[nodeId] || 0, level)
+      return
+    }
+    visited.add(nodeId)
+    levels[nodeId] = level
+
+    const downstream = outgoingEdges[nodeId] || []
+    const sortedDownstream = downstream.sort((a, b) => {
+      const nodeA = nodeMap.get(a)
+      const nodeB = nodeMap.get(b)
+      const priorityA = nodeA?.type === 'process' ? 2 : nodeA?.type === 'decision' ? 1 : 0
+      const priorityB = nodeB?.type === 'process' ? 2 : nodeB?.type === 'decision' ? 1 : 0
+      return priorityB - priorityA
+    })
+
+    sortedDownstream.forEach(targetId => {
+      assignLevel(targetId, level + 1)
+    })
+  }
+
+  if (startNode) {
+    assignLevel(startNode.id, 0)
+  } else {
+    nodes.forEach(n => {
+      if ((incomingEdges[n.id] || []).length === 0) assignLevel(n.id, 0)
+    })
+  }
+
+  // 2. Group by level
+  const levelNodes: Record<number, string[]> = {}
+  nodes.forEach(n => {
+    const level = levels[n.id] ?? 0
+    if (!levelNodes[level]) levelNodes[level] = []
+    levelNodes[level].push(n.id)
+  })
+
+  // 3. DFS subtree size
+  const subtreeSize: Record<string, number> = {}
+  const visiting = new Set<string>()
+  const calcSubtreeSize = (nodeId: string): number => {
+    if (subtreeSize[nodeId] !== undefined) return subtreeSize[nodeId]
+    if (visiting.has(nodeId)) return 1
+    visiting.add(nodeId)
+    const children = outgoingEdges[nodeId] || []
+    if (children.length === 0) {
+      subtreeSize[nodeId] = 1
+      visiting.delete(nodeId)
+      return 1
+    }
+    const size = children.reduce((sum, childId) => sum + calcSubtreeSize(childId), 0)
+    subtreeSize[nodeId] = size
+    visiting.delete(nodeId)
+    return size
+  }
+  nodes.forEach(n => calcSubtreeSize(n.id))
+
+  // 4. DFS assign Y
+  const HORIZONTAL_GAP = 280
+  const VERTICAL_GAP = 120
+  const START_X = 100
+  const START_Y = 100
+  const nodeY: Record<string, number> = {}
+
+  const visitingY = new Set<string>()
+  const assignY = (nodeId: string, startY: number): number => {
+    if (nodeY[nodeId] !== undefined) return nodeY[nodeId]
+    if (visitingY.has(nodeId)) return startY + VERTICAL_GAP
+    visitingY.add(nodeId)
+    const children = outgoingEdges[nodeId] || []
+    const node = nodeMap.get(nodeId)
+
+    if (children.length === 0) {
+      nodeY[nodeId] = startY
+      visitingY.delete(nodeId)
+      return startY + VERTICAL_GAP
+    }
+
+    if (node?.type === 'decision') {
+      const centerY = startY + (children.length - 1) * VERTICAL_GAP / 2
+      nodeY[nodeId] = centerY
+      children.forEach((childId, index) => {
+        nodeY[childId] = startY + index * VERTICAL_GAP
+      })
+      visitingY.delete(nodeId)
+      return startY + children.length * VERTICAL_GAP
+    } else {
+      let currentY = startY
+      nodeY[nodeId] = startY
+      children.forEach(childId => {
+        currentY = assignY(childId, currentY)
+      })
+      visitingY.delete(nodeId)
+      return currentY
+    }
+  }
+
+  if (startNode) {
+    assignY(startNode.id, START_Y)
+  } else {
+    Object.keys(levelNodes).forEach(levelKey => {
+      const level = parseInt(levelKey)
+      const nodeIds = levelNodes[level]
+      if (nodeIds) {
+        let currentY = START_Y
+        nodeIds.forEach(nodeId => {
+          if (nodeY[nodeId] === undefined) currentY = assignY(nodeId, currentY)
+        })
+      }
+    })
+  }
+
+  // 5. Collect positions
+  flow.nodes = nodes.map(node => {
+    const level = levels[node.id] ?? 0
+    const nodesInSameLevel = levelNodes[level] || []
+    const sortedNodesInLevel = nodesInSameLevel.sort((a, b) => (nodeY[a] || 0) - (nodeY[b] || 0))
+    const indexInLevel = sortedNodesInLevel.indexOf(node.id)
+    const y = nodeY[node.id] ?? START_Y + indexInLevel * VERTICAL_GAP
+    return {
+      ...node,
+      position: {
+        x: START_X + level * HORIZONTAL_GAP,
+        y: y
+      }
+    }
+  })
+
+  writeFlowJson(root, wfName, flow)
+}
