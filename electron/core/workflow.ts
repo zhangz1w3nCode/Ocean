@@ -429,19 +429,16 @@ export function autoLayout(root: string, wfName: string): void {
   const edges: any[] = flow.edges || []
   if (nodes.length === 0) return
 
-  // Use dagre for layer assignment + crossing minimization
   const dagre = require('@dagrejs/dagre')
   const g = new dagre.graphlib.Graph()
   g.setGraph({ rankdir: 'LR', ranksep: 260, nodesep: 120, ranker: 'tight-tree' })
   g.setDefaultEdgeLabel(() => ({}))
 
-  // Node sizes by type (dagre needs width/height for proper spacing)
   const NODE_WIDTH = 180
   const NODE_HEIGHT = 60
-  const DECISION_HEIGHT = 100 // decision nodes taller (branches)
 
   nodes.forEach(n => {
-    const h = n.type === 'decision' ? DECISION_HEIGHT : NODE_HEIGHT
+    const h = n.type === 'decision' ? 100 : NODE_HEIGHT
     g.setNode(n.id, { width: NODE_WIDTH, height: h })
   })
   edges.forEach(e => {
@@ -450,64 +447,14 @@ export function autoLayout(root: string, wfName: string): void {
 
   dagre.layout(g)
 
-  // Post-process Y positions based on node type (user preference)
-  const MAIN_FLOW_Y = 260
-  const DECISION_Y = 180   // decisions slightly above main flow
-  const FIX_Y = 500         // fix/retry below main flow
-
-  // Build adjacency for branch analysis
-  const outgoingEdges: Record<string, string[]> = {}
-  nodes.forEach(n => { outgoingEdges[n.id] = [] })
-  edges.forEach(e => {
-    if (outgoingEdges[e.source]) outgoingEdges[e.source].push(e.target)
-  })
-
-  // Find main flow Y: the median Y of business/start/end nodes from dagre
-  const mainFlowNodes = nodes.filter(n =>
-    n.type === 'start' || n.type === 'end' || n.type === 'business'
-  )
-  const dagreYs = mainFlowNodes.map(n => g.node(n.id)?.y || 0).sort((a, b) => a - b)
-  const dagreMainY = dagreYs.length > 0
-    ? dagreYs[Math.floor(dagreYs.length / 2)]
-    : MAIN_FLOW_Y
-  const yShift = MAIN_FLOW_Y - dagreMainY
-
-  // Classify nodes: main flow, decision, or branch-off
-  const isCycleTarget = new Set<string>()
-  // A process/local node whose source is a decision's fix branch is a cycle/fix target
-  edges.forEach(e => {
-    const srcNode = nodes.find(n => n.id === e.source)
-    const tgtNode = nodes.find(n => n.id === e.target)
-    if (srcNode?.type === 'decision' && tgtNode &&
-        (tgtNode.type === 'process' || tgtNode.type === 'local')) {
-      // This edge goes to a fix/retry node
-      isCycleTarget.add(e.target)
-    }
-  })
-
-  // Assign final positions
+  // Use dagre output directly (center -> topLeft)
   flow.nodes = nodes.map(node => {
-    const dagreNode = g.node(node.id)
-    const dagreX = dagreNode?.x || 0
-    const dagreY = dagreNode?.y || 0
-
-    let finalY: number
-    if (node.type === 'decision') {
-      // Decision: slightly above main flow
-      finalY = DECISION_Y
-    } else if (isCycleTarget.has(node.id)) {
-      // Fix/retry: below main flow
-      finalY = FIX_Y
-    } else {
-      // Main flow: force flat line at MAIN_FLOW_Y
-      finalY = MAIN_FLOW_Y
-    }
-
+    const d = g.node(node.id)
     return {
       ...node,
       position: {
-        x: dagreX - NODE_WIDTH / 2, // dagre center -> topLeft
-        y: finalY
+        x: (d?.x || 0) - NODE_WIDTH / 2,
+        y: (d?.y || 0) - (node.type === 'decision' ? 100 : NODE_HEIGHT) / 2,
       }
     }
   })
