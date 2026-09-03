@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import dagre from '@dagrejs/dagre'
 import type { ReactFlowNode, ReactFlowEdge } from '../types/flow'
 
 // 历史记录项
@@ -428,195 +429,33 @@ export const useFlowEditorStore = create<FlowEditorState>((set, get) => ({
     return clipboard !== null && clipboard.nodes.length > 0
   },
 
-  // 自动布局算法 - 改进版
+  // 自动布局 - dagre 引擎
   autoLayout: () => {
     const { nodes, edges } = get()
     if (nodes.length === 0) return
 
     get().pushHistory()
 
-    // 构建图结构
-    const nodeMap = new Map(nodes.map(n => [n.id, n]))
-    const outgoingEdges: Record<string, string[]> = {}
-    const incomingEdges: Record<string, string[]> = {}
+    const g = new dagre.graphlib.Graph()
+    g.setGraph({ rankdir: 'LR', ranksep: 260, nodesep: 120, ranker: 'tight-tree' })
+    g.setDefaultEdgeLabel(() => ({}))
 
+    const NW = 180, NH = 60
     nodes.forEach(n => {
-      outgoingEdges[n.id] = []
-      incomingEdges[n.id] = []
+      g.setNode(n.id, { width: NW, height: n.type === 'decision' ? 100 : NH })
     })
+    edges.forEach(e => { g.setEdge(e.source, e.target) })
 
-    edges.forEach(e => {
-      outgoingEdges[e.source].push(e.target)
-      incomingEdges[e.target].push(e.source)
-    })
+    dagre.layout(g)
 
-    // 1. 确定主路径（从start到end的最长路径）
-    const startNode = nodes.find(n => n.type === 'start')
-    const endNode = nodes.find(n => n.type === 'end')
-
-    // 计算每个节点的层级（基于主流程）
-    const levels: Record<string, number> = {}
-    const visited = new Set<string>()
-
-    const assignLevel = (nodeId: string, level: number) => {
-      if (visited.has(nodeId)) {
-        // 已访问过，取最大层级
-        levels[nodeId] = Math.max(levels[nodeId] || 0, level)
-        return
-      }
-      visited.add(nodeId)
-      levels[nodeId] = level
-
-      // 获取下游节点并按类型排序（process > decision > others）
-      const downstream = outgoingEdges[nodeId] || []
-      const sortedDownstream = downstream.sort((a, b) => {
-        const nodeA = nodeMap.get(a)
-        const nodeB = nodeMap.get(b)
-        const priorityA = nodeA?.type === 'process' ? 2 : nodeA?.type === 'decision' ? 1 : 0
-        const priorityB = nodeB?.type === 'process' ? 2 : nodeB?.type === 'decision' ? 1 : 0
-        return priorityB - priorityA
-      })
-
-      // 主流程（第一个下游节点）继续当前层级+1
-      // 分支流程（其他节点）如果是decision的子节点，需要特殊处理
-      sortedDownstream.forEach((targetId, index) => {
-        const sourceNode = nodeMap.get(nodeId)
-        const targetNode = nodeMap.get(targetId)
-
-        if (index === 0) {
-          // 主流程路径
-          assignLevel(targetId, level + 1)
-        } else {
-          // 分支路径
-          if (sourceNode?.type === 'decision') {
-            // decision的分支节点与decision同层级（水平排列）
-            assignLevel(targetId, level + 1)
-          } else {
-            assignLevel(targetId, level + 1)
-          }
-        }
-      })
-    }
-
-    // 从start节点开始分配层级
-    if (startNode) {
-      assignLevel(startNode.id, 0)
-    } else {
-      // 没有start节点，从入度为0的节点开始
-      nodes.forEach(n => {
-        if ((incomingEdges[n.id] || []).length === 0) {
-          assignLevel(n.id, 0)
-        }
-      })
-    }
-
-    // 2. 按层级分组
-    const levelNodes: Record<number, string[]> = {}
-    nodes.forEach(n => {
-      const level = levels[n.id] ?? 0
-      if (!levelNodes[level]) levelNodes[level] = []
-      levelNodes[level].push(n.id)
-    })
-
-    // 3. 计算每个层级的垂直位置
-    // 统计每个节点的子树大小，用于分配垂直空间
-    const subtreeSize: Record<string, number> = {}
-    const calcSubtreeSize = (nodeId: string): number => {
-      if (subtreeSize[nodeId] !== undefined) return subtreeSize[nodeId]
-
-      const children = outgoingEdges[nodeId] || []
-      if (children.length === 0) {
-        subtreeSize[nodeId] = 1
-        return 1
-      }
-
-      const size = children.reduce((sum, childId) => sum + calcSubtreeSize(childId), 0)
-      subtreeSize[nodeId] = size
-      return size
-    }
-
-    nodes.forEach(n => calcSubtreeSize(n.id))
-
-    // 4. 计算位置
-    const HORIZONTAL_GAP = 280  // 增大水平间距
-    const VERTICAL_GAP = 120    // 垂直间距
-    const START_X = 100
-    const START_Y = 100
-
-    // 为每个节点计算Y坐标
-    const nodeY: Record<string, number> = {}
-
-    const assignY = (nodeId: string, startY: number): number => {
-      if (nodeY[nodeId] !== undefined) return nodeY[nodeId]
-
-      const children = outgoingEdges[nodeId] || []
-      const node = nodeMap.get(nodeId)
-
-      if (children.length === 0) {
-        nodeY[nodeId] = startY
-        return startY + VERTICAL_GAP
-      }
-
-      // 对于decision节点，子节点应该在同一水平线上排列
-      if (node?.type === 'decision') {
-        let currentY = startY
-        const centerY = startY + (children.length - 1) * VERTICAL_GAP / 2
-        nodeY[nodeId] = centerY
-
-        children.forEach((childId, index) => {
-          nodeY[childId] = startY + index * VERTICAL_GAP
-        })
-
-        return startY + children.length * VERTICAL_GAP
-      } else {
-        // 其他节点，子节点垂直堆叠
-        let currentY = startY
-        nodeY[nodeId] = startY
-
-        children.forEach(childId => {
-          currentY = assignY(childId, currentY)
-        })
-
-        return currentY
-      }
-    }
-
-    // 从start节点开始分配Y坐标
-    if (startNode) {
-      assignY(startNode.id, START_Y)
-    } else {
-      // 从每个层级的第一个节点开始
-      Object.keys(levelNodes).forEach(levelKey => {
-        const level = parseInt(levelKey)
-        const nodeIds = levelNodes[level]
-        if (nodeIds) {
-          let currentY = START_Y
-          nodeIds.forEach(nodeId => {
-            if (nodeY[nodeId] === undefined) {
-              currentY = assignY(nodeId, currentY)
-            }
-          })
-        }
-      })
-    }
-
-    // 5. 收集所有节点位置
     const layoutedNodes = nodes.map(node => {
-      const level = levels[node.id] ?? 0
-
-      // 找到该层级所有节点，按Y坐标排序，计算索引
-      const nodesInSameLevel = levelNodes[level] || []
-      const sortedNodesInLevel = nodesInSameLevel.sort((a, b) => (nodeY[a] || 0) - (nodeY[b] || 0))
-      const indexInLevel = sortedNodesInLevel.indexOf(node.id)
-
-      // 如果没有预计算的Y坐标，使用简单的网格布局
-      const y = nodeY[node.id] ?? START_Y + indexInLevel * VERTICAL_GAP
-
+      const d = g.node(node.id)
+      const h = node.type === 'decision' ? 100 : NH
       return {
         ...node,
         position: {
-          x: START_X + level * HORIZONTAL_GAP,
-          y: y
+          x: (d?.x || 0) - NW / 2,
+          y: (d?.y || 0) - h / 2,
         }
       }
     })
