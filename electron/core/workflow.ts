@@ -429,164 +429,85 @@ export function autoLayout(root: string, wfName: string): void {
   const edges: any[] = flow.edges || []
   if (nodes.length === 0) return
 
-  const nodeMap = new Map(nodes.map(n => [n.id, n]))
-  const outgoingEdges: Record<string, string[]> = {}
-  const incomingEdges: Record<string, string[]> = {}
+  // Use dagre for layer assignment + crossing minimization
+  const dagre = require('@dagrejs/dagre')
+  const g = new dagre.graphlib.Graph()
+  g.setGraph({ rankdir: 'LR', ranksep: 260, nodesep: 120, ranker: 'tight-tree' })
+  g.setDefaultEdgeLabel(() => ({}))
+
+  // Node sizes by type (dagre needs width/height for proper spacing)
+  const NODE_WIDTH = 180
+  const NODE_HEIGHT = 60
+  const DECISION_HEIGHT = 100 // decision nodes taller (branches)
 
   nodes.forEach(n => {
-    outgoingEdges[n.id] = []
-    incomingEdges[n.id] = []
+    const h = n.type === 'decision' ? DECISION_HEIGHT : NODE_HEIGHT
+    g.setNode(n.id, { width: NODE_WIDTH, height: h })
+  })
+  edges.forEach(e => {
+    g.setEdge(e.source, e.target)
   })
 
+  dagre.layout(g)
+
+  // Post-process Y positions based on node type (user preference)
+  const MAIN_FLOW_Y = 260
+  const DECISION_Y = 180   // decisions slightly above main flow
+  const FIX_Y = 500         // fix/retry below main flow
+
+  // Build adjacency for branch analysis
+  const outgoingEdges: Record<string, string[]> = {}
+  nodes.forEach(n => { outgoingEdges[n.id] = [] })
   edges.forEach(e => {
     if (outgoingEdges[e.source]) outgoingEdges[e.source].push(e.target)
-    if (incomingEdges[e.target]) incomingEdges[e.target].push(e.source)
   })
 
-  // 1. BFS layering
-  const startNode = nodes.find(n => n.type === 'start')
-  const levels: Record<string, number> = {}
-  const visited = new Set<string>()
+  // Find main flow Y: the median Y of business/start/end nodes from dagre
+  const mainFlowNodes = nodes.filter(n =>
+    n.type === 'start' || n.type === 'end' || n.type === 'business'
+  )
+  const dagreYs = mainFlowNodes.map(n => g.node(n.id)?.y || 0).sort((a, b) => a - b)
+  const dagreMainY = dagreYs.length > 0
+    ? dagreYs[Math.floor(dagreYs.length / 2)]
+    : MAIN_FLOW_Y
+  const yShift = MAIN_FLOW_Y - dagreMainY
 
-  const assignLevel = (nodeId: string, level: number) => {
-    if (visited.has(nodeId)) return
-    visited.add(nodeId)
-    levels[nodeId] = level
-
-    const downstream = outgoingEdges[nodeId] || []
-    const sortedDownstream = downstream.sort((a, b) => {
-      const nodeA = nodeMap.get(a)
-      const nodeB = nodeMap.get(b)
-      const priorityA = nodeA?.type === 'process' ? 2 : nodeA?.type === 'decision' ? 1 : 0
-      const priorityB = nodeB?.type === 'process' ? 2 : nodeB?.type === 'decision' ? 1 : 0
-      return priorityB - priorityA
-    })
-
-    sortedDownstream.forEach(targetId => {
-      assignLevel(targetId, level + 1)
-    })
-  }
-
-  if (startNode) {
-    assignLevel(startNode.id, 0)
-  } else {
-    nodes.forEach(n => {
-      if ((incomingEdges[n.id] || []).length === 0) assignLevel(n.id, 0)
-    })
-  }
-
-  // 2. Group by level
-  const levelNodes: Record<number, string[]> = {}
-  nodes.forEach(n => {
-    const level = levels[n.id] ?? 0
-    if (!levelNodes[level]) levelNodes[level] = []
-    levelNodes[level].push(n.id)
+  // Classify nodes: main flow, decision, or branch-off
+  const isCycleTarget = new Set<string>()
+  // A process/local node whose source is a decision's fix branch is a cycle/fix target
+  edges.forEach(e => {
+    const srcNode = nodes.find(n => n.id === e.source)
+    const tgtNode = nodes.find(n => n.id === e.target)
+    if (srcNode?.type === 'decision' && tgtNode &&
+        (tgtNode.type === 'process' || tgtNode.type === 'local')) {
+      // This edge goes to a fix/retry node
+      isCycleTarget.add(e.target)
+    }
   })
 
-  // 3. DFS subtree size
-  const subtreeSize: Record<string, number> = {}
-  const visiting = new Set<string>()
-  const calcSubtreeSize = (nodeId: string): number => {
-    if (subtreeSize[nodeId] !== undefined) return subtreeSize[nodeId]
-    if (visiting.has(nodeId)) return 1
-    visiting.add(nodeId)
-    const children = outgoingEdges[nodeId] || []
-    if (children.length === 0) {
-      subtreeSize[nodeId] = 1
-      visiting.delete(nodeId)
-      return 1
-    }
-    const size = children.reduce((sum, childId) => sum + calcSubtreeSize(childId), 0)
-    subtreeSize[nodeId] = size
-    visiting.delete(nodeId)
-    return size
-  }
-  nodes.forEach(n => calcSubtreeSize(n.id))
-
-  // 4. DFS assign Y (user-preference: main flow flat, decisions above, fixes below)
-  const HORIZONTAL_GAP = 260
-  const VERTICAL_GAP = 120
-  const START_X = 80
-  const START_Y = 260
-  const DECISION_Y_OFFSET = 80    // decision slightly above main flow
-  const FIX_Y_OFFSET = 240        // fix/retry placed below main flow
-  const nodeY: Record<string, number> = {}
-  const visitingY = new Set<string>()
-
-  const assignY = (nodeId: string, flowY: number): number => {
-    if (nodeY[nodeId] !== undefined) return nodeY[nodeId]
-    if (visitingY.has(nodeId)) return flowY + VERTICAL_GAP
-    visitingY.add(nodeId)
-    const children = outgoingEdges[nodeId] || []
-    const node = nodeMap.get(nodeId)
-
-    if (children.length === 0) {
-      nodeY[nodeId] = flowY
-      visitingY.delete(nodeId)
-      return flowY + VERTICAL_GAP
-    }
-
-    if (node?.type === 'decision') {
-      // decision slightly above main flow
-      const decY = flowY - DECISION_Y_OFFSET
-      nodeY[nodeId] = decY
-      let fixY = flowY + FIX_Y_OFFSET
-      children.forEach((childId, index) => {
-        if (index === 0) {
-          // happy path: return to main flow level (not decision level)
-          assignY(childId, flowY)
-        } else {
-          // fix/retry: below main flow
-          nodeY[childId] = fixY
-          fixY += VERTICAL_GAP
-        }
-      })
-      visitingY.delete(nodeId)
-      // flow continues at main flow level (stays flat, not climbing)
-      return flowY + VERTICAL_GAP
-    } else {
-      // non-decision: children continue at current flow level
-      nodeY[nodeId] = flowY
-      let currentY = flowY
-      children.forEach(childId => {
-        currentY = assignY(childId, currentY)
-      })
-      visitingY.delete(nodeId)
-      return currentY
-    }
-  }
-
-  if (startNode) {
-    assignY(startNode.id, START_Y)
-  } else {
-    Object.keys(levelNodes).forEach(levelKey => {
-      const level = parseInt(levelKey)
-      const nodeIds = levelNodes[level]
-      if (nodeIds) {
-        let currentY = START_Y
-        nodeIds.forEach(nodeId => {
-          if (nodeY[nodeId] === undefined) currentY = assignY(nodeId, currentY)
-        })
-      }
-    })
-  }
-
-  // 5. Collect positions — larger gap after decision nodes
-  const DECISION_GAP_BONUS = 280  // decision->target gap = 260+280 = 540
+  // Assign final positions
   flow.nodes = nodes.map(node => {
-    const level = levels[node.id] ?? 0
-    const prevLevelNodes = levelNodes[level - 1] || []
-    const prevHasDecision = prevLevelNodes.some(id => nodeMap.get(id)?.type === 'decision')
-    const gapBonus = prevHasDecision ? DECISION_GAP_BONUS : 0
-    const nodesInSameLevel = levelNodes[level] || []
-    const sortedNodesInLevel = nodesInSameLevel.sort((a, b) => (nodeY[a] || 0) - (nodeY[b] || 0))
-    const indexInLevel = sortedNodesInLevel.indexOf(node.id)
-    const y = nodeY[node.id] ?? START_Y + indexInLevel * VERTICAL_GAP
+    const dagreNode = g.node(node.id)
+    const dagreX = dagreNode?.x || 0
+    const dagreY = dagreNode?.y || 0
+
+    let finalY: number
+    if (node.type === 'decision') {
+      // Decision: slightly above main flow
+      finalY = DECISION_Y
+    } else if (isCycleTarget.has(node.id)) {
+      // Fix/retry: below main flow
+      finalY = FIX_Y
+    } else {
+      // Main flow: force flat line at MAIN_FLOW_Y
+      finalY = MAIN_FLOW_Y
+    }
+
     return {
       ...node,
       position: {
-        x: START_X + level * HORIZONTAL_GAP + gapBonus,
-        y: y
+        x: dagreX - NODE_WIDTH / 2, // dagre center -> topLeft
+        y: finalY
       }
     }
   })
