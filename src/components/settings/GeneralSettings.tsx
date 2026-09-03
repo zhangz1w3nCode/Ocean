@@ -61,7 +61,7 @@ description: Ocean CLI 工具。通过 ocean 命令完成完整的自循环：�
 | \`ocean workflow list-edges <name>\` | 列出边表格 |
 | \`ocean workflow read <name>\` | 读 WORKFLOW.md |
 | \`ocean workflow read-flow <name>\` | 读 flow.json |
-| \`ocean workflow generate <name>\` | 生成 WORKFLOW.md |
+| \`ocean workflow generate <name>\` | dagre 自动布局 + 生成 WORKFLOW.md |
 | \`ocean workflow doctor <name> [--json]\` | 检查工作流完整性（10 项检查） |
 | \`ocean workflow delete <name>\` | 删除工作流 |
 | \`ocean workflow rename <old> <new>\` | 重命名工作流 |
