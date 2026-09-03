@@ -240,6 +240,7 @@ export function generate(root: string, wfName: string): void {
   }
 
   // generate WORKFLOW.md
+  if (!flow.name) flow.name = wfName
   const md = generateWorkflowMd(flow, flow.nodes, flow.edges)
   fs.writeFileSync(workflowMdPath(root, wfName), md, 'utf-8')
 
