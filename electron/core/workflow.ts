@@ -223,6 +223,25 @@ export function listEdges(root: string, wfName: string): string {
 export function generate(root: string, wfName: string): void {
   const flow = readFlowJson(root, wfName)
 
+  // dagre auto-layout
+  const dagre = require('@dagrejs/dagre')
+  const g = new dagre.graphlib.Graph()
+  g.setGraph({ rankdir: 'LR', ranksep: 260, nodesep: 120, ranker: 'tight-tree' })
+  g.setDefaultEdgeLabel(() => ({}))
+  const NW = 180, NH = 60
+  ;(flow.nodes || []).forEach((n: any) => {
+    g.setNode(n.id, { width: NW, height: n.type === 'decision' ? 100 : NH })
+  })
+  ;(flow.edges || []).forEach((e: any) => { g.setEdge(e.source, e.target) })
+  dagre.layout(g)
+  flow.nodes = (flow.nodes || []).map((node: any) => {
+    const d = g.node(node.id)
+    return { ...node, position: {
+      x: (d?.x || 0) - NW / 2,
+      y: (d?.y || 0) - (node.type === 'decision' ? 100 : NH) / 2,
+    }}
+  })
+
   // clean flow: regenerate nodeRefPath for business nodes (与 GUI storage.ts:1051-1056 一致)
   for (const node of flow.nodes) {
     if (node.type === 'business' && node.data?.nodeDefName) {
@@ -423,41 +442,3 @@ export function delLocalNode(root: string, wfName: string, nodeName: string): vo
 
 // --- auto layout (ported from GUI flowEditorStore.ts:431-625) ---
 
-export function autoLayout(root: string, wfName: string): void {
-  const flow = readFlowJson(root, wfName)
-  const nodes: any[] = flow.nodes || []
-  const edges: any[] = flow.edges || []
-  if (nodes.length === 0) return
-
-  const dagre = require('@dagrejs/dagre')
-  const g = new dagre.graphlib.Graph()
-  g.setGraph({ rankdir: 'LR', ranksep: 260, nodesep: 120, ranker: 'tight-tree' })
-  g.setDefaultEdgeLabel(() => ({}))
-
-  const NODE_WIDTH = 180
-  const NODE_HEIGHT = 60
-
-  nodes.forEach(n => {
-    const h = n.type === 'decision' ? 100 : NODE_HEIGHT
-    g.setNode(n.id, { width: NODE_WIDTH, height: h })
-  })
-  edges.forEach(e => {
-    g.setEdge(e.source, e.target)
-  })
-
-  dagre.layout(g)
-
-  // Use dagre output directly (center -> topLeft)
-  flow.nodes = nodes.map(node => {
-    const d = g.node(node.id)
-    return {
-      ...node,
-      position: {
-        x: (d?.x || 0) - NODE_WIDTH / 2,
-        y: (d?.y || 0) - (node.type === 'decision' ? 100 : NODE_HEIGHT) / 2,
-      }
-    }
-  })
-
-  writeFlowJson(root, wfName, flow)
-}

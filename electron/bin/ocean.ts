@@ -372,12 +372,6 @@ function handleWorkflow(root: string, args: ReturnType<typeof parseArgs>): void 
       break
     }
 
-    case 'auto-layout': {
-      const name = args.positional[0]
-      wfGraph.autoLayout(root, name)
-      out(`已自动布局 ${name}`)
-      break
-    }
 
     case 'doctor': {
       const name = args.positional[0]
@@ -434,7 +428,7 @@ function handleWorkflow(root: string, args: ReturnType<typeof parseArgs>): void 
     }
 
     default:
-      throw new Error(`未知的 workflow 子命令: ${cmd}\n用法: ocean workflow <list|instance|next|complete|fail|choose|status|artifact|context|create|add-node|connect|add-branch|remove-node|disconnect|list-nodes|list-edges|read|read-flow|generate|auto-layout|doctor|delete|rename|local-node> [...]`)
+      throw new Error(`未知的 workflow 子命令: ${cmd}\n用法: ocean workflow <list|instance|next|complete|fail|choose|status|artifact|context|create|add-node|connect|add-branch|remove-node|disconnect|list-nodes|list-edges|read|read-flow|generate|doctor|delete|rename|local-node> [...]`)
   }
 }
 
