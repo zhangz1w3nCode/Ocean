@@ -449,10 +449,7 @@ export function autoLayout(root: string, wfName: string): void {
   const visited = new Set<string>()
 
   const assignLevel = (nodeId: string, level: number) => {
-    if (visited.has(nodeId)) {
-      levels[nodeId] = Math.max(levels[nodeId] || 0, level)
-      return
-    }
+    if (visited.has(nodeId)) return
     visited.add(nodeId)
     levels[nodeId] = level
 
@@ -506,38 +503,53 @@ export function autoLayout(root: string, wfName: string): void {
   }
   nodes.forEach(n => calcSubtreeSize(n.id))
 
-  // 4. DFS assign Y
-  const HORIZONTAL_GAP = 280
+  // 4. DFS assign Y (user-preference: decisions above, fixes below)
+  const HORIZONTAL_GAP = 260
   const VERTICAL_GAP = 120
-  const START_X = 100
-  const START_Y = 100
+  const START_X = 80
+  const START_Y = 80
+  const DECISION_Y_OFFSET = 120   // decision placed above flow
+  const FIX_Y_OFFSET = 260        // fix/retry placed below flow
   const nodeY: Record<string, number> = {}
-
   const visitingY = new Set<string>()
-  const assignY = (nodeId: string, startY: number): number => {
+
+  const assignY = (nodeId: string, flowY: number): number => {
     if (nodeY[nodeId] !== undefined) return nodeY[nodeId]
-    if (visitingY.has(nodeId)) return startY + VERTICAL_GAP
+    if (visitingY.has(nodeId)) return flowY + VERTICAL_GAP
     visitingY.add(nodeId)
     const children = outgoingEdges[nodeId] || []
     const node = nodeMap.get(nodeId)
 
     if (children.length === 0) {
-      nodeY[nodeId] = startY
+      nodeY[nodeId] = flowY
       visitingY.delete(nodeId)
-      return startY + VERTICAL_GAP
+      return flowY + VERTICAL_GAP
     }
 
     if (node?.type === 'decision') {
-      const centerY = startY + (children.length - 1) * VERTICAL_GAP / 2
-      nodeY[nodeId] = centerY
+      // decision placed above flow
+      const decY = flowY - DECISION_Y_OFFSET
+      nodeY[nodeId] = decY
+      // happy path (first child) continues upward at decision level
+      // fix/retry (other children) placed well below
+      let fixY = flowY + FIX_Y_OFFSET
       children.forEach((childId, index) => {
-        nodeY[childId] = startY + index * VERTICAL_GAP
+        if (index === 0) {
+          // happy path: near decision level
+          assignY(childId, decY)
+        } else {
+          // fix/retry: well below flow
+          nodeY[childId] = fixY
+          fixY += VERTICAL_GAP
+        }
       })
       visitingY.delete(nodeId)
-      return startY + children.length * VERTICAL_GAP
+      // flow continues at decision level (going up)
+      return decY + VERTICAL_GAP
     } else {
-      let currentY = startY
-      nodeY[nodeId] = startY
+      // non-decision: children continue at current flow level
+      nodeY[nodeId] = flowY
+      let currentY = flowY
       children.forEach(childId => {
         currentY = assignY(childId, currentY)
       })
@@ -561,9 +573,14 @@ export function autoLayout(root: string, wfName: string): void {
     })
   }
 
-  // 5. Collect positions
+  // 5. Collect positions — larger gap after decision nodes
+  const DECISION_GAP_BONUS = 100
   flow.nodes = nodes.map(node => {
     const level = levels[node.id] ?? 0
+    // check if previous level has a decision node
+    const prevLevelNodes = levelNodes[level - 1] || []
+    const prevHasDecision = prevLevelNodes.some(id => nodeMap.get(id)?.type === 'decision')
+    const gapBonus = prevHasDecision ? DECISION_GAP_BONUS : 0
     const nodesInSameLevel = levelNodes[level] || []
     const sortedNodesInLevel = nodesInSameLevel.sort((a, b) => (nodeY[a] || 0) - (nodeY[b] || 0))
     const indexInLevel = sortedNodesInLevel.indexOf(node.id)
@@ -571,7 +588,7 @@ export function autoLayout(root: string, wfName: string): void {
     return {
       ...node,
       position: {
-        x: START_X + level * HORIZONTAL_GAP,
+        x: START_X + level * HORIZONTAL_GAP + gapBonus,
         y: y
       }
     }
