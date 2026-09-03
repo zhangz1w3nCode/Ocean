@@ -47,8 +47,8 @@ export function create(root: string, name: string): void {
     outputs: [],
     customFields: [],
     nodes: [
-      { id: 'start-1', type: 'start', position: { x: 200, y: 250 }, data: {} },
-      { id: 'end-1', type: 'end', position: { x: 500, y: 250 }, data: {} },
+      { id: 'start-1', type: 'start', position: { x: 200, y: 250 }, data: { label: '开始' } },
+      { id: 'end-1', type: 'end', position: { x: 500, y: 250 }, data: { label: '结束' } },
     ],
     edges: [],
   }
