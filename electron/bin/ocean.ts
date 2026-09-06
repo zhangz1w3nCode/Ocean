@@ -15,6 +15,7 @@ import * as resourceCrud from '../core/resource'
 import * as agentCrud from '../core/agent'
 import * as skillCrud from '../core/skill'
 import * as wfGraph from '../core/workflow'
+import Table from 'cli-table3'
 
 // ---------------------------------------------------------------------------
 // Argument parser
@@ -103,8 +104,163 @@ function readContent(flags: Record<string, string | boolean>): string {
   return require('fs').readFileSync(0, 'utf-8')
 }
 
-function out(s: string): void {
+function rawOut(s: string): void {
   process.stdout.write(s + '\n')
+}
+
+function displayWidth(s: string): number {
+  return [...s].reduce((w, c) => {
+    const code = c.charCodeAt(0)
+    if (code < 0x80) return w + 1
+    if ((code >= 0x1100 && code <= 0x115F) ||
+        (code >= 0x2E80 && code <= 0x303E) ||
+        (code >= 0x3040 && code <= 0x33BF) ||
+        (code >= 0x3400 && code <= 0x4DBF) ||
+        (code >= 0x4E00 && code <= 0x9FFF) ||
+        (code >= 0xA000 && code <= 0xA4CF) ||
+        (code >= 0xAC00 && code <= 0xD7A3) ||
+        (code >= 0xF900 && code <= 0xFAFF) ||
+        (code >= 0xFE30 && code <= 0xFE4F) ||
+        (code >= 0xFF00 && code <= 0xFF60) ||
+        (code >= 0xFFE0 && code <= 0xFFE6)) {
+      return w + 2
+    }
+    return w + 1
+  }, 0)
+}
+
+function stripFrontmatter(text: string): string {
+  if (text.startsWith('---')) {
+    const end = text.indexOf('\n---', 3)
+    if (end !== -1) {
+      const after = text.indexOf('\n', end + 4)
+      if (after !== -1) {
+        return text.substring(after + 1).trim()
+      }
+    }
+  }
+  return text
+}
+
+function out(s: string): void {
+  const maxBoxW = (process.stdout.columns || 120) - 4
+  const wrapped: string[] = []
+  for (const line of s.split('\n')) {
+    if (displayWidth(line) <= maxBoxW) {
+      wrapped.push(line)
+    } else {
+      let cur = ''
+      let curW = 0
+      for (const c of [...line]) {
+        const cw = displayWidth(c)
+        if (curW + cw > maxBoxW) {
+          wrapped.push(cur)
+          cur = c
+          curW = cw
+        } else {
+          cur += c
+          curW += cw
+        }
+      }
+      if (cur) wrapped.push(cur)
+    }
+  }
+  const widths = wrapped.map(l => displayWidth(l))
+  const maxW = Math.max(...widths, 0)
+  const h = '\u2501'.repeat(maxW + 2)
+  rawOut('\u250f' + h + '\u2513')
+  for (let i = 0; i < wrapped.length; i++) {
+    const pad = ' '.repeat(maxW - widths[i])
+    rawOut('\u2503 ' + wrapped[i] + pad + ' \u2503')
+  }
+  rawOut('\u2517' + h + '\u251b')
+}
+
+function printDataTable(headers: string[], rows: string[][]): void {
+  if (rows.length === 0) {
+    out('（无数据）')
+    return
+  }
+  const table = new Table({
+    head: headers.map(h => ({ content: '\x1b[1m' + h + '\x1b[0m', hAlign: 'center' as const })) as any[],
+    style: { head: ['cyan'] },
+    colAligns: headers.map(() => 'center' as const),
+    chars: {
+      'top': '\u2501', 'top-mid': '\u2533', 'top-left': '\u250f', 'top-right': '\u2513',
+      'bottom': '\u2500', 'bottom-mid': '\u2534', 'bottom-left': '\u2514', 'bottom-right': '\u2518',
+      'left': '\u2502', 'right': '\u2502', 'mid': '\u2501', 'mid-mid': '\u2547',
+      'left-mid': '\u2521', 'right-mid': '\u2529', 'middle': '\u2502',
+    },
+  })
+  for (const row of rows) {
+    table.push(row)
+  }
+  const lines = table.toString().split('\n')
+  let separatorSeen = false
+  const filtered = lines.filter(line => {
+    if (line.includes('\u2521')) {
+      if (!separatorSeen) {
+        separatorSeen = true
+        return true
+      }
+      return false
+    }
+    return true
+  })
+  if (filtered.length > 2) {
+    filtered[1] = filtered[1].replace(/\u2502/g, '\u2503')
+  }
+  rawOut(filtered.join('\n'))
+}
+
+function printList(items: string[], header: string): void {
+  printDataTable([header], items.map(item => [item]))
+}
+
+function printMarkdownTable(text: string): void {
+  const lines = text.split('\n').filter(Boolean)
+  if (lines.length < 3) {
+    out(text || '（无数据）')
+    return
+  }
+  if (!/^\|[\s-|]+\|$/.test(lines[1])) {
+    out(text)
+    return
+  }
+  const parseRow = (line: string) => line.split('|').map(s => s.trim()).filter(Boolean)
+  printDataTable(parseRow(lines[0]), lines.slice(2).map(parseRow))
+}
+
+function printAction(action: string, fields: Record<string, string>): void {
+  const keys = Object.keys(fields)
+  const table = new Table({
+    head: [{ content: '\x1b[1mAction\x1b[0m', hAlign: 'center' as const }, ...keys.map(k => ({ content: '\x1b[1m' + k + '\x1b[0m', hAlign: 'center' as const }))] as any[],
+    style: { head: ['green'] },
+    colAligns: ['center', ...keys.map(() => 'center' as const)],
+    chars: {
+      'top': '\u2501', 'top-mid': '\u2533', 'top-left': '\u250f', 'top-right': '\u2513',
+      'bottom': '\u2500', 'bottom-mid': '\u2534', 'bottom-left': '\u2514', 'bottom-right': '\u2518',
+      'left': '\u2502', 'right': '\u2502', 'mid': '\u2501', 'mid-mid': '\u2547',
+      'left-mid': '\u2521', 'right-mid': '\u2529', 'middle': '\u2502',
+    },
+  })
+  table.push([action, ...keys.map(k => fields[k])])
+  const lines = table.toString().split('\n')
+  let separatorSeen = false
+  const filtered = lines.filter(line => {
+    if (line.includes('\u2521')) {
+      if (!separatorSeen) {
+        separatorSeen = true
+        return true
+      }
+      return false
+    }
+    return true
+  })
+  if (filtered.length > 2) {
+    filtered[1] = filtered[1].replace(/\u2502/g, '\u2503')
+  }
+  rawOut(filtered.join('\n'))
 }
 
 // ---------------------------------------------------------------------------
@@ -119,12 +275,18 @@ class UsageError extends Error {
 }
 
 function err(e: any): void {
-  if (e instanceof UsageError) {
-    process.stderr.write(e.message + '\n')
-    process.exit(2)
+  const code = e instanceof UsageError ? 2 : 1
+  const lines = e.message.split('\n')
+  const widths = lines.map((l: string) => displayWidth(l))
+  const maxW = Math.max(...widths, 0)
+  const h = '\u2501'.repeat(maxW + 2)
+  process.stderr.write('\u250f' + h + '\u2513\n')
+  for (let i = 0; i < lines.length; i++) {
+    const pad = ' '.repeat(maxW - widths[i])
+    process.stderr.write('\u2503 ' + lines[i] + pad + ' \u2503\n')
   }
-  process.stderr.write(e.message + '\n')
-  process.exit(1)
+  process.stderr.write('\u2517' + h + '\u251b\n')
+  process.exit(code)
 }
 
 // ---------------------------------------------------------------------------
@@ -403,13 +565,13 @@ function handleWorkflow(root: string, args: ReturnType<typeof parseArgs>): void 
   switch (cmd) {
     // --- execution commands (ported from workflow.ts) ---
     case 'list':
-      out(listWorkflows(root))
+      printList(listWorkflows(root).split('\n').filter(Boolean), '工作流')
       break
 
     case 'instance': {
       if (args.positional[0] === 'list') {
         const wf = typeof args.flags.workflow === 'string' ? args.flags.workflow : undefined
-        out(listInstances(root, wf))
+        printMarkdownTable(listInstances(root, wf))
       } else {
         const workflowName = args.positional[0]
         const id = typeof args.flags.instance === 'string' ? args.flags.instance : genId()
@@ -420,7 +582,7 @@ function handleWorkflow(root: string, args: ReturnType<typeof parseArgs>): void 
         }
         const input = typeof args.flags.input === 'string' ? args.flags.input : undefined
         create(root, workflowName, id, input, limits)
-        out(id)
+        printAction('created', { instanceId: id })
       }
       break
     }
@@ -429,7 +591,7 @@ function handleWorkflow(root: string, args: ReturnType<typeof parseArgs>): void 
       const id = args.flags.instance as string
       const json = args.flags.json === true
       const wf = instanceWorkflow(root, id)
-      out(next(root, wf, id, json))
+      printMarkdownTable(next(root, wf, id, json))
       break
     }
 
@@ -439,7 +601,7 @@ function handleWorkflow(root: string, args: ReturnType<typeof parseArgs>): void 
       const output = typeof args.flags.output === 'string' ? args.flags.output : undefined
       const outputFile = typeof args.flags['output-file'] === 'string' ? args.flags['output-file'] : undefined
       const content = readOutput(output, outputFile)
-      out(complete(root, wf, id, content))
+      printMarkdownTable(complete(root, wf, id, content))
       break
     }
 
@@ -447,7 +609,7 @@ function handleWorkflow(root: string, args: ReturnType<typeof parseArgs>): void 
       const id = args.flags.instance as string
       const reason = args.flags.reason as string
       const wf = instanceWorkflow(root, id)
-      out(fail(root, wf, id, reason))
+      printMarkdownTable(fail(root, wf, id, reason))
       break
     }
 
@@ -456,7 +618,7 @@ function handleWorkflow(root: string, args: ReturnType<typeof parseArgs>): void 
       const branch = args.flags.branch as string
       const reason = typeof args.flags.reason === 'string' ? args.flags.reason : undefined
       const wf = instanceWorkflow(root, id)
-      out(choose(root, wf, id, branch, reason))
+      printMarkdownTable(choose(root, wf, id, branch, reason))
       break
     }
 
@@ -465,7 +627,7 @@ function handleWorkflow(root: string, args: ReturnType<typeof parseArgs>): void 
       const json = args.flags.json === true
       const wf = instanceWorkflow(root, id)
       logTraceCommand(root, wf, id, 'status')
-      out(status(root, wf, id, json))
+      printMarkdownTable(status(root, wf, id, json))
       break
     }
 
@@ -477,31 +639,31 @@ function handleWorkflow(root: string, args: ReturnType<typeof parseArgs>): void 
       switch (sub) {
         case 'list':
           logTraceCommand(root, wf, id, 'artifact list')
-          out(list(root, wf, id, json))
+          printMarkdownTable(list(root, wf, id, json))
           break
         case 'view': {
           logTraceCommand(root, wf, id, 'artifact view')
           const node = typeof args.flags.node === 'string' ? args.flags.node : undefined
           const invoke = typeof args.flags.invoke === 'string' ? args.flags.invoke : undefined
-          out(view(root, wf, id, node, invoke, json))
+          printMarkdownTable(view(root, wf, id, node, invoke, json))
           break
         }
         case 'search': {
           logTraceCommand(root, wf, id, 'artifact search')
           const keyword = args.flags.keyword as string
-          out(search(root, wf, id, keyword, json))
+          printMarkdownTable(search(root, wf, id, keyword, json))
           break
         }
         case 'timeline':
           logTraceCommand(root, wf, id, 'artifact timeline')
-          out(timeline(root, wf, id, json))
+          printMarkdownTable(timeline(root, wf, id, json))
           break
         case 'diff': {
           logTraceCommand(root, wf, id, 'artifact diff')
           const node = args.flags.node as string
           const context = typeof args.flags.context === 'string' ? parseInt(args.flags.context as string, 10) : 3
           const full = args.flags.full === true
-          out(diff(root, wf, id, node, json, context, full))
+          printMarkdownTable(diff(root, wf, id, node, json, context, full))
           break
         }
         default:
@@ -519,13 +681,13 @@ function handleWorkflow(root: string, args: ReturnType<typeof parseArgs>): void 
           logTraceCommand(root, wf, id, 'context set')
           const topic = args.flags.topic as string
           const content = args.flags.content as string
-          out(contextSet(root, wf, id, topic, content))
+          printMarkdownTable(contextSet(root, wf, id, topic, content))
           break
         }
         case 'get': {
           logTraceCommand(root, wf, id, 'context get')
           const json = args.flags.json === true
-          out(contextGet(root, wf, id, json))
+          printMarkdownTable(contextGet(root, wf, id, json))
           break
         }
         default:
@@ -538,7 +700,7 @@ function handleWorkflow(root: string, args: ReturnType<typeof parseArgs>): void 
     case 'create': {
       const name = args.positional[0]
       wfGraph.create(root, name)
-      out(`已创建工作流 ${name}`)
+      printAction('created', { name })
       break
     }
 
@@ -554,7 +716,7 @@ function handleWorkflow(root: string, args: ReturnType<typeof parseArgs>): void 
       }
       const description = typeof args.flags.description === 'string' ? args.flags.description : undefined
       const id = wfGraph.addNode(root, name, type, label, { nodeRefPath, content, condition, description })
-      out(id)
+      printAction('added', { nodeId: id })
       break
     }
 
@@ -564,7 +726,7 @@ function handleWorkflow(root: string, args: ReturnType<typeof parseArgs>): void 
       const to = args.flags.to as string
       const branch = typeof args.flags.branch === 'string' ? args.flags.branch : undefined
       const edgeId = wfGraph.connect(root, name, from, to, branch)
-      out(edgeId)
+      printAction('connected', { edgeId })
       break
     }
 
@@ -574,7 +736,7 @@ function handleWorkflow(root: string, args: ReturnType<typeof parseArgs>): void 
       const branchName = args.flags.name as string
       const description = typeof args.flags.description === 'string' ? args.flags.description : undefined
       const branchId = wfGraph.addBranch(root, name, nodeId, branchName, description)
-      out(branchId)
+      printAction('added', { branchId })
       break
     }
 
@@ -582,7 +744,7 @@ function handleWorkflow(root: string, args: ReturnType<typeof parseArgs>): void 
       const name = args.positional[0]
       const nodeId = args.flags.node as string
       wfGraph.removeNode(root, name, nodeId)
-      out(`已删除节点 ${nodeId}`)
+      printAction('removed', { nodeId })
       break
     }
 
@@ -592,25 +754,25 @@ function handleWorkflow(root: string, args: ReturnType<typeof parseArgs>): void 
       const to = args.flags.to as string
       const branch = typeof args.flags.branch === 'string' ? args.flags.branch : undefined
       wfGraph.disconnect(root, name, from, to, branch)
-      out(`已断开 ${from} → ${to}`)
+      printAction('disconnected', { from, to })
       break
     }
 
     case 'list-nodes': {
       const name = args.positional[0]
-      out(wfGraph.listNodes(root, name))
+      printMarkdownTable(wfGraph.listNodes(root, name))
       break
     }
 
     case 'list-edges': {
       const name = args.positional[0]
-      out(wfGraph.listEdges(root, name))
+      printMarkdownTable(wfGraph.listEdges(root, name))
       break
     }
 
     case 'read': {
       const name = args.positional[0]
-      out(wfGraph.readWorkflowMd(root, name))
+      out(stripFrontmatter(wfGraph.readWorkflowMd(root, name)))
       break
     }
 
@@ -623,7 +785,7 @@ function handleWorkflow(root: string, args: ReturnType<typeof parseArgs>): void 
     case 'generate': {
       const name = args.positional[0]
       wfGraph.generate(root, name)
-      out(`已生成 WORKFLOW.md`)
+      printAction('generated', { workflow: name })
       break
     }
 
@@ -631,14 +793,14 @@ function handleWorkflow(root: string, args: ReturnType<typeof parseArgs>): void 
     case 'doctor': {
       const name = args.positional[0]
       const json = args.flags.json === true
-      out(wfGraph.doctor(root, name, json))
+      printMarkdownTable(wfGraph.doctor(root, name, json))
       break
     }
 
     case 'delete': {
       const name = args.positional[0]
       wfGraph.del(root, name)
-      out(`已删除工作流 ${name}`)
+      printAction('deleted', { name })
       break
     }
 
@@ -646,7 +808,7 @@ function handleWorkflow(root: string, args: ReturnType<typeof parseArgs>): void 
       const oldName = args.positional[0]
       const newName = args.positional[1]
       wfGraph.rename(root, oldName, newName)
-      out(`已重命名 ${oldName} → ${newName}`)
+      printAction('renamed', { from: oldName, to: newName })
       break
     }
 
@@ -656,24 +818,24 @@ function handleWorkflow(root: string, args: ReturnType<typeof parseArgs>): void 
       const wfName = args.positional[1] || ''
       switch (sub) {
         case 'list':
-          out(wfGraph.listLocalNodes(root, wfName).join('\n'))
+          printList(wfGraph.listLocalNodes(root, wfName), '局部节点')
           break
         case 'read': {
           const nodeName = args.positional[2] || ''
-          out(wfGraph.readLocalNode(root, wfName, nodeName))
+          out(stripFrontmatter(wfGraph.readLocalNode(root, wfName, nodeName)))
           break
         }
         case 'create': {
           const nodeName = args.positional[2] || ''
           const content = readContent(args.flags)
           wfGraph.createLocalNode(root, wfName, nodeName, content)
-          out(`已创建局部节点 ${nodeName}`)
+          printAction('created', { name: nodeName })
           break
         }
         case 'delete': {
           const nodeName = args.positional[2] || ''
           wfGraph.delLocalNode(root, wfName, nodeName)
-          out(`已删除局部节点 ${nodeName}`)
+          printAction('deleted', { name: nodeName })
           break
         }
         default:
@@ -699,11 +861,11 @@ function handleNode(root: string, args: ReturnType<typeof parseArgs>): void {
   const cmd = args.subcommand
   switch (cmd) {
     case 'list':
-      out(nodeCrud.list(root).join('\n'))
+      printList(nodeCrud.list(root), '节点')
       break
     case 'read': {
       const name = args.positional[0]
-      out(nodeCrud.read(root, name))
+      out(stripFrontmatter(nodeCrud.read(root, name)))
       break
     }
     case 'create': {
@@ -712,7 +874,7 @@ function handleNode(root: string, args: ReturnType<typeof parseArgs>): void {
       const type = typeof args.flags.type === 'string' ? args.flags.type : undefined
       const description = typeof args.flags.description === 'string' ? args.flags.description : undefined
       nodeCrud.create(root, name, content, { type, description })
-      out(`已创建节点 ${name}`)
+      printAction('created', { name })
       break
     }
     case 'update': {
@@ -721,13 +883,13 @@ function handleNode(root: string, args: ReturnType<typeof parseArgs>): void {
       const type = typeof args.flags.type === 'string' ? args.flags.type : undefined
       const description = typeof args.flags.description === 'string' ? args.flags.description : undefined
       nodeCrud.update(root, name, content, { type, description })
-      out(`已更新节点 ${name}`)
+      printAction('updated', { name })
       break
     }
     case 'delete': {
       const name = args.positional[0]
       nodeCrud.del(root, name)
-      out(`已删除节点 ${name}`)
+      printAction('deleted', { name })
       break
     }
     default:
@@ -747,11 +909,11 @@ function handleKnowledge(root: string, args: ReturnType<typeof parseArgs>): void
   const cmd = args.subcommand
   switch (cmd) {
     case 'list':
-      out(knowledgeCrud.list(root).join('\n'))
+      printList(knowledgeCrud.list(root), '知识')
       break
     case 'read': {
       const relPath = args.positional[0]
-      out(knowledgeCrud.read(root, relPath))
+      out(stripFrontmatter(knowledgeCrud.read(root, relPath)))
       break
     }
     case 'create': {
@@ -761,7 +923,7 @@ function handleKnowledge(root: string, args: ReturnType<typeof parseArgs>): void
       const tagsStr = typeof args.flags.tags === 'string' ? args.flags.tags : undefined
       const tags = tagsStr ? tagsStr.split(',').map(t => t.trim()) : undefined
       knowledgeCrud.create(root, relPath, content, { description, tags })
-      out(`已创建知识 ${relPath}`)
+      printAction('created', { path: relPath })
       break
     }
     case 'update': {
@@ -771,13 +933,13 @@ function handleKnowledge(root: string, args: ReturnType<typeof parseArgs>): void
       const tagsStr = typeof args.flags.tags === 'string' ? args.flags.tags : undefined
       const tags = tagsStr !== undefined ? tagsStr.split(',').map(t => t.trim()) : undefined
       knowledgeCrud.update(root, relPath, content, { description, tags })
-      out(`已更新知识 ${relPath}`)
+      printAction('updated', { path: relPath })
       break
     }
     case 'delete': {
       const relPath = args.positional[0]
       knowledgeCrud.del(root, relPath)
-      out(`已删除知识 ${relPath}`)
+      printAction('deleted', { path: relPath })
       break
     }
     default:
@@ -797,11 +959,11 @@ function handleResource(root: string, args: ReturnType<typeof parseArgs>): void 
   const cmd = args.subcommand
   switch (cmd) {
     case 'list':
-      out(resourceCrud.list(root).join('\n'))
+      printList(resourceCrud.list(root), '资源')
       break
     case 'read': {
       const name = args.positional[0]
-      out(resourceCrud.read(root, name))
+      out(stripFrontmatter(resourceCrud.read(root, name)))
       break
     }
     case 'create': {
@@ -810,7 +972,7 @@ function handleResource(root: string, args: ReturnType<typeof parseArgs>): void 
       const type = typeof args.flags.type === 'string' ? args.flags.type : undefined
       const description = typeof args.flags.description === 'string' ? args.flags.description : undefined
       resourceCrud.create(root, name, content, { type, description })
-      out(`已创建资源 ${name}`)
+      printAction('created', { name })
       break
     }
     case 'update': {
@@ -819,13 +981,13 @@ function handleResource(root: string, args: ReturnType<typeof parseArgs>): void 
       const type = typeof args.flags.type === 'string' ? args.flags.type : undefined
       const description = typeof args.flags.description === 'string' ? args.flags.description : undefined
       resourceCrud.update(root, name, content, { type, description })
-      out(`已更新资源 ${name}`)
+      printAction('updated', { name })
       break
     }
     case 'delete': {
       const name = args.positional[0]
       resourceCrud.del(root, name)
-      out(`已删除资源 ${name}`)
+      printAction('deleted', { name })
       break
     }
     default:
@@ -845,11 +1007,11 @@ function handleAgent(root: string, args: ReturnType<typeof parseArgs>): void {
   const cmd = args.subcommand
   switch (cmd) {
     case 'list':
-      out(agentCrud.list(root).join('\n'))
+      printList(agentCrud.list(root), '智能体')
       break
     case 'read': {
       const name = args.positional[0]
-      out(agentCrud.read(root, name))
+      out(stripFrontmatter(agentCrud.read(root, name)))
       break
     }
     case 'create': {
@@ -864,7 +1026,7 @@ function handleAgent(root: string, args: ReturnType<typeof parseArgs>): void {
         inheritProjectContext: args.flags['inherit-project-context'] === true,
         inheritSkills: args.flags['inherit-skills'] === true,
       })
-      out(`已创建智能体 ${name}`)
+      printAction('created', { name })
       break
     }
     case 'update': {
@@ -879,13 +1041,13 @@ function handleAgent(root: string, args: ReturnType<typeof parseArgs>): void {
         inheritProjectContext: args.flags['inherit-project-context'] === true ? true : undefined,
         inheritSkills: args.flags['inherit-skills'] === true ? true : undefined,
       })
-      out(`已更新智能体 ${name}`)
+      printAction('updated', { name })
       break
     }
     case 'delete': {
       const name = args.positional[0]
       agentCrud.del(root, name)
-      out(`已删除智能体 ${name}`)
+      printAction('deleted', { name })
       break
     }
     default:
@@ -905,11 +1067,11 @@ function handleSkill(root: string, args: ReturnType<typeof parseArgs>): void {
   const cmd = args.subcommand
   switch (cmd) {
     case 'list':
-      out(skillCrud.list(root).join('\n'))
+      printList(skillCrud.list(root), '技能')
       break
     case 'read': {
       const name = args.positional[0]
-      out(skillCrud.read(root, name))
+      out(stripFrontmatter(skillCrud.read(root, name)))
       break
     }
     case 'create': {
@@ -917,20 +1079,20 @@ function handleSkill(root: string, args: ReturnType<typeof parseArgs>): void {
       const content = readContent(args.flags)
       const description = args.flags.description as string
       skillCrud.create(root, name, content, description)
-      out(`已创建技能 ${name}`)
+      printAction('created', { name })
       break
     }
     case 'update': {
       const name = args.positional[0]
       const content = readContent(args.flags)
       skillCrud.update(root, name, content)
-      out(`已更新技能 ${name}`)
+      printAction('updated', { name })
       break
     }
     case 'delete': {
       const name = args.positional[0]
       skillCrud.del(root, name)
-      out(`已删除技能 ${name}`)
+      printAction('deleted', { name })
       break
     }
     default:
@@ -950,7 +1112,7 @@ function handleConfig(root: string, args: ReturnType<typeof parseArgs>): void {
   const cmd = args.subcommand
   switch (cmd) {
     case 'asset-root':
-      out(resolveAssetDir(root))
+      printAction('queried', { 'asset-root': resolveAssetDir(root) })
       break
     default:
       if (!cmd) {
