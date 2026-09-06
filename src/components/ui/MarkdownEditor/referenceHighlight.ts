@@ -1,8 +1,9 @@
 import { StateField, RangeSetBuilder, type EditorState, type Transaction } from '@codemirror/state'
 import { Decoration, EditorView } from '@codemirror/view'
 
-// 引用块正则：`xxx/xxx.md` 或 `xxx/`（库引用）- 蓝色高亮
-const REFERENCE_PATTERN = /`([^`\n]+(\.md|\/))`/g
+// 引用块正则：反引号包裹的任意单行内容均视为引用块（含纯名称引用如 `demo-wf`）- 蓝色高亮
+// 代价：正文里的普通行内代码也会被高亮，已与用户确认可接受
+const REFERENCE_PATTERN = /`([^`\n]+)`/g
 
 // WikiLink 正则：[[`xxx.md`]] 或 [[`xxx.md`|关系]] - 黄色高亮
 // 匹配格式: [[`path.md`]] 或 [[`path.md`|relation]]

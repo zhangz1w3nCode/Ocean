@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import type { FC, ReactNode } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -6,6 +7,8 @@ import rehypeRaw from 'rehype-raw'
 import 'highlight.js/styles/github.css'
 import { MermaidBlock } from './MermaidBlock'
 import { WIKI_LINK_REGEX, extractDisplayName, getReferenceType } from './WikiLink'
+import { useWorkflowStore } from '../../../stores/workflowStore'
+import { useSkillStore } from '../../../stores/skillStore'
 
 interface MarkdownRendererProps {
   content: string
@@ -64,10 +67,21 @@ const WikiLinkElement: FC<{
   relation?: string
   children?: ReactNode
 }> = ({ path, relation, children }) => {
+  const workflows = useWorkflowStore((state) => state.workflows)
+  const skillFiles = useSkillStore((state) => state.skillFiles)
+  // 纯名称引用（如 @ 只写入工作流/技能名称）靠名称集合判定类型
+  const pureNameAssetNames = useMemo(
+    () => ({
+      skillNames: skillFiles.map((skill) => skill.name),
+      workflowNames: workflows.map((workflow) => workflow.name),
+    }),
+    [skillFiles, workflows],
+  )
+
   if (!path) return <>{children}</>
 
   const displayName = extractDisplayName(path)
-  const refType = getReferenceType(path)
+  const refType = getReferenceType(path, pureNameAssetNames)
 
   return (
     <span

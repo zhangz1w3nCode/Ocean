@@ -11,8 +11,9 @@ import { useReferenceItems } from '../../../hooks/useReferenceItems'
 import { referenceHighlightExtension, WIKI_LINK_PATTERN } from './referenceHighlight'
 import type { ReferenceItem } from '../../../types'
 
-// 引用路径的正则匹配：`xxx/xxx.md` 或 `xxx/`（库引用）
-const REFERENCE_PATTERN = /`([^`\n]+(\.md|\/))`/g
+// 引用路径的正则匹配：反引号包裹的任意单行内容均视为引用块（含纯名称引用如 `demo-wf`）
+// 代价：正文里的普通行内代码也会被当作引用块（高亮/点击重编辑/退格整块删除），已与用户确认可接受
+const REFERENCE_PATTERN = /`([^`\n]+)`/g
 
 interface MarkdownEditorProps extends Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, 'onChange' | 'value'> {
   label?: string
@@ -51,6 +52,17 @@ export const MarkdownEditor: FC<MarkdownEditorProps> = ({
 
   const containerRef = useRef<HTMLDivElement>(null)
   const editorRef = useRef<EditorView | null>(null)
+  // 插入引用块后把光标放到块尾（而不是文档末尾），块后面的原有内容保持不变
+  const applyCaret = useCallback((pos: number | null) => {
+    if (pos === null || pos < 0) return
+    requestAnimationFrame(() => {
+      const view = editorRef.current
+      if (!view) return
+      const p = Math.min(pos, view.state.doc.length)
+      view.dispatch({ selection: { anchor: p, head: p }, scrollIntoView: true })
+      view.focus()
+    })
+  }, [])
   const relationInputRef = useRef<HTMLInputElement>(null)
   const referenceItems = useReferenceItems({ excludePath })
 
@@ -171,9 +183,9 @@ export const MarkdownEditor: FC<MarkdownEditorProps> = ({
             }
           }
 
-          // 检查光标前是否有引用块（文件或库引用）
+          // 检查光标前是否有引用块（必须与 REFERENCE_PATTERN 同口径，否则纯名称块能高亮/点击但不能整块删除）
           const beforeCursor = currentValue.slice(0, from)
-          const match = beforeCursor.match(/`[^`\n]+(\.md|\/)`$/)
+          const match = beforeCursor.match(/`[^`\n]+`$/)
           if (match) {
             const start = from - match[0].length
             const transaction = view.state.update({
@@ -350,7 +362,9 @@ export const MarkdownEditor: FC<MarkdownEditorProps> = ({
   // 处理选择引用项
   const handleSelectReference = useCallback((item: ReferenceItem) => {
     const currentValue = String(value || '')
+    const inserted = `\`${item.path}\``
     let newValue: string
+    let caret: number | null = null
 
     if (editingReference) {
       // 编辑现有引用
@@ -358,12 +372,18 @@ export const MarkdownEditor: FC<MarkdownEditorProps> = ({
         new RegExp(`\`${editingReference.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\``, 'g'),
         `\`${item.path}\``
       )
+      const idx = currentValue.indexOf(`\`${editingReference}\``)
+      caret = idx >= 0 ? idx + inserted.length : null
     } else if (atPosition !== null) {
-      // 替换 @ 为引用路径
-      newValue = currentValue.slice(0, atPosition) + `\`${item.path}\`` + currentValue.slice(atPosition + 1)
+      // 替换 @ 为插入位置处的引用块，光标落在块尾
+      newValue = currentValue.slice(0, atPosition) + inserted + currentValue.slice(atPosition + 1)
+      caret = atPosition + inserted.length
     } else {
-      newValue = currentValue + `\`${item.path}\``
+      newValue = currentValue + inserted
+      caret = newValue.length
     }
+
+    applyCaret(caret)
 
     if (onChange) {
       const syntheticEvent = {
@@ -461,11 +481,13 @@ export const MarkdownEditor: FC<MarkdownEditorProps> = ({
 
     // 如果跳过关系（主动跳过或关系为空），直接清理状态
     if (shouldSkip) {
+      const skipEnd = pendingWikiLinkRef.current?.end ?? editingWikiLink?.end ?? null
       pendingWikiLinkRef.current = null
       setSelectedWikiLinkItem(null)
       setWikiLinkRelation('')
       setWikiLinkPosition(null)
       setEditingWikiLink(null)
+      applyCaret(skipEnd)
       return
     }
 
@@ -512,6 +534,8 @@ export const MarkdownEditor: FC<MarkdownEditorProps> = ({
       onChange(syntheticEvent)
     }
 
+    applyCaret(start + wikiLinkText.length)
+
     // 重置状态
     setShowRelationInput(false)
     setSelectedWikiLinkItem(null)
@@ -527,10 +551,12 @@ export const MarkdownEditor: FC<MarkdownEditorProps> = ({
 
     if (editingWikiLink) {
       // 编辑模式下返回，直接关闭（回到编辑器页面）
+      const endPos = editingWikiLink.end
       setSelectedWikiLinkItem(null)
       setWikiLinkRelation('')
       setEditingWikiLink(null)
       pendingWikiLinkRef.current = null
+      applyCaret(endPos)
     } else if (pendingWikiLinkRef.current) {
       // 新建模式下返回，不删除已插入的 WikiLink，重新打开选择弹窗
       // 用户重新选择后会替换原来的 WikiLink（在 handleSelectWikiLink 中处理）
