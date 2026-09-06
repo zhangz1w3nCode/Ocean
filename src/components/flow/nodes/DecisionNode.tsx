@@ -43,8 +43,8 @@ export const DecisionNode: FC<DecisionNodeProps> = ({ data, selected, id }) => {
 
       {/* 判断条件 */}
       {data.condition && (
-        <p className="mt-1.5 text-xs text-orange-600 bg-orange-50 rounded px-2 py-1">
-          {data.condition}
+        <p className="mt-1.5 text-xs text-orange-600 bg-orange-50 rounded px-2 py-1" title={data.condition}>
+          {data.condition.length > 10 ? data.condition.slice(0, 10) + '...' : data.condition}
         </p>
       )}
 
