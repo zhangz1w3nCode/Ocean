@@ -142,7 +142,10 @@ function stripFrontmatter(text: string): string {
   return text
 }
 
+let _helpJsonBuf: string[] | null = null
+
 function out(s: string): void {
+  if (_helpJsonBuf !== null) { _helpJsonBuf.push(s); return }
   const maxBoxW = (process.stdout.columns || 120) - 4
   const wrapped: string[] = []
   for (const line of s.split('\n')) {
@@ -335,7 +338,10 @@ function printVersion(): void {
   out(`ocean ${getVersion()}`)
 }
 
-function printHelp(namespace?: string): void {
+function printHelp(namespace?: string, subcommand?: string, json: boolean = false): void {
+  if (json) {
+    _helpJsonBuf = []
+  }
   if (!namespace) {
     out(`ocean — Ocean 命令行工具
 
@@ -361,6 +367,131 @@ function printHelp(namespace?: string): void {
 
   switch (namespace) {
     case 'workflow':
+      if (subcommand) {
+        switch (subcommand) {
+          case 'instance':
+            out(`ocean workflow instance — 创建工作流实例
+
+用法: ocean workflow instance <name> [--flags...]
+
+参数:
+  <name>                      工作流名称（必填）
+
+flag:
+  --input <string>            初始输入内容（必填）
+  --max-steps <n>             最大步数上限（默认 100）
+  --max-loop <n>              最大循环次数上限（默认 10）
+  --max-retry <n>             最大重试次数上限（默认 2）
+  --json                       JSON 格式输出
+  --root <path>               覆盖项目根目录
+`)
+            break
+          case 'next':
+            out(`ocean workflow next — 拉取下一个节点内容
+
+用法: ocean workflow next --instance <id> [--flags...]
+
+flag:
+  --instance <id>             实例 ID（必填）
+  --json                       JSON 格式输出
+  --root <path>               覆盖项目根目录`)
+            break
+          case 'complete':
+            out(`ocean workflow complete — 交产物并推进
+
+用法: ocean workflow complete --instance <id> [--flags...]
+
+flag:
+  --instance <id>             实例 ID（必填）
+  --output <string>           产物内容
+  --output-file <path>        产物文件路径
+  --json                       JSON 格式输出
+  --root <path>               覆盖项目根目录`)
+            break
+          case 'fail':
+            out(`ocean workflow fail — 标记失败
+
+用法: ocean workflow fail --instance <id> --reason <string>
+
+flag:
+  --instance <id>             实例 ID（必填）
+  --reason <string>           失败原因
+  --json                       JSON 格式输出
+  --root <path>               覆盖项目根目录`)
+            break
+          case 'choose':
+            out(`ocean workflow choose — 决策分支选择
+
+用法: ocean workflow choose --instance <id> --branch <name> [--reason <string>]
+
+flag:
+  --instance <id>             实例 ID（必填）
+  --branch <name>             分支名称（必填）
+  --reason <string>           选择原因
+  --json                       JSON 格式输出
+  --root <path>               覆盖项目根目录`)
+            break
+          case 'status':
+            out(`ocean workflow status — 查看进度
+
+用法: ocean workflow status --instance <id> [--flags...]
+
+flag:
+  --instance <id>             实例 ID（必填）
+  --json                       JSON 格式输出
+  --root <path>               覆盖项目根目录`)
+            break
+          case 'artifact':
+            out(`ocean workflow artifact — 产物操作
+
+用法: ocean workflow artifact <sub> --instance <id> [--flags...]
+
+子命令:
+  list                         列出所有产物
+  view                         查看产物详情
+  search                       按关键词搜索产物
+  timeline                     产物时间线
+  diff                         产物 diff
+
+flag（所有子命令通用）:
+  --instance <id>             实例 ID（必填）
+  --json                       JSON 格式输出
+  --root <path>               覆盖项目根目录
+
+flag（view 专用）:
+  --node <id>                 节点 ID
+  --invoke <id>               invoke ID
+
+flag（search 专用）:
+  --keyword <string>          搜索关键词
+
+flag（diff 专用）:
+  --node <id>                 节点 ID
+  --context <n>               上下文行数（默认 3）
+  --full                       输出完整 diff`)
+            break
+          case 'context':
+            out(`ocean workflow context — 上下文操作
+
+用法: ocean workflow context <set|get> --instance <id> [--flags...]
+
+子命令:
+  set                          设置上下文
+  get                          获取上下文
+
+flag:
+  --instance <id>             实例 ID（必填）
+  --topic <string>            上下文主题（set 必填）
+  --content <string>          上下文内容（set 必填）
+  --json                       JSON 格式输出（get 专用）
+  --root <path>               覆盖项目根目录`)
+            break
+          default:
+            out(`未知的 workflow 子命令: ${subcommand}
+运行 'ocean workflow --help' 查看可用子命令。`)
+        }
+        break
+      }
       out(`ocean workflow — 工作流执行与图编辑
 
 用法: ocean workflow <subcommand> [positional...] [--flags...]
@@ -529,7 +660,11 @@ function main(): void {
 
   // help 检查（ocean --help, ocean -h, ocean help [namespace], ocean <ns> --help）
   if (args.help) {
-    printHelp(args.namespace)
+    printHelp(args.namespace, args.subcommand, !!args.flags.json)
+    if (_helpJsonBuf !== null) {
+      printJson({ namespace: args.namespace || null, subcommand: args.subcommand || null, help: _helpJsonBuf.join('\n') })
+      _helpJsonBuf = null
+    }
     return
   }
 
@@ -603,13 +738,22 @@ function handleWorkflow(root: string, args: ReturnType<typeof parseArgs>): void 
         else printMarkdownTable(listInstances(root, wf))
       } else {
         const workflowName = args.positional[0]
-        const id = typeof args.flags.instance === 'string' ? args.flags.instance : genId()
+        if (!workflowName) {
+          throw new UsageError('创建实例时需要指定工作流名称: ocean workflow instance <name>')
+        }
+        if (args.flags.instance !== undefined) {
+          throw new UsageError('创建实例时不支持 --instance 参数，实例 ID 由内部自动生成')
+        }
+        const id = genId()
         const limits: Limits = {
           max_steps: getLimit(args.flags, 'max-steps', 100),
           max_loop: getLimit(args.flags, 'max-loop', 10),
           max_retry: getLimit(args.flags, 'max-retry', 2),
         }
-        const input = typeof args.flags.input === 'string' ? args.flags.input : undefined
+        const input = args.flags.input
+        if (!input || typeof input !== 'string' || input.trim().length === 0) {
+          throw new UsageError('创建实例时 --input <string> 为必填参数，不可为空')
+        }
         create(root, workflowName, id, input, limits)
         args.flags.json ? printJson({ action: 'created', instanceId: id }) : printAction('created', { instanceId: id })
       }
@@ -819,8 +963,6 @@ function handleWorkflow(root: string, args: ReturnType<typeof parseArgs>): void 
       args.flags.json ? printJson({ action: 'generated', workflow: name }) : printAction('generated', { workflow: name })
       break
     }
-
-
     case 'doctor': {
       const name = args.positional[0]
       const json = args.flags.json === true
