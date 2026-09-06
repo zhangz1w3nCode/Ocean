@@ -1,0 +1,75 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-macos-arm64:
+    name: Build macOS (arm64) and publish
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: pnpm
+
+      - name: Cache Electron downloads
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/electron
+          key: ${{ runner.os }}-electron-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-electron-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify tag matches package version
+        if: github.ref_type == 'tag'
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          PKG="$(node -p "require('./package.json').version")"
+          if [ "$TAG" != "$PKG" ]; then
+            echo "::error::tag v$TAG 与 package.json version $PKG 不一致"
+            exit 1
+          fi
+          echo "release target: v$PKG"
+
+      - name: Bundle renderer and CLI
+        run: |
+          pnpm run build
+          pnpm run build:electron
+
+      - name: Package dmg and publish to GitHub Releases
+        run: pnpm exec electron-builder --mac --publish "$PUBLISH_MODE"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # tag 推送才真正发布；手动 dispatch 只构建不发 Release，用于验证流水线
+          PUBLISH_MODE: ${{ github.ref_type == 'tag' && 'always' || 'never' }}
+          # 取得 Apple Developer ID 后补充以下 secrets 即可开启签名与公证，构建脚本无需改动：
+          # CSC_LINK、CSC_KEY_PASSWORD、APPLE_ID、APPLE_APP_SPECIFIC_PASSWORD、APPLE_TEAM_ID
+
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: ocean-macos-arm64
+          path: |
+            release/*.dmg
+            release/*.yml
+          if-no-files-found: warn
