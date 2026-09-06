@@ -18,6 +18,7 @@ export function list(root: string): string[] {
 export function read(root: string, name: string): string {
   assertSkillName(name)
   const filePath = path.join(baseDir(root), name, 'SKILL.md')
+  if (!fs.existsSync(filePath)) throw new Error(`技能不存在: ${name}`)
   return fs.readFileSync(filePath, 'utf-8')
 }
 
