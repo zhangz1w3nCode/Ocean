@@ -65,6 +65,15 @@ jobs:
           # 取得 Apple Developer ID 后补充以下 secrets 即可开启签名与公证，构建脚本无需改动：
           # CSC_LINK、CSC_KEY_PASSWORD、APPLE_ID、APPLE_APP_SPECIFIC_PASSWORD、APPLE_TEAM_ID
 
+      - name: Publish release with notes
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release edit "$GITHUB_REF_NAME" \
+            --draft=false --latest \
+            --title "Ocean $GITHUB_REF_NAME" \
+            --notes-file .github/RELEASE_NOTES.md
       - name: Upload workflow artifacts
         uses: actions/upload-artifact@v7
         with:
