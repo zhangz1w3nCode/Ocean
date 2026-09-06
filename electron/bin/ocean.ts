@@ -104,6 +104,24 @@ function readContent(flags: Record<string, string | boolean>): string {
   return require('fs').readFileSync(0, 'utf-8')
 }
 
+function readAttachmentFiles(flags: Record<string, string | boolean>, key: string): skillCrud.SkillAttachment[] {
+  const raw = flags[key]
+  if (typeof raw !== 'string' || !raw.trim()) return []
+  const files: skillCrud.SkillAttachment[] = []
+  for (const seg of raw.split(',')) {
+    const p = seg.trim()
+    if (!p) continue
+    let content: string
+    try {
+      content = require('fs').readFileSync(p, 'utf-8')
+    } catch (e: any) {
+      throw new UsageError(`读取 --${key} 文件失败 ${p}: ${e.message}`)
+    }
+    files.push({ name: require('path').basename(p), content })
+  }
+  return files
+}
+
 function rawOut(s: string): void {
   process.stdout.write(s + '\n')
 }
@@ -622,12 +640,33 @@ flag:
   create <name>                创建技能
   update <name>                更新技能
   delete <name>                删除技能
+  resource <sub> <skill> <类型> [文件名]   管理 scripts/references/examples 里的单个文件
 
 常用 flag:
-  --description <text>         技能描述
+  --description <text>         技能描述（create 必填）
   --content "文本"             短内容直接传
   --content-file <path>         长内容指向文件
-  stdin                        管道输入（三选一）`)
+  stdin                        管道输入（三选一）
+
+create 附属文件 flag（目标子目录由参数名固定决定，源文件不需按目录组织）:
+  传入值为逗号分隔的源文件，可裸文件名、相对路径或绝对路径；落盘文件名取源文件的 basename
+  --references <f1,f2>        → skills/{name}/references/（create 必填，至少一个）
+  --examples <f1,f2>          → skills/{name}/examples/（create 必填，至少一个）
+  --scripts <f1,f2>           → skills/{name}/scripts/（选填）
+
+resource 子命令（类型 = scripts | references | examples，与 GUI 技能页四个 Tab 对齐）:
+  list   <skill> <类型>                        列出该类型下的文件
+  read   <skill> <类型> <文件名>               输出文件内容
+  create <skill> <类型> <文件名> --content ...  新建一个文件（已存在则拒绝，类型子目录缺失时自动创建）
+  delete <skill> <类型> <文件名>               删除一个文件
+
+示例:
+  ocean skill create my-skill --description "..." --content-file SKILL.md \
+    --references note.md,api.md --examples demo.md --scripts build.sh
+  ocean skill resource create my-skill references guide.md --content "# 指南"
+  ocean skill resource list my-skill references
+  ocean skill resource read my-skill references guide.md
+  ocean skill resource delete my-skill references guide.md`)
       break
     case 'config':
       out(`ocean config — 配置管理
@@ -1255,10 +1294,22 @@ function handleSkill(root: string, args: ReturnType<typeof parseArgs>): void {
     }
     case 'create': {
       const name = args.positional[0]
+      const references = readAttachmentFiles(args.flags, 'references')
+      const examples = readAttachmentFiles(args.flags, 'examples')
+      const scripts = readAttachmentFiles(args.flags, 'scripts')
+      if (!references.length) {
+        throw new UsageError('创建技能时 --references <path1,path2> 为必填参数，需至少提供一个参考文档文件')
+      }
+      if (!examples.length) {
+        throw new UsageError('创建技能时 --examples <path1,path2> 为必填参数，需至少提供一个示例文件')
+      }
       const content = readContent(args.flags)
       const description = args.flags.description as string
-      skillCrud.create(root, name, content, description)
-      args.flags.json ? printJson({ action: 'created', name }) : printAction('created', { name })
+      skillCrud.create(root, name, content, description, { scripts, references, examples })
+      const names = (list: skillCrud.SkillAttachment[]) => list.map(f => f.name).join(',') || '-'
+      args.flags.json
+        ? printJson({ action: 'created', name, attachments: { references: references.map(f => f.name), examples: examples.map(f => f.name), scripts: scripts.map(f => f.name) } })
+        : printAction('created', { name, references: names(references), examples: names(examples), scripts: names(scripts) })
       break
     }
     case 'update': {
@@ -1274,12 +1325,63 @@ function handleSkill(root: string, args: ReturnType<typeof parseArgs>): void {
       args.flags.json ? printJson({ action: 'deleted', name }) : printAction('deleted', { name })
       break
     }
+    case 'resource':
+      handleSkillResource(root, args)
+      break
     default:
       if (!cmd) {
         printHelp('skill')
         return
       }
       throw new UsageError(`未知的 skill 子命令: ${cmd}\n运行 'ocean skill --help' 查看详细用法。`)
+  }
+}
+
+// skill resource 子命令组：与 GUI 技能页对 scripts/references/examples 的四个操作对齐
+function handleSkillResource(root: string, args: ReturnType<typeof parseArgs>): void {
+  const [action, name, type, fileName] = args.positional
+  const json = !!args.flags.json
+  if (!action) {
+    throw new UsageError("缺少 resource 子命令：ocean skill resource <list|read|create|delete> <技能名> <类型> [文件名]")
+  }
+  switch (action) {
+    case 'list': {
+      requirePositional(action, [name, type], ['<技能名>', '<类型>'])
+      const files = skillCrud.listResources(root, name, type)
+      json ? printJson({ name, type, files }) : printList(files, `${name}/${type}`)
+      break
+    }
+    case 'read': {
+      requirePositional(action, [name, type, fileName], ['<技能名>', '<类型>', '<文件名>'])
+      const content = skillCrud.readResource(root, name, type, fileName)
+      json ? printJson({ name, type, fileName, content }) : out(content)
+      break
+    }
+    case 'create': {
+      requirePositional(action, [name, type, fileName], ['<技能名>', '<类型>', '<文件名>'])
+      const content = readContent(args.flags)
+      skillCrud.addResource(root, name, type, fileName, content)
+      json
+        ? printJson({ action: 'created', name, type, fileName })
+        : printAction('created', { name, type, file: fileName })
+      break
+    }
+    case 'delete': {
+      requirePositional(action, [name, type, fileName], ['<技能名>', '<类型>', '<文件名>'])
+      skillCrud.deleteResource(root, name, type, fileName)
+      json
+        ? printJson({ action: 'deleted', name, type, fileName })
+        : printAction('deleted', { name, type, file: fileName })
+      break
+    }
+    default:
+      throw new UsageError(`未知的 skill resource 子命令: ${action}\n运行 'ocean skill --help' 查看详细用法。`)
+  }
+}
+
+function requirePositional(action: string, vals: (string | undefined)[], labels: string[]): void {
+  for (let i = 0; i < vals.length; i++) {
+    if (!vals[i]) throw new UsageError(`skill resource ${action} 缺少参数 ${labels[i]}`)
   }
 }
 

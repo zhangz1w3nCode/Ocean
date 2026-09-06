@@ -20,21 +20,69 @@ export function read(root: string, name: string): string {
   return fs.readFileSync(filePath, 'utf-8')
 }
 
-export function create(root: string, name: string, content: string, description: string): void {
+export interface SkillAttachment {
+  name: string
+  content: string
+}
+
+export interface SkillAttachments {
+  scripts?: SkillAttachment[]
+  references?: SkillAttachment[]
+  examples?: SkillAttachment[]
+}
+
+const SKILL_SUB_DIRS = ['scripts', 'references', 'examples'] as const
+const SKILL_NAME_PATTERN = /^[a-zA-Z0-9_-]+$/
+
+export function create(root: string, name: string, content: string, description: string, attachments: SkillAttachments = {}): void {
+  if (!name || !SKILL_NAME_PATTERN.test(name)) {
+    throw new Error('技能名称只能包含字母、数字、中划线和下划线（与 GUI SkillModal.tsx:399 验证一致）')
+  }
   if (!description || !description.trim()) {
     throw new Error('技能描述为必填项（与 GUI ApplyModal.tsx:148 验证一致）')
   }
+  if (!content || !content.trim()) {
+    throw new Error('技能正文为必填项（与 GUI SkillModal.tsx:414 验证一致）')
+  }
+  validateAttachments(attachments)
+
   const d = baseDir(root)
   const skillDir = path.join(d, name)
   if (fs.existsSync(skillDir)) throw new Error(`技能目录已存在: ${name}`)
 
   fs.mkdirSync(skillDir, { recursive: true })
-  for (const subDir of ['scripts', 'references', 'examples']) {
-    fs.mkdirSync(path.join(skillDir, subDir), { recursive: true })
-  }
+  try {
+    for (const subDir of SKILL_SUB_DIRS) {
+      fs.mkdirSync(path.join(skillDir, subDir), { recursive: true })
+    }
 
-  const skillMd = `---\nname: ${name}\ndescription: ${description}\n---\n${content}\n`
-  fs.writeFileSync(path.join(skillDir, 'SKILL.md'), skillMd, 'utf-8')
+    const skillMd = `---\nname: ${name}\ndescription: ${description}\n---\n${content}\n`
+    fs.writeFileSync(path.join(skillDir, 'SKILL.md'), skillMd, 'utf-8')
+
+    for (const subDir of SKILL_SUB_DIRS) {
+      for (const file of attachments[subDir] || []) {
+        fs.writeFileSync(path.join(skillDir, subDir, file.name), file.content, 'utf-8')
+      }
+    }
+  } catch (e) {
+    fs.rmSync(skillDir, { recursive: true, force: true })
+    throw e
+  }
+}
+
+function validateAttachments(attachments: SkillAttachments): void {
+  for (const subDir of SKILL_SUB_DIRS) {
+    const files = attachments[subDir]
+    if (!files) continue
+    const seen = new Set<string>()
+    for (const file of files) {
+      assertSafeFileName(subDir, file && file.name)
+      if (seen.has(file.name)) {
+        throw new Error(`${subDir} 文件名重复: ${file.name}`)
+      }
+      seen.add(file.name)
+    }
+  }
 }
 
 export function update(root: string, name: string, content: string): void {
@@ -49,6 +97,71 @@ export function update(root: string, name: string, content: string): void {
 export function del(root: string, name: string): void {
   const skillDir = path.join(baseDir(root), name)
   if (fs.existsSync(skillDir)) fs.rmSync(skillDir, { recursive: true, force: true })
+}
+
+export type SkillResourceType = 'scripts' | 'references' | 'examples'
+
+export function listResources(root: string, name: string, type: string): string[] {
+  const skillDir = requireSkill(root, name)
+  const t = assertResourceType(type)
+  const d = path.join(skillDir, t)
+  if (!fs.existsSync(d)) return []
+  return fs.readdirSync(d, { withFileTypes: true }).filter(e => e.isFile()).map(e => e.name).sort()
+}
+
+export function readResource(root: string, name: string, type: string, fileName: string): string {
+  const skillDir = requireSkill(root, name)
+  const t = assertResourceType(type)
+  assertSafeFileName(t, fileName)
+  const filePath = path.join(skillDir, t, fileName)
+  if (!fs.existsSync(filePath)) throw new Error(`${t} 下不存在文件: ${fileName}`)
+  return fs.readFileSync(filePath, 'utf-8')
+}
+
+// 对齐 GUI save-skill-resource：子目录缺失时按需创建；新建模式禁止重名
+export function addResource(root: string, name: string, type: string, fileName: string, content: string): void {
+  const skillDir = requireSkill(root, name)
+  const t = assertResourceType(type)
+  assertSafeFileName(t, fileName)
+  if (!content || !content.trim()) {
+    throw new Error('资源文件内容为必填项（与 GUI SkillResourceEditModal 新建校验一致）')
+  }
+  fs.mkdirSync(path.join(skillDir, t), { recursive: true })
+  const filePath = path.join(skillDir, t, fileName)
+  if (fs.existsSync(filePath)) {
+    throw new Error(`${t} 下文件已存在: ${fileName}（GUI 新建时同样拒绝重名）`)
+  }
+  fs.writeFileSync(filePath, content, 'utf-8')
+}
+
+export function deleteResource(root: string, name: string, type: string, fileName: string): void {
+  const skillDir = requireSkill(root, name)
+  const t = assertResourceType(type)
+  assertSafeFileName(t, fileName)
+  const filePath = path.join(skillDir, t, fileName)
+  if (fs.existsSync(filePath)) fs.unlinkSync(filePath)
+}
+
+function requireSkill(root: string, name: string): string {
+  const skillDir = path.join(baseDir(root), name)
+  if (!fs.existsSync(path.join(skillDir, 'SKILL.md'))) throw new Error(`技能不存在: ${name}`)
+  return skillDir
+}
+
+function assertResourceType(type: string | undefined): SkillResourceType {
+  if (!type || !(SKILL_SUB_DIRS as readonly string[]).includes(type)) {
+    throw new Error(`资源类型必须是 scripts / references / examples 之一: ${type}`)
+  }
+  return type as SkillResourceType
+}
+
+function assertSafeFileName(subDir: string, fileName: string): void {
+  if (!fileName || !fileName.trim()) {
+    throw new Error(`${subDir} 存在空文件名`)
+  }
+  if (fileName === '.' || fileName === '..' || fileName !== path.basename(fileName) || fileName.includes('/') || fileName.includes('\\')) {
+    throw new Error(`${subDir} 文件名非法（不允许 . 或 .. 或路径分隔符）: ${fileName}`)
+  }
 }
 
 // --- frontmatter helpers ---
