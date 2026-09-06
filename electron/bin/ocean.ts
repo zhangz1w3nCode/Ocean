@@ -26,13 +26,16 @@ function parseArgs(argv: string[]): {
   subcommand: string
   positional: string[]
   flags: Record<string, string | boolean>
+  help: boolean
+  version: boolean
 } {
   const args = argv.slice(2)
   let root: string | undefined
   const positional: string[] = []
   const flags: Record<string, string | boolean> = {}
+  let help = false
+  let version = false
 
-  let i = 0
   let namespace = ''
   let subcommand = ''
 
@@ -42,6 +45,10 @@ function parseArgs(argv: string[]): {
       root = args[++j]
     } else if (arg.startsWith('--root=')) {
       root = arg.substring(7)
+    } else if (arg === '--help' || arg === '-h') {
+      help = true
+    } else if (arg === '--version' || arg === '-v') {
+      version = true
     } else if (arg.startsWith('--')) {
       const key = arg.substring(2)
       const next = args[j + 1]
@@ -62,7 +69,17 @@ function parseArgs(argv: string[]): {
     }
   }
 
-  return { root, namespace, subcommand, positional, flags }
+  // help/version 子命令形式: ocean help [namespace], ocean version
+  if (namespace === 'help' || namespace === '-h') {
+    help = true
+    namespace = subcommand
+    subcommand = ''
+  } else if (namespace === 'version' || namespace === '-v') {
+    version = true
+    namespace = ''
+  }
+
+  return { root, namespace, subcommand, positional, flags, help, version }
 }
 
 function getLimit(flags: Record<string, string | boolean>, key: string, fallback: number): number {
@@ -90,9 +107,226 @@ function out(s: string): void {
   process.stdout.write(s + '\n')
 }
 
+// ---------------------------------------------------------------------------
+// Usage Error (exit 2 for usage errors, exit 1 for runtime errors)
+// ---------------------------------------------------------------------------
+
+class UsageError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'UsageError'
+  }
+}
+
 function err(e: any): void {
+  if (e instanceof UsageError) {
+    process.stderr.write(e.message + '\n')
+    process.exit(2)
+  }
   process.stderr.write(e.message + '\n')
   process.exit(1)
+}
+
+// ---------------------------------------------------------------------------
+// Help / Version
+// ---------------------------------------------------------------------------
+
+function getVersion(): string {
+  const path = require('path')
+  const candidates = [
+    path.join(__dirname, '..', 'package.json'),
+    path.join(__dirname, '..', '..', '..', 'package.json'),
+  ]
+  for (const p of candidates) {
+    try {
+      const pkg = require(p)
+      if (pkg.version) return pkg.version
+    } catch {}
+  }
+  return 'unknown'
+}
+
+function printVersion(): void {
+  out(`ocean ${getVersion()}`)
+}
+
+function printHelp(namespace?: string): void {
+  if (!namespace) {
+    out(`ocean — Ocean 命令行工具
+
+用法: ocean [--root <path>] <namespace> [subcommand] [positional...] [--flags...]
+
+全局选项:
+  --root <path>      覆盖项目根目录
+  --help, -h         显示帮助信息
+  --version, -v      显示版本号
+
+命名空间:
+  workflow    工作流执行与图编辑
+  node        节点 CRUD
+  knowledge   知识 CRUD
+  resource    资源 CRUD
+  agent       智能体 CRUD
+  skill       技能 CRUD
+  config      配置管理
+
+运行 'ocean <namespace> --help' 查看命名空间的详细用法。`)
+    return
+  }
+
+  switch (namespace) {
+    case 'workflow':
+      out(`ocean workflow — 工作流执行与图编辑
+
+用法: ocean workflow <subcommand> [positional...] [--flags...]
+
+执行子命令:
+  list                          列出可用工作流
+  instance <name>              创建工作流实例，返回 instance-id
+  instance list                 列出实例
+  next                          拉取下一个节点内容
+  complete                      交产物并推进
+  fail                          标记失败
+  choose                        决策分支选择
+  status                        查看进度
+  artifact list/view/search/timeline/diff    产物操作
+  context set/get               上下文操作
+
+图编辑子命令:
+  create <name>                创建工作流（初始化 start + end）
+  add-node <name>              添加节点，返回 node ID
+  connect <name>               连接节点
+  add-branch <name>             添加分支（自动追加"其他"兜底）
+  remove-node <name>           删除节点 + 关联边
+  disconnect <name>            删除边
+  list-nodes <name>            列出节点表格
+  list-edges <name>            列出边表格
+  read <name>                  读 WORKFLOW.md
+  read-flow <name>             读 flow.json
+  generate <name>              dagre 自动布局 + 生成 WORKFLOW.md
+  doctor <name>                检查工作流完整性（10 项检查）
+  delete <name>                删除工作流
+  rename <old> <new>           重命名工作流
+  local-node list/read/create/delete <wf> [name]   局部节点 CRUD
+
+常用 flag:
+  --instance <id>              实例 ID
+  --json                       JSON 格式输出
+  --root <path>                覆盖项目根目录`)
+      break
+    case 'node':
+      out(`ocean node — 节点 CRUD
+
+用法: ocean node <subcommand> <name> [--flags...]
+
+子命令:
+  list                          列出所有节点
+  read <name>                  读取节点内容
+  create <name>                创建节点
+  update <name>                更新节点
+  delete <name>                删除节点
+
+常用 flag:
+  --type <type>                节点类型
+  --description <text>         节点描述
+  --content "文本"             短内容直接传
+  --content-file <path>         长内容指向文件
+  stdin                        管道输入（三选一）`)
+      break
+    case 'knowledge':
+      out(`ocean knowledge — 知识 CRUD
+
+用法: ocean knowledge <subcommand> <path> [--flags...]
+
+子命令:
+  list                          列出所有知识
+  read <path>                  读取知识内容
+  create <path>                创建知识
+  update <path>                更新知识
+  delete <path>                删除知识
+
+常用 flag:
+  --description <text>         知识描述
+  --tags <tag1,tag2>           标签（逗号分隔）
+  --content "文本"             短内容直接传
+  --content-file <path>         长内容指向文件
+  stdin                        管道输入（三选一）`)
+      break
+    case 'resource':
+      out(`ocean resource — 资源 CRUD
+
+用法: ocean resource <subcommand> <name> [--flags...]
+
+子命令:
+  list                          列出所有资源
+  read <name>                  读取资源内容
+  create <name>                创建资源
+  update <name>                更新资源
+  delete <name>                删除资源
+
+常用 flag:
+  --type <type>                资源类型
+  --description <text>         资源描述
+  --content "文本"             短内容直接传
+  --content-file <path>         长内容指向文件
+  stdin                        管道输入（三选一）`)
+      break
+    case 'agent':
+      out(`ocean agent — 智能体 CRUD
+
+用法: ocean agent <subcommand> <name> [--flags...]
+
+子命令:
+  list                          列出所有智能体
+  read <name>                  读取智能体内容
+  create <name>                创建智能体
+  update <name>                更新智能体
+  delete <name>                删除智能体
+
+常用 flag:
+  --description <text>         智能体描述
+  --model <model>              模型名称
+  --color <color>              颜色标识
+  --tools <tools>              工具列表
+  --system-prompt-mode <mode>  系统提示模式
+  --inherit-project-context    继承项目上下文
+  --inherit-skills             继承技能
+  --content "文本"             短内容直接传
+  --content-file <path>         长内容指向文件
+  stdin                        管道输入（三选一）`)
+      break
+    case 'skill':
+      out(`ocean skill — 技能 CRUD
+
+用法: ocean skill <subcommand> <name> [--flags...]
+
+子命令:
+  list                          列出所有技能
+  read <name>                  读取技能内容
+  create <name>                创建技能
+  update <name>                更新技能
+  delete <name>                删除技能
+
+常用 flag:
+  --description <text>         技能描述
+  --content "文本"             短内容直接传
+  --content-file <path>         长内容指向文件
+  stdin                        管道输入（三选一）`)
+      break
+    case 'config':
+      out(`ocean config — 配置管理
+
+用法: ocean config <subcommand>
+
+子命令:
+  asset-root                   查询当前资产来源（pi 或 claude）`)
+      break
+    default:
+      out(`未知命名空间: ${namespace}
+
+可用命名空间: workflow | node | knowledge | resource | agent | skill | config
+运行 'ocean --help' 查看详细用法。`)
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -101,6 +335,24 @@ function err(e: any): void {
 
 function main(): void {
   const args = parseArgs(process.argv)
+
+  // version 优先（eager，无需子命令）
+  if (args.version) {
+    printVersion()
+    return
+  }
+
+  // help 检查（ocean --help, ocean -h, ocean help [namespace], ocean <ns> --help）
+  if (args.help) {
+    printHelp(args.namespace)
+    return
+  }
+
+  // 无 namespace → 打印全局帮助（stdout, exit 0）
+  if (!args.namespace) {
+    printHelp()
+    return
+  }
 
   try {
     const root = resolveRoot(args.root)
@@ -134,7 +386,7 @@ function main(): void {
         break
 
       default:
-        throw new Error(`未知的命令: ${args.namespace}\n用法: ocean <workflow|node|knowledge|resource|agent|skill|config> [...]`)
+        throw new UsageError(`未知的命令: ${args.namespace}\n运行 'ocean --help' 查看可用命令。`)
     }
   } catch (e: any) {
     err(e)
@@ -431,7 +683,11 @@ function handleWorkflow(root: string, args: ReturnType<typeof parseArgs>): void 
     }
 
     default:
-      throw new Error(`未知的 workflow 子命令: ${cmd}\n用法: ocean workflow <list|instance|next|complete|fail|choose|status|artifact|context|create|add-node|connect|add-branch|remove-node|disconnect|list-nodes|list-edges|read|read-flow|generate|doctor|delete|rename|local-node> [...]`)
+      if (!cmd) {
+        printHelp('workflow')
+        return
+      }
+      throw new UsageError(`未知的 workflow 子命令: ${cmd}\n运行 'ocean workflow --help' 查看详细用法。`)
   }
 }
 
@@ -475,7 +731,11 @@ function handleNode(root: string, args: ReturnType<typeof parseArgs>): void {
       break
     }
     default:
-      throw new Error(`未知的 node 子命令: ${cmd}\n用法: ocean node <list|read|create|update|delete> [...]`)
+      if (!cmd) {
+        printHelp('node')
+        return
+      }
+      throw new UsageError(`未知的 node 子命令: ${cmd}\n运行 'ocean node --help' 查看详细用法。`)
   }
 }
 
@@ -521,7 +781,11 @@ function handleKnowledge(root: string, args: ReturnType<typeof parseArgs>): void
       break
     }
     default:
-      throw new Error(`未知的 knowledge 子命令: ${cmd}\n用法: ocean knowledge <list|read|create|update|delete> [...]`)
+      if (!cmd) {
+        printHelp('knowledge')
+        return
+      }
+      throw new UsageError(`未知的 knowledge 子命令: ${cmd}\n运行 'ocean knowledge --help' 查看详细用法。`)
   }
 }
 
@@ -565,7 +829,11 @@ function handleResource(root: string, args: ReturnType<typeof parseArgs>): void 
       break
     }
     default:
-      throw new Error(`未知的 resource 子命令: ${cmd}\n用法: ocean resource <list|read|create|update|delete> [...]`)
+      if (!cmd) {
+        printHelp('resource')
+        return
+      }
+      throw new UsageError(`未知的 resource 子命令: ${cmd}\n运行 'ocean resource --help' 查看详细用法。`)
   }
 }
 
@@ -621,7 +889,11 @@ function handleAgent(root: string, args: ReturnType<typeof parseArgs>): void {
       break
     }
     default:
-      throw new Error(`未知的 agent 子命令: ${cmd}\n用法: ocean agent <list|read|create|update|delete> [...]`)
+      if (!cmd) {
+        printHelp('agent')
+        return
+      }
+      throw new UsageError(`未知的 agent 子命令: ${cmd}\n运行 'ocean agent --help' 查看详细用法。`)
   }
 }
 
@@ -662,7 +934,11 @@ function handleSkill(root: string, args: ReturnType<typeof parseArgs>): void {
       break
     }
     default:
-      throw new Error(`未知的 skill 子命令: ${cmd}\n用法: ocean skill <list|read|create|update|delete> [...]`)
+      if (!cmd) {
+        printHelp('skill')
+        return
+      }
+      throw new UsageError(`未知的 skill 子命令: ${cmd}\n运行 'ocean skill --help' 查看详细用法。`)
   }
 }
 
@@ -677,7 +953,11 @@ function handleConfig(root: string, args: ReturnType<typeof parseArgs>): void {
       out(resolveAssetDir(root))
       break
     default:
-      throw new Error(`未知的 config 子命令: ${cmd}\n用法: ocean config <asset-root>`)
+      if (!cmd) {
+        printHelp('config')
+        return
+      }
+      throw new UsageError(`未知的 config 子命令: ${cmd}\n运行 'ocean config --help' 查看详细用法。`)
   }
 }
 

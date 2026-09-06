@@ -9,7 +9,7 @@
     "electron:dev": "concurrently \"pnpm dev\" \"wait-on http://localhost:5173 && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron electron/launch.cjs --remote-debugging-port=9222\"",
     "electron:preview": "cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron electron/launch.cjs",
     "build": "tsc && vite build",
-    "build:electron": "tsc -p electron/tsconfig.json && esbuild electron/core/workflow.ts --bundle --platform=node --format=cjs --outfile=electron/dist/core/workflow.js && node -e \"require('fs').writeFileSync('electron/dist/package.json', JSON.stringify({type:'commonjs'}))\"",
+    "build:electron": "tsc -p electron/tsconfig.json && esbuild electron/core/workflow.ts --bundle --platform=node --format=cjs --outfile=electron/dist/core/workflow.js && node -e \"require('fs').writeFileSync('electron/dist/package.json', JSON.stringify({type:'commonjs', version: require('./package.json').version}))\"",
     "electron:build": "npm run build && npm run build:electron && electron-builder",
     "preview": "vite preview"
   },
