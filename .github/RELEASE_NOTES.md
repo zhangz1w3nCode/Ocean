@@ -1,6 +1,6 @@
 ## 安装
 
-macOS Apple Silicon（arm64）：下载 `Ocean-<version>-arm64.dmg`，打开后把 Ocean 拖进 Applications。
+macOS Apple Silicon（arm64）：在本页 Assets 里下载 `.dmg` 结尾的安装包，打开后把 Ocean 拖进 Applications。
 
 Intel Mac 暂不提供安装包。
 
