@@ -297,6 +297,9 @@ function handleWorkflow(root: string, args: ReturnType<typeof parseArgs>): void 
       const nodeRefPath = typeof args.flags['node-ref'] === 'string' ? args.flags['node-ref'] : undefined
       const content = (type === 'process' || type === 'local') ? readContent(args.flags) : undefined
       const condition = typeof args.flags.condition === 'string' ? args.flags.condition : undefined
+      if (type === 'decision' && !condition?.trim()) {
+        throw new Error('decision 节点必须提供判断内容（--condition 参数）')
+      }
       const description = typeof args.flags.description === 'string' ? args.flags.description : undefined
       const id = wfGraph.addNode(root, name, type, label, { nodeRefPath, content, condition, description })
       out(id)
