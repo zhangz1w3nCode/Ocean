@@ -9,7 +9,7 @@
     "electron:dev": "concurrently \"pnpm dev\" \"wait-on http://localhost:5173 && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron electron/launch.cjs --remote-debugging-port=9222\"",
     "electron:preview": "cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron electron/launch.cjs",
     "build": "tsc && vite build",
-    "build:electron": "tsc -p electron/tsconfig.json && esbuild electron/core/workflow.ts --bundle --platform=node --format=cjs --outfile=electron/dist/core/workflow.js && node -e \"require('fs').writeFileSync('electron/dist/package.json', JSON.stringify({type:'commonjs'}))\"",
+    "build:electron": "tsc -p electron/tsconfig.json && esbuild electron/core/workflow.ts --bundle --platform=node --format=cjs --outfile=electron/dist/core/workflow.js && esbuild electron/bin/ocean.ts --bundle --platform=node --format=cjs --outfile=electron/dist/bin/ocean.js && node -e \"require('fs').writeFileSync('electron/dist/package.json', JSON.stringify({type:'commonjs', version: require('./package.json').version}))\"",
     "electron:build": "npm run build && npm run build:electron && electron-builder",
     "preview": "vite preview"
   },
@@ -86,6 +86,7 @@
     "@uiw/codemirror-themes-all": "^4.25.5",
     "@uiw/react-codemirror": "^4.25.4",
     "@xyflow/react": "^12.10.0",
+    "cli-table3": "^0.6.5",
     "d3-force": "^3.0.0",
     "framer-motion": "^12.34.0",
     "highlight.js": "^11.11.1",

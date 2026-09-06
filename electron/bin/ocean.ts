@@ -15,6 +15,7 @@ import * as resourceCrud from '../core/resource'
 import * as agentCrud from '../core/agent'
 import * as skillCrud from '../core/skill'
 import * as wfGraph from '../core/workflow'
+import Table from 'cli-table3'
 
 // ---------------------------------------------------------------------------
 // Argument parser
@@ -26,13 +27,16 @@ function parseArgs(argv: string[]): {
   subcommand: string
   positional: string[]
   flags: Record<string, string | boolean>
+  help: boolean
+  version: boolean
 } {
   const args = argv.slice(2)
   let root: string | undefined
   const positional: string[] = []
   const flags: Record<string, string | boolean> = {}
+  let help = false
+  let version = false
 
-  let i = 0
   let namespace = ''
   let subcommand = ''
 
@@ -42,6 +46,10 @@ function parseArgs(argv: string[]): {
       root = args[++j]
     } else if (arg.startsWith('--root=')) {
       root = arg.substring(7)
+    } else if (arg === '--help' || arg === '-h') {
+      help = true
+    } else if (arg === '--version' || arg === '-v') {
+      version = true
     } else if (arg.startsWith('--')) {
       const key = arg.substring(2)
       const next = args[j + 1]
@@ -62,7 +70,17 @@ function parseArgs(argv: string[]): {
     }
   }
 
-  return { root, namespace, subcommand, positional, flags }
+  // help/version 子命令形式: ocean help [namespace], ocean version
+  if (namespace === 'help' || namespace === '-h') {
+    help = true
+    namespace = subcommand
+    subcommand = ''
+  } else if (namespace === 'version' || namespace === '-v') {
+    version = true
+    namespace = ''
+  }
+
+  return { root, namespace, subcommand, positional, flags, help, version }
 }
 
 function getLimit(flags: Record<string, string | boolean>, key: string, fallback: number): number {
@@ -86,13 +104,414 @@ function readContent(flags: Record<string, string | boolean>): string {
   return require('fs').readFileSync(0, 'utf-8')
 }
 
-function out(s: string): void {
+function rawOut(s: string): void {
   process.stdout.write(s + '\n')
 }
 
+function displayWidth(s: string): number {
+  return [...s].reduce((w, c) => {
+    const code = c.charCodeAt(0)
+    if (code < 0x80) return w + 1
+    if ((code >= 0x1100 && code <= 0x115F) ||
+        (code >= 0x2E80 && code <= 0x303E) ||
+        (code >= 0x3040 && code <= 0x33BF) ||
+        (code >= 0x3400 && code <= 0x4DBF) ||
+        (code >= 0x4E00 && code <= 0x9FFF) ||
+        (code >= 0xA000 && code <= 0xA4CF) ||
+        (code >= 0xAC00 && code <= 0xD7A3) ||
+        (code >= 0xF900 && code <= 0xFAFF) ||
+        (code >= 0xFE30 && code <= 0xFE4F) ||
+        (code >= 0xFF00 && code <= 0xFF60) ||
+        (code >= 0xFFE0 && code <= 0xFFE6)) {
+      return w + 2
+    }
+    return w + 1
+  }, 0)
+}
+
+function stripFrontmatter(text: string): string {
+  if (text.startsWith('---')) {
+    const end = text.indexOf('\n---', 3)
+    if (end !== -1) {
+      const after = text.indexOf('\n', end + 4)
+      if (after !== -1) {
+        return text.substring(after + 1).trim()
+      }
+    }
+  }
+  return text
+}
+
+function out(s: string): void {
+  const maxBoxW = (process.stdout.columns || 120) - 4
+  const wrapped: string[] = []
+  for (const line of s.split('\n')) {
+    if (displayWidth(line) <= maxBoxW) {
+      wrapped.push(line)
+    } else {
+      let cur = ''
+      let curW = 0
+      for (const c of [...line]) {
+        const cw = displayWidth(c)
+        if (curW + cw > maxBoxW) {
+          wrapped.push(cur)
+          cur = c
+          curW = cw
+        } else {
+          cur += c
+          curW += cw
+        }
+      }
+      if (cur) wrapped.push(cur)
+    }
+  }
+  const widths = wrapped.map(l => displayWidth(l))
+  const maxW = Math.max(...widths, 0)
+  const h = '\u2501'.repeat(maxW + 2)
+  rawOut('\u250f' + h + '\u2513')
+  for (let i = 0; i < wrapped.length; i++) {
+    const pad = ' '.repeat(maxW - widths[i])
+    rawOut('\u2503 ' + wrapped[i] + pad + ' \u2503')
+  }
+  rawOut('\u2517' + h + '\u251b')
+}
+
+function printDataTable(headers: string[], rows: string[][]): void {
+  if (rows.length === 0) {
+    out('（无数据）')
+    return
+  }
+  const table = new Table({
+    head: headers.map(h => ({ content: '\x1b[1m' + h + '\x1b[0m', hAlign: 'center' as const })) as any[],
+    style: { head: ['cyan'] },
+    colAligns: headers.map(() => 'center' as const),
+    chars: {
+      'top': '\u2501', 'top-mid': '\u2533', 'top-left': '\u250f', 'top-right': '\u2513',
+      'bottom': '\u2500', 'bottom-mid': '\u2534', 'bottom-left': '\u2514', 'bottom-right': '\u2518',
+      'left': '\u2502', 'right': '\u2502', 'mid': '\u2501', 'mid-mid': '\u2547',
+      'left-mid': '\u2521', 'right-mid': '\u2529', 'middle': '\u2502',
+    },
+  })
+  for (const row of rows) {
+    table.push(row)
+  }
+  const lines = table.toString().split('\n')
+  let separatorSeen = false
+  const filtered = lines.filter(line => {
+    if (line.includes('\u2521')) {
+      if (!separatorSeen) {
+        separatorSeen = true
+        return true
+      }
+      return false
+    }
+    return true
+  })
+  if (filtered.length > 2) {
+    filtered[1] = filtered[1].replace(/\u2502/g, '\u2503')
+  }
+  rawOut(filtered.join('\n'))
+}
+
+function printList(items: string[], header: string): void {
+  printDataTable([header], items.map(item => [item]))
+}
+
+function printMarkdownTable(text: string): void {
+  const trimmed = text.trim()
+  if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+    rawOut(text)
+    return
+  }
+  const lines = text.split('\n').filter(Boolean)
+  if (lines.length < 3) {
+    out(text || '（无数据）')
+    return
+  }
+  if (!/^\|[\s-|]+\|$/.test(lines[1])) {
+    out(text)
+    return
+  }
+  const parseRow = (line: string) => line.split('|').map(s => s.trim()).filter(Boolean)
+  printDataTable(parseRow(lines[0]), lines.slice(2).map(parseRow))
+}
+
+function markdownTableToJson(text: string): any[] {
+  const lines = text.split('\n').filter(Boolean)
+  if (lines.length < 3) return []
+  if (!/^\|[\s-|]+\|$/.test(lines[1])) return []
+  const parseRow = (line: string) => line.split('|').map(s => s.trim()).filter(Boolean)
+  const headers = parseRow(lines[0])
+  return lines.slice(2).map(line => {
+    const cells = parseRow(line)
+    const obj: Record<string, string> = {}
+    headers.forEach((h, i) => { obj[h] = cells[i] || '' })
+    return obj
+  })
+}
+
+function printJson(data: any): void {
+  rawOut(JSON.stringify(data, null, 2))
+}
+
+function printAction(action: string, fields: Record<string, string>): void {
+  const keys = Object.keys(fields)
+  const table = new Table({
+    head: [{ content: '\x1b[1mAction\x1b[0m', hAlign: 'center' as const }, ...keys.map(k => ({ content: '\x1b[1m' + k + '\x1b[0m', hAlign: 'center' as const }))] as any[],
+    style: { head: ['green'] },
+    colAligns: ['center', ...keys.map(() => 'center' as const)],
+    chars: {
+      'top': '\u2501', 'top-mid': '\u2533', 'top-left': '\u250f', 'top-right': '\u2513',
+      'bottom': '\u2500', 'bottom-mid': '\u2534', 'bottom-left': '\u2514', 'bottom-right': '\u2518',
+      'left': '\u2502', 'right': '\u2502', 'mid': '\u2501', 'mid-mid': '\u2547',
+      'left-mid': '\u2521', 'right-mid': '\u2529', 'middle': '\u2502',
+    },
+  })
+  table.push([action, ...keys.map(k => fields[k])])
+  const lines = table.toString().split('\n')
+  let separatorSeen = false
+  const filtered = lines.filter(line => {
+    if (line.includes('\u2521')) {
+      if (!separatorSeen) {
+        separatorSeen = true
+        return true
+      }
+      return false
+    }
+    return true
+  })
+  if (filtered.length > 2) {
+    filtered[1] = filtered[1].replace(/\u2502/g, '\u2503')
+  }
+  rawOut(filtered.join('\n'))
+}
+
+// ---------------------------------------------------------------------------
+// Usage Error (exit 2 for usage errors, exit 1 for runtime errors)
+// ---------------------------------------------------------------------------
+
+class UsageError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'UsageError'
+  }
+}
+
 function err(e: any): void {
-  process.stderr.write(e.message + '\n')
-  process.exit(1)
+  const code = e instanceof UsageError ? 2 : 1
+  const lines = e.message.split('\n')
+  const widths = lines.map((l: string) => displayWidth(l))
+  const maxW = Math.max(...widths, 0)
+  const h = '\u2501'.repeat(maxW + 2)
+  process.stderr.write('\u250f' + h + '\u2513\n')
+  for (let i = 0; i < lines.length; i++) {
+    const pad = ' '.repeat(maxW - widths[i])
+    process.stderr.write('\u2503 ' + lines[i] + pad + ' \u2503\n')
+  }
+  process.stderr.write('\u2517' + h + '\u251b\n')
+  process.exit(code)
+}
+
+// ---------------------------------------------------------------------------
+// Help / Version
+// ---------------------------------------------------------------------------
+
+function getVersion(): string {
+  const path = require('path')
+  const candidates = [
+    path.join(__dirname, '..', 'package.json'),
+    path.join(__dirname, '..', '..', '..', 'package.json'),
+  ]
+  for (const p of candidates) {
+    try {
+      const pkg = require(p)
+      if (pkg.version) return pkg.version
+    } catch {}
+  }
+  return 'unknown'
+}
+
+function printVersion(): void {
+  out(`ocean ${getVersion()}`)
+}
+
+function printHelp(namespace?: string): void {
+  if (!namespace) {
+    out(`ocean — Ocean 命令行工具
+
+用法: ocean [--root <path>] <namespace> [subcommand] [positional...] [--flags...]
+
+全局选项:
+  --root <path>      覆盖项目根目录
+  --help, -h         显示帮助信息
+  --version, -v      显示版本号
+
+命名空间:
+  workflow    工作流执行与图编辑
+  node        节点 CRUD
+  knowledge   知识 CRUD
+  resource    资源 CRUD
+  agent       智能体 CRUD
+  skill       技能 CRUD
+  config      配置管理
+
+运行 'ocean <namespace> --help' 查看命名空间的详细用法。`)
+    return
+  }
+
+  switch (namespace) {
+    case 'workflow':
+      out(`ocean workflow — 工作流执行与图编辑
+
+用法: ocean workflow <subcommand> [positional...] [--flags...]
+
+执行子命令:
+  list                          列出可用工作流
+  instance <name>              创建工作流实例，返回 instance-id
+  instance list                 列出实例
+  next                          拉取下一个节点内容
+  complete                      交产物并推进
+  fail                          标记失败
+  choose                        决策分支选择
+  status                        查看进度
+  artifact list/view/search/timeline/diff    产物操作
+  context set/get               上下文操作
+
+图编辑子命令:
+  create <name>                创建工作流（初始化 start + end）
+  add-node <name>              添加节点，返回 node ID
+  connect <name>               连接节点
+  add-branch <name>             添加分支（自动追加"其他"兜底）
+  remove-node <name>           删除节点 + 关联边
+  disconnect <name>            删除边
+  list-nodes <name>            列出节点表格
+  list-edges <name>            列出边表格
+  read <name>                  读 WORKFLOW.md
+  read-flow <name>             读 flow.json
+  generate <name>              dagre 自动布局 + 生成 WORKFLOW.md
+  doctor <name>                检查工作流完整性（10 项检查）
+  delete <name>                删除工作流
+  rename <old> <new>           重命名工作流
+  local-node list/read/create/delete <wf> [name]   局部节点 CRUD
+
+常用 flag:
+  --instance <id>              实例 ID
+  --json                       JSON 格式输出
+  --root <path>                覆盖项目根目录`)
+      break
+    case 'node':
+      out(`ocean node — 节点 CRUD
+
+用法: ocean node <subcommand> <name> [--flags...]
+
+子命令:
+  list                          列出所有节点
+  read <name>                  读取节点内容
+  create <name>                创建节点
+  update <name>                更新节点
+  delete <name>                删除节点
+
+常用 flag:
+  --type <type>                节点类型
+  --description <text>         节点描述
+  --content "文本"             短内容直接传
+  --content-file <path>         长内容指向文件
+  stdin                        管道输入（三选一）`)
+      break
+    case 'knowledge':
+      out(`ocean knowledge — 知识 CRUD
+
+用法: ocean knowledge <subcommand> <path> [--flags...]
+
+子命令:
+  list                          列出所有知识
+  read <path>                  读取知识内容
+  create <path>                创建知识
+  update <path>                更新知识
+  delete <path>                删除知识
+
+常用 flag:
+  --description <text>         知识描述
+  --tags <tag1,tag2>           标签（逗号分隔）
+  --content "文本"             短内容直接传
+  --content-file <path>         长内容指向文件
+  stdin                        管道输入（三选一）`)
+      break
+    case 'resource':
+      out(`ocean resource — 资源 CRUD
+
+用法: ocean resource <subcommand> <name> [--flags...]
+
+子命令:
+  list                          列出所有资源
+  read <name>                  读取资源内容
+  create <name>                创建资源
+  update <name>                更新资源
+  delete <name>                删除资源
+
+常用 flag:
+  --type <type>                资源类型
+  --description <text>         资源描述
+  --content "文本"             短内容直接传
+  --content-file <path>         长内容指向文件
+  stdin                        管道输入（三选一）`)
+      break
+    case 'agent':
+      out(`ocean agent — 智能体 CRUD
+
+用法: ocean agent <subcommand> <name> [--flags...]
+
+子命令:
+  list                          列出所有智能体
+  read <name>                  读取智能体内容
+  create <name>                创建智能体
+  update <name>                更新智能体
+  delete <name>                删除智能体
+
+常用 flag:
+  --description <text>         智能体描述
+  --model <model>              模型名称
+  --color <color>              颜色标识
+  --tools <tools>              工具列表
+  --system-prompt-mode <mode>  系统提示模式
+  --inherit-project-context    继承项目上下文
+  --inherit-skills             继承技能
+  --content "文本"             短内容直接传
+  --content-file <path>         长内容指向文件
+  stdin                        管道输入（三选一）`)
+      break
+    case 'skill':
+      out(`ocean skill — 技能 CRUD
+
+用法: ocean skill <subcommand> <name> [--flags...]
+
+子命令:
+  list                          列出所有技能
+  read <name>                  读取技能内容
+  create <name>                创建技能
+  update <name>                更新技能
+  delete <name>                删除技能
+
+常用 flag:
+  --description <text>         技能描述
+  --content "文本"             短内容直接传
+  --content-file <path>         长内容指向文件
+  stdin                        管道输入（三选一）`)
+      break
+    case 'config':
+      out(`ocean config — 配置管理
+
+用法: ocean config <subcommand>
+
+子命令:
+  asset-root                   查询当前资产来源（pi 或 claude）`)
+      break
+    default:
+      out(`未知命名空间: ${namespace}
+
+可用命名空间: workflow | node | knowledge | resource | agent | skill | config
+运行 'ocean --help' 查看详细用法。`)
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -101,6 +520,24 @@ function err(e: any): void {
 
 function main(): void {
   const args = parseArgs(process.argv)
+
+  // version 优先（eager，无需子命令）
+  if (args.version) {
+    args.flags.json ? printJson({ version: getVersion() }) : printVersion()
+    return
+  }
+
+  // help 检查（ocean --help, ocean -h, ocean help [namespace], ocean <ns> --help）
+  if (args.help) {
+    printHelp(args.namespace)
+    return
+  }
+
+  // 无 namespace → 打印全局帮助（stdout, exit 0）
+  if (!args.namespace) {
+    printHelp()
+    return
+  }
 
   try {
     const root = resolveRoot(args.root)
@@ -134,9 +571,13 @@ function main(): void {
         break
 
       default:
-        throw new Error(`未知的命令: ${args.namespace}\n用法: ocean <workflow|node|knowledge|resource|agent|skill|config> [...]`)
+        throw new UsageError(`未知的命令: ${args.namespace}\n运行 'ocean --help' 查看可用命令。`)
     }
   } catch (e: any) {
+    if (args.flags.json) {
+      process.stderr.write(JSON.stringify({ error: e.message }) + '\n')
+      process.exit(e instanceof UsageError ? 2 : 1)
+    }
     err(e)
   }
 }
@@ -151,13 +592,15 @@ function handleWorkflow(root: string, args: ReturnType<typeof parseArgs>): void 
   switch (cmd) {
     // --- execution commands (ported from workflow.ts) ---
     case 'list':
-      out(listWorkflows(root))
+      if (args.flags.json) printJson(listWorkflows(root).split('\n').filter(Boolean))
+      else printList(listWorkflows(root).split('\n').filter(Boolean), '工作流')
       break
 
     case 'instance': {
       if (args.positional[0] === 'list') {
         const wf = typeof args.flags.workflow === 'string' ? args.flags.workflow : undefined
-        out(listInstances(root, wf))
+        if (args.flags.json) printJson(markdownTableToJson(listInstances(root, wf)))
+        else printMarkdownTable(listInstances(root, wf))
       } else {
         const workflowName = args.positional[0]
         const id = typeof args.flags.instance === 'string' ? args.flags.instance : genId()
@@ -168,7 +611,7 @@ function handleWorkflow(root: string, args: ReturnType<typeof parseArgs>): void 
         }
         const input = typeof args.flags.input === 'string' ? args.flags.input : undefined
         create(root, workflowName, id, input, limits)
-        out(id)
+        args.flags.json ? printJson({ action: 'created', instanceId: id }) : printAction('created', { instanceId: id })
       }
       break
     }
@@ -177,7 +620,7 @@ function handleWorkflow(root: string, args: ReturnType<typeof parseArgs>): void 
       const id = args.flags.instance as string
       const json = args.flags.json === true
       const wf = instanceWorkflow(root, id)
-      out(next(root, wf, id, json))
+      printMarkdownTable(next(root, wf, id, json))
       break
     }
 
@@ -187,7 +630,7 @@ function handleWorkflow(root: string, args: ReturnType<typeof parseArgs>): void 
       const output = typeof args.flags.output === 'string' ? args.flags.output : undefined
       const outputFile = typeof args.flags['output-file'] === 'string' ? args.flags['output-file'] : undefined
       const content = readOutput(output, outputFile)
-      out(complete(root, wf, id, content))
+      args.flags.json ? printJson({ message: complete(root, wf, id, content) }) : printMarkdownTable(complete(root, wf, id, content))
       break
     }
 
@@ -195,7 +638,7 @@ function handleWorkflow(root: string, args: ReturnType<typeof parseArgs>): void 
       const id = args.flags.instance as string
       const reason = args.flags.reason as string
       const wf = instanceWorkflow(root, id)
-      out(fail(root, wf, id, reason))
+      args.flags.json ? printJson({ message: fail(root, wf, id, reason), reason }) : printMarkdownTable(fail(root, wf, id, reason))
       break
     }
 
@@ -204,7 +647,7 @@ function handleWorkflow(root: string, args: ReturnType<typeof parseArgs>): void 
       const branch = args.flags.branch as string
       const reason = typeof args.flags.reason === 'string' ? args.flags.reason : undefined
       const wf = instanceWorkflow(root, id)
-      out(choose(root, wf, id, branch, reason))
+      args.flags.json ? printJson({ message: choose(root, wf, id, branch, reason), branch }) : printMarkdownTable(choose(root, wf, id, branch, reason))
       break
     }
 
@@ -213,7 +656,7 @@ function handleWorkflow(root: string, args: ReturnType<typeof parseArgs>): void 
       const json = args.flags.json === true
       const wf = instanceWorkflow(root, id)
       logTraceCommand(root, wf, id, 'status')
-      out(status(root, wf, id, json))
+      printMarkdownTable(status(root, wf, id, json))
       break
     }
 
@@ -225,31 +668,31 @@ function handleWorkflow(root: string, args: ReturnType<typeof parseArgs>): void 
       switch (sub) {
         case 'list':
           logTraceCommand(root, wf, id, 'artifact list')
-          out(list(root, wf, id, json))
+          printMarkdownTable(list(root, wf, id, json))
           break
         case 'view': {
           logTraceCommand(root, wf, id, 'artifact view')
           const node = typeof args.flags.node === 'string' ? args.flags.node : undefined
           const invoke = typeof args.flags.invoke === 'string' ? args.flags.invoke : undefined
-          out(view(root, wf, id, node, invoke, json))
+          printMarkdownTable(view(root, wf, id, node, invoke, json))
           break
         }
         case 'search': {
           logTraceCommand(root, wf, id, 'artifact search')
           const keyword = args.flags.keyword as string
-          out(search(root, wf, id, keyword, json))
+          printMarkdownTable(search(root, wf, id, keyword, json))
           break
         }
         case 'timeline':
           logTraceCommand(root, wf, id, 'artifact timeline')
-          out(timeline(root, wf, id, json))
+          printMarkdownTable(timeline(root, wf, id, json))
           break
         case 'diff': {
           logTraceCommand(root, wf, id, 'artifact diff')
           const node = args.flags.node as string
           const context = typeof args.flags.context === 'string' ? parseInt(args.flags.context as string, 10) : 3
           const full = args.flags.full === true
-          out(diff(root, wf, id, node, json, context, full))
+          printMarkdownTable(diff(root, wf, id, node, json, context, full))
           break
         }
         default:
@@ -267,13 +710,13 @@ function handleWorkflow(root: string, args: ReturnType<typeof parseArgs>): void 
           logTraceCommand(root, wf, id, 'context set')
           const topic = args.flags.topic as string
           const content = args.flags.content as string
-          out(contextSet(root, wf, id, topic, content))
+          args.flags.json ? (contextSet(root, wf, id, topic, content), printJson({ action: 'set', topic })) : printMarkdownTable(contextSet(root, wf, id, topic, content))
           break
         }
         case 'get': {
           logTraceCommand(root, wf, id, 'context get')
           const json = args.flags.json === true
-          out(contextGet(root, wf, id, json))
+          args.flags.json ? printJson({ context: contextGet(root, wf, id, false), instance: id }) : printMarkdownTable(contextGet(root, wf, id, json))
           break
         }
         default:
@@ -286,7 +729,7 @@ function handleWorkflow(root: string, args: ReturnType<typeof parseArgs>): void 
     case 'create': {
       const name = args.positional[0]
       wfGraph.create(root, name)
-      out(`已创建工作流 ${name}`)
+      args.flags.json ? printJson({ action: 'created', name }) : printAction('created', { name })
       break
     }
 
@@ -302,7 +745,7 @@ function handleWorkflow(root: string, args: ReturnType<typeof parseArgs>): void 
       }
       const description = typeof args.flags.description === 'string' ? args.flags.description : undefined
       const id = wfGraph.addNode(root, name, type, label, { nodeRefPath, content, condition, description })
-      out(id)
+      args.flags.json ? printJson({ action: 'added', nodeId: id }) : printAction('added', { nodeId: id })
       break
     }
 
@@ -312,7 +755,7 @@ function handleWorkflow(root: string, args: ReturnType<typeof parseArgs>): void 
       const to = args.flags.to as string
       const branch = typeof args.flags.branch === 'string' ? args.flags.branch : undefined
       const edgeId = wfGraph.connect(root, name, from, to, branch)
-      out(edgeId)
+      args.flags.json ? printJson({ action: 'connected', edgeId }) : printAction('connected', { edgeId })
       break
     }
 
@@ -322,7 +765,7 @@ function handleWorkflow(root: string, args: ReturnType<typeof parseArgs>): void 
       const branchName = args.flags.name as string
       const description = typeof args.flags.description === 'string' ? args.flags.description : undefined
       const branchId = wfGraph.addBranch(root, name, nodeId, branchName, description)
-      out(branchId)
+      args.flags.json ? printJson({ action: 'added', branchId }) : printAction('added', { branchId })
       break
     }
 
@@ -330,7 +773,7 @@ function handleWorkflow(root: string, args: ReturnType<typeof parseArgs>): void 
       const name = args.positional[0]
       const nodeId = args.flags.node as string
       wfGraph.removeNode(root, name, nodeId)
-      out(`已删除节点 ${nodeId}`)
+      args.flags.json ? printJson({ action: 'removed', nodeId }) : printAction('removed', { nodeId })
       break
     }
 
@@ -340,38 +783,40 @@ function handleWorkflow(root: string, args: ReturnType<typeof parseArgs>): void 
       const to = args.flags.to as string
       const branch = typeof args.flags.branch === 'string' ? args.flags.branch : undefined
       wfGraph.disconnect(root, name, from, to, branch)
-      out(`已断开 ${from} → ${to}`)
+      args.flags.json ? printJson({ action: 'disconnected', from, to }) : printAction('disconnected', { from, to })
       break
     }
 
     case 'list-nodes': {
       const name = args.positional[0]
-      out(wfGraph.listNodes(root, name))
+      if (args.flags.json) printJson(markdownTableToJson(wfGraph.listNodes(root, name)))
+      else printMarkdownTable(wfGraph.listNodes(root, name))
       break
     }
 
     case 'list-edges': {
       const name = args.positional[0]
-      out(wfGraph.listEdges(root, name))
+      if (args.flags.json) printJson(markdownTableToJson(wfGraph.listEdges(root, name)))
+      else printMarkdownTable(wfGraph.listEdges(root, name))
       break
     }
 
     case 'read': {
       const name = args.positional[0]
-      out(wfGraph.readWorkflowMd(root, name))
+      args.flags.json ? printJson({ content: stripFrontmatter(wfGraph.readWorkflowMd(root, name)) }) : out(stripFrontmatter(wfGraph.readWorkflowMd(root, name)))
       break
     }
 
     case 'read-flow': {
       const name = args.positional[0]
-      out(wfGraph.readFlow(root, name))
+      args.flags.json ? rawOut(wfGraph.readFlow(root, name)) : out(wfGraph.readFlow(root, name))
       break
     }
 
     case 'generate': {
       const name = args.positional[0]
       wfGraph.generate(root, name)
-      out(`已生成 WORKFLOW.md`)
+      args.flags.json ? printJson({ action: 'generated', workflow: name }) : printAction('generated', { workflow: name })
       break
     }
 
@@ -379,14 +824,14 @@ function handleWorkflow(root: string, args: ReturnType<typeof parseArgs>): void 
     case 'doctor': {
       const name = args.positional[0]
       const json = args.flags.json === true
-      out(wfGraph.doctor(root, name, json))
+      printMarkdownTable(wfGraph.doctor(root, name, json))
       break
     }
 
     case 'delete': {
       const name = args.positional[0]
       wfGraph.del(root, name)
-      out(`已删除工作流 ${name}`)
+      args.flags.json ? printJson({ action: 'deleted', name }) : printAction('deleted', { name })
       break
     }
 
@@ -394,7 +839,7 @@ function handleWorkflow(root: string, args: ReturnType<typeof parseArgs>): void 
       const oldName = args.positional[0]
       const newName = args.positional[1]
       wfGraph.rename(root, oldName, newName)
-      out(`已重命名 ${oldName} → ${newName}`)
+      args.flags.json ? printJson({ action: 'renamed', from: oldName, to: newName }) : printAction('renamed', { from: oldName, to: newName })
       break
     }
 
@@ -404,24 +849,25 @@ function handleWorkflow(root: string, args: ReturnType<typeof parseArgs>): void 
       const wfName = args.positional[1] || ''
       switch (sub) {
         case 'list':
-          out(wfGraph.listLocalNodes(root, wfName).join('\n'))
+          if (args.flags.json) printJson(wfGraph.listLocalNodes(root, wfName))
+          else printList(wfGraph.listLocalNodes(root, wfName), '局部节点')
           break
         case 'read': {
           const nodeName = args.positional[2] || ''
-          out(wfGraph.readLocalNode(root, wfName, nodeName))
+          args.flags.json ? printJson({ content: stripFrontmatter(wfGraph.readLocalNode(root, wfName, nodeName)) }) : out(stripFrontmatter(wfGraph.readLocalNode(root, wfName, nodeName)))
           break
         }
         case 'create': {
           const nodeName = args.positional[2] || ''
           const content = readContent(args.flags)
           wfGraph.createLocalNode(root, wfName, nodeName, content)
-          out(`已创建局部节点 ${nodeName}`)
+          args.flags.json ? printJson({ action: 'created', name: nodeName }) : printAction('created', { name: nodeName })
           break
         }
         case 'delete': {
           const nodeName = args.positional[2] || ''
           wfGraph.delLocalNode(root, wfName, nodeName)
-          out(`已删除局部节点 ${nodeName}`)
+          args.flags.json ? printJson({ action: 'deleted', name: nodeName }) : printAction('deleted', { name: nodeName })
           break
         }
         default:
@@ -431,7 +877,11 @@ function handleWorkflow(root: string, args: ReturnType<typeof parseArgs>): void 
     }
 
     default:
-      throw new Error(`未知的 workflow 子命令: ${cmd}\n用法: ocean workflow <list|instance|next|complete|fail|choose|status|artifact|context|create|add-node|connect|add-branch|remove-node|disconnect|list-nodes|list-edges|read|read-flow|generate|doctor|delete|rename|local-node> [...]`)
+      if (!cmd) {
+        printHelp('workflow')
+        return
+      }
+      throw new UsageError(`未知的 workflow 子命令: ${cmd}\n运行 'ocean workflow --help' 查看详细用法。`)
   }
 }
 
@@ -443,11 +893,12 @@ function handleNode(root: string, args: ReturnType<typeof parseArgs>): void {
   const cmd = args.subcommand
   switch (cmd) {
     case 'list':
-      out(nodeCrud.list(root).join('\n'))
+      if (args.flags.json) printJson(nodeCrud.list(root))
+      else printList(nodeCrud.list(root), '节点')
       break
     case 'read': {
       const name = args.positional[0]
-      out(nodeCrud.read(root, name))
+      args.flags.json ? printJson({ content: stripFrontmatter(nodeCrud.read(root, name)) }) : out(stripFrontmatter(nodeCrud.read(root, name)))
       break
     }
     case 'create': {
@@ -456,7 +907,7 @@ function handleNode(root: string, args: ReturnType<typeof parseArgs>): void {
       const type = typeof args.flags.type === 'string' ? args.flags.type : undefined
       const description = typeof args.flags.description === 'string' ? args.flags.description : undefined
       nodeCrud.create(root, name, content, { type, description })
-      out(`已创建节点 ${name}`)
+      args.flags.json ? printJson({ action: 'created', name }) : printAction('created', { name })
       break
     }
     case 'update': {
@@ -465,17 +916,21 @@ function handleNode(root: string, args: ReturnType<typeof parseArgs>): void {
       const type = typeof args.flags.type === 'string' ? args.flags.type : undefined
       const description = typeof args.flags.description === 'string' ? args.flags.description : undefined
       nodeCrud.update(root, name, content, { type, description })
-      out(`已更新节点 ${name}`)
+      args.flags.json ? printJson({ action: 'updated', name }) : printAction('updated', { name })
       break
     }
     case 'delete': {
       const name = args.positional[0]
       nodeCrud.del(root, name)
-      out(`已删除节点 ${name}`)
+      args.flags.json ? printJson({ action: 'deleted', name }) : printAction('deleted', { name })
       break
     }
     default:
-      throw new Error(`未知的 node 子命令: ${cmd}\n用法: ocean node <list|read|create|update|delete> [...]`)
+      if (!cmd) {
+        printHelp('node')
+        return
+      }
+      throw new UsageError(`未知的 node 子命令: ${cmd}\n运行 'ocean node --help' 查看详细用法。`)
   }
 }
 
@@ -487,11 +942,12 @@ function handleKnowledge(root: string, args: ReturnType<typeof parseArgs>): void
   const cmd = args.subcommand
   switch (cmd) {
     case 'list':
-      out(knowledgeCrud.list(root).join('\n'))
+      if (args.flags.json) printJson(knowledgeCrud.list(root))
+      else printList(knowledgeCrud.list(root), '知识')
       break
     case 'read': {
       const relPath = args.positional[0]
-      out(knowledgeCrud.read(root, relPath))
+      args.flags.json ? printJson({ content: stripFrontmatter(knowledgeCrud.read(root, relPath)) }) : out(stripFrontmatter(knowledgeCrud.read(root, relPath)))
       break
     }
     case 'create': {
@@ -501,7 +957,7 @@ function handleKnowledge(root: string, args: ReturnType<typeof parseArgs>): void
       const tagsStr = typeof args.flags.tags === 'string' ? args.flags.tags : undefined
       const tags = tagsStr ? tagsStr.split(',').map(t => t.trim()) : undefined
       knowledgeCrud.create(root, relPath, content, { description, tags })
-      out(`已创建知识 ${relPath}`)
+      args.flags.json ? printJson({ action: 'created', path: relPath }) : printAction('created', { path: relPath })
       break
     }
     case 'update': {
@@ -511,17 +967,21 @@ function handleKnowledge(root: string, args: ReturnType<typeof parseArgs>): void
       const tagsStr = typeof args.flags.tags === 'string' ? args.flags.tags : undefined
       const tags = tagsStr !== undefined ? tagsStr.split(',').map(t => t.trim()) : undefined
       knowledgeCrud.update(root, relPath, content, { description, tags })
-      out(`已更新知识 ${relPath}`)
+      args.flags.json ? printJson({ action: 'updated', path: relPath }) : printAction('updated', { path: relPath })
       break
     }
     case 'delete': {
       const relPath = args.positional[0]
       knowledgeCrud.del(root, relPath)
-      out(`已删除知识 ${relPath}`)
+      args.flags.json ? printJson({ action: 'deleted', path: relPath }) : printAction('deleted', { path: relPath })
       break
     }
     default:
-      throw new Error(`未知的 knowledge 子命令: ${cmd}\n用法: ocean knowledge <list|read|create|update|delete> [...]`)
+      if (!cmd) {
+        printHelp('knowledge')
+        return
+      }
+      throw new UsageError(`未知的 knowledge 子命令: ${cmd}\n运行 'ocean knowledge --help' 查看详细用法。`)
   }
 }
 
@@ -533,11 +993,12 @@ function handleResource(root: string, args: ReturnType<typeof parseArgs>): void 
   const cmd = args.subcommand
   switch (cmd) {
     case 'list':
-      out(resourceCrud.list(root).join('\n'))
+      if (args.flags.json) printJson(resourceCrud.list(root))
+      else printList(resourceCrud.list(root), '资源')
       break
     case 'read': {
       const name = args.positional[0]
-      out(resourceCrud.read(root, name))
+      args.flags.json ? printJson({ content: stripFrontmatter(resourceCrud.read(root, name)) }) : out(stripFrontmatter(resourceCrud.read(root, name)))
       break
     }
     case 'create': {
@@ -546,7 +1007,7 @@ function handleResource(root: string, args: ReturnType<typeof parseArgs>): void 
       const type = typeof args.flags.type === 'string' ? args.flags.type : undefined
       const description = typeof args.flags.description === 'string' ? args.flags.description : undefined
       resourceCrud.create(root, name, content, { type, description })
-      out(`已创建资源 ${name}`)
+      args.flags.json ? printJson({ action: 'created', name }) : printAction('created', { name })
       break
     }
     case 'update': {
@@ -555,17 +1016,21 @@ function handleResource(root: string, args: ReturnType<typeof parseArgs>): void 
       const type = typeof args.flags.type === 'string' ? args.flags.type : undefined
       const description = typeof args.flags.description === 'string' ? args.flags.description : undefined
       resourceCrud.update(root, name, content, { type, description })
-      out(`已更新资源 ${name}`)
+      args.flags.json ? printJson({ action: 'updated', name }) : printAction('updated', { name })
       break
     }
     case 'delete': {
       const name = args.positional[0]
       resourceCrud.del(root, name)
-      out(`已删除资源 ${name}`)
+      args.flags.json ? printJson({ action: 'deleted', name }) : printAction('deleted', { name })
       break
     }
     default:
-      throw new Error(`未知的 resource 子命令: ${cmd}\n用法: ocean resource <list|read|create|update|delete> [...]`)
+      if (!cmd) {
+        printHelp('resource')
+        return
+      }
+      throw new UsageError(`未知的 resource 子命令: ${cmd}\n运行 'ocean resource --help' 查看详细用法。`)
   }
 }
 
@@ -577,11 +1042,12 @@ function handleAgent(root: string, args: ReturnType<typeof parseArgs>): void {
   const cmd = args.subcommand
   switch (cmd) {
     case 'list':
-      out(agentCrud.list(root).join('\n'))
+      if (args.flags.json) printJson(agentCrud.list(root))
+      else printList(agentCrud.list(root), '智能体')
       break
     case 'read': {
       const name = args.positional[0]
-      out(agentCrud.read(root, name))
+      args.flags.json ? printJson({ content: stripFrontmatter(agentCrud.read(root, name)) }) : out(stripFrontmatter(agentCrud.read(root, name)))
       break
     }
     case 'create': {
@@ -596,7 +1062,7 @@ function handleAgent(root: string, args: ReturnType<typeof parseArgs>): void {
         inheritProjectContext: args.flags['inherit-project-context'] === true,
         inheritSkills: args.flags['inherit-skills'] === true,
       })
-      out(`已创建智能体 ${name}`)
+      args.flags.json ? printJson({ action: 'created', name }) : printAction('created', { name })
       break
     }
     case 'update': {
@@ -611,17 +1077,21 @@ function handleAgent(root: string, args: ReturnType<typeof parseArgs>): void {
         inheritProjectContext: args.flags['inherit-project-context'] === true ? true : undefined,
         inheritSkills: args.flags['inherit-skills'] === true ? true : undefined,
       })
-      out(`已更新智能体 ${name}`)
+      args.flags.json ? printJson({ action: 'updated', name }) : printAction('updated', { name })
       break
     }
     case 'delete': {
       const name = args.positional[0]
       agentCrud.del(root, name)
-      out(`已删除智能体 ${name}`)
+      args.flags.json ? printJson({ action: 'deleted', name }) : printAction('deleted', { name })
       break
     }
     default:
-      throw new Error(`未知的 agent 子命令: ${cmd}\n用法: ocean agent <list|read|create|update|delete> [...]`)
+      if (!cmd) {
+        printHelp('agent')
+        return
+      }
+      throw new UsageError(`未知的 agent 子命令: ${cmd}\n运行 'ocean agent --help' 查看详细用法。`)
   }
 }
 
@@ -633,11 +1103,12 @@ function handleSkill(root: string, args: ReturnType<typeof parseArgs>): void {
   const cmd = args.subcommand
   switch (cmd) {
     case 'list':
-      out(skillCrud.list(root).join('\n'))
+      if (args.flags.json) printJson(skillCrud.list(root))
+      else printList(skillCrud.list(root), '技能')
       break
     case 'read': {
       const name = args.positional[0]
-      out(skillCrud.read(root, name))
+      args.flags.json ? printJson({ content: stripFrontmatter(skillCrud.read(root, name)) }) : out(stripFrontmatter(skillCrud.read(root, name)))
       break
     }
     case 'create': {
@@ -645,24 +1116,28 @@ function handleSkill(root: string, args: ReturnType<typeof parseArgs>): void {
       const content = readContent(args.flags)
       const description = args.flags.description as string
       skillCrud.create(root, name, content, description)
-      out(`已创建技能 ${name}`)
+      args.flags.json ? printJson({ action: 'created', name }) : printAction('created', { name })
       break
     }
     case 'update': {
       const name = args.positional[0]
       const content = readContent(args.flags)
       skillCrud.update(root, name, content)
-      out(`已更新技能 ${name}`)
+      args.flags.json ? printJson({ action: 'updated', name }) : printAction('updated', { name })
       break
     }
     case 'delete': {
       const name = args.positional[0]
       skillCrud.del(root, name)
-      out(`已删除技能 ${name}`)
+      args.flags.json ? printJson({ action: 'deleted', name }) : printAction('deleted', { name })
       break
     }
     default:
-      throw new Error(`未知的 skill 子命令: ${cmd}\n用法: ocean skill <list|read|create|update|delete> [...]`)
+      if (!cmd) {
+        printHelp('skill')
+        return
+      }
+      throw new UsageError(`未知的 skill 子命令: ${cmd}\n运行 'ocean skill --help' 查看详细用法。`)
   }
 }
 
@@ -674,10 +1149,14 @@ function handleConfig(root: string, args: ReturnType<typeof parseArgs>): void {
   const cmd = args.subcommand
   switch (cmd) {
     case 'asset-root':
-      out(resolveAssetDir(root))
+      args.flags.json ? printJson({ action: 'queried', 'asset-root': resolveAssetDir(root) }) : printAction('queried', { 'asset-root': resolveAssetDir(root) })
       break
     default:
-      throw new Error(`未知的 config 子命令: ${cmd}\n用法: ocean config <asset-root>`)
+      if (!cmd) {
+        printHelp('config')
+        return
+      }
+      throw new UsageError(`未知的 config 子命令: ${cmd}\n运行 'ocean config --help' 查看详细用法。`)
   }
 }
 

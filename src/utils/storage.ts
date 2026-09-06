@@ -95,7 +95,7 @@ declare global {
       testLLMConnection: (provider: any) => Promise<{ success: boolean; status?: number; statusText?: string; body?: string; json?: any; usage?: Usage; error?: string }>
       testExecutablePath: (filePath: string) => Promise<{ success: boolean; exists?: boolean; isExecutable?: boolean; path?: string; error?: string }>
       // workflow-cli 安装管理 API
-      checkCliInstalled: () => Promise<{ installed: boolean; working: boolean; commandPath: string | null; wrapperPath: string | null }>
+      checkCliInstalled: () => Promise<{ installed: boolean; working: boolean; version: string | null; commandPath: string | null; wrapperPath: string | null }>
       installCli: () => Promise<{ success: boolean; path?: string; note?: string; error?: string }>
       // LLM 调用 API
       callLLMApi: (provider: any, prompt: string, model?: string) => Promise<{ success: boolean; content?: string; usage?: Usage; error?: string }>
