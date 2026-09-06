@@ -7,6 +7,7 @@ import { useToastStore } from '../../stores/toastStore'
 interface CliCheckResult {
   installed: boolean
   working: boolean
+  version: string | null
   commandPath: string | null
   wrapperPath: string | null
 }
@@ -216,6 +217,11 @@ export const GeneralSettings: FC = () => {
                 <>
                   <CheckCircle2 size={14} className="text-green-500" />
                   <span className="text-macos-text">已安装且可用</span>
+                  {cliStatus.version && (
+                    <span className="px-2 py-0.5 bg-green-50 rounded font-mono text-green-600 text-xs">
+                      v{cliStatus.version}
+                    </span>
+                  )}
                   {cliStatus.commandPath && (
                     <span className="px-2 py-0.5 bg-gray-50 rounded font-mono text-macos-text-tertiary">
                       {cliStatus.commandPath}

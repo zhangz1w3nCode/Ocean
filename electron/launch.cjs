@@ -1518,14 +1518,16 @@ ipcMain.handle('check-cli-installed', async () => {
 
   // 用找到的绝对路径验证可运行，不依赖 App 的 PATH
   let working = false
+  let version = null
   if (commandPath) {
-    const checkRoot = currentProjectPath || homeDir
     try {
-      const out = child_process.execSync(`"${commandPath}" workflow list --root "${checkRoot}"`, { encoding: 'utf-8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] })
-      // 有 stdout 输出即认为可用（空列表也是有效输出）
-      working = out !== undefined
+      const out = child_process.execSync(`"${commandPath}" --version --json`, { encoding: 'utf-8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] })
+      // 解析 JSON 版本号，有 version 字段即认为 CLI 可用
+      const versionInfo = JSON.parse(out)
+      working = !!versionInfo.version
+      version = versionInfo.version || null
     } catch (e) {
-      // 有 stderr 输出（可能是警告或错误）说明 wrapper 已启动，暂视为可运行
+      // 有 stderr 输出说明 wrapper 已启动，暂视为可运行
       working = e?.stderr?.length > 0
     }
   }
@@ -1533,6 +1535,7 @@ ipcMain.handle('check-cli-installed', async () => {
   return {
     installed: !!commandPath,
     working,
+    version,
     commandPath,
     wrapperPath: commandPath,
   }

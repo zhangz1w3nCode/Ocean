@@ -523,7 +523,7 @@ function main(): void {
 
   // version 优先（eager，无需子命令）
   if (args.version) {
-    printVersion()
+    args.flags.json ? printJson({ version: getVersion() }) : printVersion()
     return
   }
 
