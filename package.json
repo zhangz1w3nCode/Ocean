@@ -19,6 +19,14 @@
     "directories": {
       "output": "release"
     },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "zhangz1w3nCode",
+        "repo": "Ocean",
+        "releaseType": "release"
+      }
+    ],
     "files": [
       "dist/**/*",
       "electron/**/*"
