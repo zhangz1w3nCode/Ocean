@@ -650,11 +650,13 @@ flag:
 
 create 附属文件 flag（目标子目录由参数名固定决定，源文件不需按目录组织）:
   传入值为逗号分隔的源文件，可裸文件名、相对路径或绝对路径；落盘文件名取源文件的 basename
-  --references <f1,f2>        → skills/{name}/references/（create 必填，至少一个）
-  --examples <f1,f2>          → skills/{name}/examples/（create 必填，至少一个）
+  --references <f1,f2>        → skills/{name}/references/（本项目约束：create 必填，至少一个）
+  --examples <f1,f2>          → skills/{name}/examples/（本项目约束：create 必填，至少一个）
   --scripts <f1,f2>           → skills/{name}/scripts/（选填）
+  注：GUI 侧 create-skill-directory 对三类附件均为可选；上面的“必填”是 CLI 额外的产品约束，不是 GUI 行为。
+      写入能力与字段形状则与 GUI CreateSkillInput 同构。
 
-resource 子命令（类型 = scripts | references | examples，与 GUI 技能页四个 Tab 对齐）:
+resource 子命令（类型 = scripts | references | examples，对应 GUI 技能页四个 Tab 的文件操作）:
   list   <skill> <类型>                        列出该类型下的文件
   read   <skill> <类型> <文件名>               输出文件内容
   create <skill> <类型> <文件名> --content ...  新建一个文件（已存在则拒绝，类型子目录缺失时自动创建）

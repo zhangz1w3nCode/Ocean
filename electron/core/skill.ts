@@ -16,6 +16,7 @@ export function list(root: string): string[] {
 }
 
 export function read(root: string, name: string): string {
+  assertSkillName(name)
   const filePath = path.join(baseDir(root), name, 'SKILL.md')
   return fs.readFileSync(filePath, 'utf-8')
 }
@@ -35,9 +36,7 @@ const SKILL_SUB_DIRS = ['scripts', 'references', 'examples'] as const
 const SKILL_NAME_PATTERN = /^[a-zA-Z0-9_-]+$/
 
 export function create(root: string, name: string, content: string, description: string, attachments: SkillAttachments = {}): void {
-  if (!name || !SKILL_NAME_PATTERN.test(name)) {
-    throw new Error('技能名称只能包含字母、数字、中划线和下划线（与 GUI SkillModal.tsx:399 验证一致）')
-  }
+  assertSkillName(name)
   if (!description || !description.trim()) {
     throw new Error('技能描述为必填项（与 GUI ApplyModal.tsx:148 验证一致）')
   }
@@ -48,9 +47,15 @@ export function create(root: string, name: string, content: string, description:
 
   const d = baseDir(root)
   const skillDir = path.join(d, name)
-  if (fs.existsSync(skillDir)) throw new Error(`技能目录已存在: ${name}`)
-
-  fs.mkdirSync(skillDir, { recursive: true })
+  fs.mkdirSync(d, { recursive: true })
+  // 末段目录不加 recursive：让 EEXIST 原生抛出，构成原子的 check-and-create。
+  // 否则并发下 mkdir 会吞掉已存在目录，再由 catch 的 rmSync 误删他人数据。
+  try {
+    fs.mkdirSync(skillDir)
+  } catch (e: any) {
+    if (e && e.code === 'EEXIST') throw new Error(`技能目录已存在: ${name}`)
+    throw e
+  }
   try {
     for (const subDir of SKILL_SUB_DIRS) {
       fs.mkdirSync(path.join(skillDir, subDir), { recursive: true })
@@ -86,6 +91,7 @@ function validateAttachments(attachments: SkillAttachments): void {
 }
 
 export function update(root: string, name: string, content: string): void {
+  assertSkillName(name)
   const filePath = path.join(baseDir(root), name, 'SKILL.md')
   if (!fs.existsSync(filePath)) throw new Error(`技能不存在: ${name}`)
   const raw = fs.readFileSync(filePath, 'utf-8')
@@ -95,6 +101,7 @@ export function update(root: string, name: string, content: string): void {
 }
 
 export function del(root: string, name: string): void {
+  assertSkillName(name)
   const skillDir = path.join(baseDir(root), name)
   if (fs.existsSync(skillDir)) fs.rmSync(skillDir, { recursive: true, force: true })
 }
@@ -106,7 +113,8 @@ export function listResources(root: string, name: string, type: string): string[
   const t = assertResourceType(type)
   const d = path.join(skillDir, t)
   if (!fs.existsSync(d)) return []
-  return fs.readdirSync(d, { withFileTypes: true }).filter(e => e.isFile()).map(e => e.name).sort()
+  // 只排除目录：保留普通文件与符号链接，与 GUI list-skill-resources 的无过滤 readdirSync 对齐
+  return fs.readdirSync(d, { withFileTypes: true }).filter(e => !e.isDirectory()).map(e => e.name).sort()
 }
 
 export function readResource(root: string, name: string, type: string, fileName: string): string {
@@ -118,7 +126,10 @@ export function readResource(root: string, name: string, type: string, fileName:
   return fs.readFileSync(filePath, 'utf-8')
 }
 
-// 对齐 GUI save-skill-resource：子目录缺失时按需创建；新建模式禁止重名
+// 语义与 GUI 技能页「添加文件」一致，但两处来源不同，分开标注以免误读：
+//   重名拒 —— 来自 UI 层 SkillResourceEditModal 的新建态校验；IPC save-skill-resource 本身是无条件覆写（upsert）
+//   子目录缺失时按需创建 —— 来自主进程 getSkillSubDir
+// 因此本函数是 create-only：要覆写已存在的资源文件需先 resource delete 再 create
 export function addResource(root: string, name: string, type: string, fileName: string, content: string): void {
   const skillDir = requireSkill(root, name)
   const t = assertResourceType(type)
@@ -143,9 +154,17 @@ export function deleteResource(root: string, name: string, type: string, fileNam
 }
 
 function requireSkill(root: string, name: string): string {
+  assertSkillName(name)
   const skillDir = path.join(baseDir(root), name)
   if (!fs.existsSync(path.join(skillDir, 'SKILL.md'))) throw new Error(`技能不存在: ${name}`)
   return skillDir
+}
+
+function assertSkillName(name: string): void {
+  // 与 GUI 新建技能时的名称格式校验同源（SkillModal 限定字母/数字/中划线/下划线）；不写行号以免随文件演进腐化
+  if (!name || !SKILL_NAME_PATTERN.test(name)) {
+    throw new Error(`技能名称只能包含字母、数字、中划线和下划线: ${name}`)
+  }
 }
 
 function assertResourceType(type: string | undefined): SkillResourceType {
