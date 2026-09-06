@@ -1,5 +1,6 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
+import dagre from '@dagrejs/dagre'
 import { generateWorkflowMd } from './workflow-md-generator'
 
 // --- path helpers ---
@@ -223,8 +224,7 @@ export function listEdges(root: string, wfName: string): string {
 export function generate(root: string, wfName: string): void {
   const flow = readFlowJson(root, wfName)
 
-  // dagre auto-layout
-  const dagre = require('@dagrejs/dagre')
+  // dagre auto-layout (dagre bundled by esbuild, see build:electron)
   const g = new dagre.graphlib.Graph()
   g.setGraph({ rankdir: 'LR', ranksep: 260, nodesep: 120, ranker: 'tight-tree' })
   g.setDefaultEdgeLabel(() => ({}))
