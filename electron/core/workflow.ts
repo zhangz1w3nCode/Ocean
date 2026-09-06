@@ -100,7 +100,11 @@ export function addNode(root: string, wfName: string, type: string, label: strin
     const nodeDefName = path.basename(refPath, '.md')
     data = { label, nodeDefName, description: '', isLocal: false, nodeRefPath: refPath }
   } else if (type === 'decision') {
-    data = { label, nodeDefId: 'decision', isLocal: false, condition: opts?.condition || '', branches: [] }
+    const condition = opts?.condition?.trim()
+    if (!condition) {
+      throw new Error('decision 节点必须提供判断内容（condition 不能为空）')
+    }
+    data = { label, nodeDefId: 'decision', isLocal: false, condition, branches: [] }
   } else if (type === 'process') {
     data = { label, nodeDefId: 'process', content: opts?.content || '', description: opts?.description || '', isLocal: false }
   } else if (type === 'local') {
@@ -267,7 +271,7 @@ export function generate(root: string, wfName: string): void {
   writeFlowJson(root, wfName, flow)
 }
 
-// --- doctor (10 checks, ported from GUI validateWorkflow + CLI extensions) ---
+// --- doctor (11 checks, ported from GUI validateWorkflow + CLI extensions) ---
 
 interface CheckResult {
   check: string
@@ -401,6 +405,23 @@ export function doctor(root: string, wfName: string, json: boolean = false): str
     message: missingFiles.length === 0
       ? `通过 — ${businessNodes.length} 个 business，文件全部存在`
       : `失败 — 文件不存在: ${missingFiles.join(', ')}`,
+  })
+
+  // 11. decision 判断内容完整性 (CLI extension)
+  const decisionNodesForCheck = nodes.filter(n => n.type === 'decision')
+  const emptyConditions: string[] = []
+  for (const node of decisionNodesForCheck) {
+    const cond = node.data?.condition
+    if (!cond || !cond.trim() || cond.trim() === 'N/A') {
+      emptyConditions.push(node.id)
+    }
+  }
+  results.push({
+    check: 'decision 判断内容完整性',
+    passed: emptyConditions.length === 0,
+    message: emptyConditions.length === 0
+      ? `通过 — ${decisionNodesForCheck.length} 个 decision，判断内容完整`
+      : `失败 — 判断内容为空: ${emptyConditions.join(', ')}`,
   })
 
   if (json) {
