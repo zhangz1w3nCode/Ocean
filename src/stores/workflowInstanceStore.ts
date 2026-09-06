@@ -12,7 +12,10 @@ interface InstanceDetail {
   flowData: { nodes: any[]; edges: any[] } | null
   completedNodes: string[]
   currentName: string
+  /** 引擎原始节点推进状态：idle | executing | awaitingchoice | completed | aborted，仅 InstanceFlowGraph 消费 */
   wfStatus: string
+  /** 实例整体三态：pending | running | completed */
+  instanceStatus: string
   wfStep: number
   wfLoopCount: number
   wfRetryCount: number

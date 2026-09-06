@@ -13,13 +13,11 @@ type ResizeDirection = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw'
 const MIN_W = 600, MIN_H = 300
 const resizeCursors: Record<ResizeDirection, string> = { n: 'ns-resize', s: 'ns-resize', e: 'ew-resize', w: 'ew-resize', ne: 'nesw-resize', sw: 'nesw-resize', nw: 'nwse-resize', se: 'nwse-resize' }
 
+// 实例整体状态（三态）配色；TraceTable 复用时，节点级 active/failed 没命中则走 unknown
 const statusColors: Record<string, string> = {
+  pending: 'bg-gray-100 text-gray-500',
+  running: 'bg-blue-50 text-blue-600',
   completed: 'bg-green-50 text-green-600',
-  executing: 'bg-blue-50 text-blue-600',
-  awaitingchoice: 'bg-amber-50 text-amber-600',
-  awaiting_choice: 'bg-amber-50 text-amber-600',
-  aborted: 'bg-red-50 text-red-600',
-  idle: 'bg-gray-100 text-gray-500',
   unknown: 'bg-gray-100 text-gray-500',
 }
 
@@ -33,12 +31,9 @@ const typeColors: Record<string, string> = {
 }
 
 const statusDotColors: Record<string, string> = {
+  pending: 'bg-gray-400',
+  running: 'bg-blue-500',
   completed: 'bg-green-500',
-  executing: 'bg-blue-500',
-  awaitingchoice: 'bg-amber-500',
-  awaiting_choice: 'bg-amber-500',
-  aborted: 'bg-red-500',
-  idle: 'bg-gray-400',
   unknown: 'bg-gray-400',
 }
 
@@ -57,7 +52,7 @@ const InstanceList: FC = () => {
   }, [loadInstances])
 
   const workflowNames = [...new Set(instances.map(i => i.workflowName))]
-  const statusOptions = ['completed', 'executing', 'awaitingchoice', 'aborted', 'idle', 'active']
+  const statusOptions = ['pending', 'running', 'completed']
 
   const filtered = instances.filter((inst) => {
     if (filterWorkflow && inst.workflowName !== filterWorkflow) return false
@@ -66,6 +61,7 @@ const InstanceList: FC = () => {
     return inst.instanceId.toLowerCase().includes(q) ||
       inst.workflowName.toLowerCase().includes(q) ||
       inst.status.toLowerCase().includes(q) ||
+      formatStatus(inst.status).includes(searchQuery) ||
       (inst.initialInput || '').toLowerCase().includes(q)
   }).sort((a, b) => {
     const cmp = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
@@ -441,7 +437,7 @@ const InstanceDetail: FC = () => {
               <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
                 <div className="text-sm font-bold text-macos-text mb-3">基本信息</div>
                 <div className="flex flex-col gap-2.5">
-                  <DetailField icon={CircleDot} label="状态"><span className={`text-xs px-2 py-0.5 rounded-md font-medium ${statusColors[detail?.wfStatus || inst.status] || statusColors.unknown}`}>{formatStatus(detail?.wfStatus || inst.status)}</span></DetailField>
+                  <DetailField icon={CircleDot} label="状态"><span className={`text-xs px-2 py-0.5 rounded-md font-medium ${statusColors[detail?.instanceStatus || inst.status] || statusColors.unknown}`}>{formatStatus(detail?.instanceStatus || inst.status)}</span></DetailField>
                   <DetailField icon={GitBranch} label="工作流">{inst.workflowName}</DetailField>
                   <DetailField icon={Hash} label="实例ID"><span className="font-mono text-xs">{inst.instanceId}</span></DetailField>
                   <DetailField icon={Clock} label="创建">{formatRelativeTime(inst.createdAt)}</DetailField>
