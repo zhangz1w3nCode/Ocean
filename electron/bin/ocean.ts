@@ -218,6 +218,11 @@ function printList(items: string[], header: string): void {
 }
 
 function printMarkdownTable(text: string): void {
+  const trimmed = text.trim()
+  if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+    rawOut(text)
+    return
+  }
   const lines = text.split('\n').filter(Boolean)
   if (lines.length < 3) {
     out(text || '（无数据）')
@@ -229,6 +234,24 @@ function printMarkdownTable(text: string): void {
   }
   const parseRow = (line: string) => line.split('|').map(s => s.trim()).filter(Boolean)
   printDataTable(parseRow(lines[0]), lines.slice(2).map(parseRow))
+}
+
+function markdownTableToJson(text: string): any[] {
+  const lines = text.split('\n').filter(Boolean)
+  if (lines.length < 3) return []
+  if (!/^\|[\s-|]+\|$/.test(lines[1])) return []
+  const parseRow = (line: string) => line.split('|').map(s => s.trim()).filter(Boolean)
+  const headers = parseRow(lines[0])
+  return lines.slice(2).map(line => {
+    const cells = parseRow(line)
+    const obj: Record<string, string> = {}
+    headers.forEach((h, i) => { obj[h] = cells[i] || '' })
+    return obj
+  })
+}
+
+function printJson(data: any): void {
+  rawOut(JSON.stringify(data, null, 2))
 }
 
 function printAction(action: string, fields: Record<string, string>): void {
@@ -551,6 +574,10 @@ function main(): void {
         throw new UsageError(`未知的命令: ${args.namespace}\n运行 'ocean --help' 查看可用命令。`)
     }
   } catch (e: any) {
+    if (args.flags.json) {
+      process.stderr.write(JSON.stringify({ error: e.message }) + '\n')
+      process.exit(e instanceof UsageError ? 2 : 1)
+    }
     err(e)
   }
 }
@@ -565,13 +592,15 @@ function handleWorkflow(root: string, args: ReturnType<typeof parseArgs>): void 
   switch (cmd) {
     // --- execution commands (ported from workflow.ts) ---
     case 'list':
-      printList(listWorkflows(root).split('\n').filter(Boolean), '工作流')
+      if (args.flags.json) printJson(listWorkflows(root).split('\n').filter(Boolean))
+      else printList(listWorkflows(root).split('\n').filter(Boolean), '工作流')
       break
 
     case 'instance': {
       if (args.positional[0] === 'list') {
         const wf = typeof args.flags.workflow === 'string' ? args.flags.workflow : undefined
-        printMarkdownTable(listInstances(root, wf))
+        if (args.flags.json) printJson(markdownTableToJson(listInstances(root, wf)))
+        else printMarkdownTable(listInstances(root, wf))
       } else {
         const workflowName = args.positional[0]
         const id = typeof args.flags.instance === 'string' ? args.flags.instance : genId()
@@ -582,7 +611,7 @@ function handleWorkflow(root: string, args: ReturnType<typeof parseArgs>): void 
         }
         const input = typeof args.flags.input === 'string' ? args.flags.input : undefined
         create(root, workflowName, id, input, limits)
-        printAction('created', { instanceId: id })
+        args.flags.json ? printJson({ action: 'created', instanceId: id }) : printAction('created', { instanceId: id })
       }
       break
     }
@@ -601,7 +630,7 @@ function handleWorkflow(root: string, args: ReturnType<typeof parseArgs>): void 
       const output = typeof args.flags.output === 'string' ? args.flags.output : undefined
       const outputFile = typeof args.flags['output-file'] === 'string' ? args.flags['output-file'] : undefined
       const content = readOutput(output, outputFile)
-      printMarkdownTable(complete(root, wf, id, content))
+      args.flags.json ? printJson({ message: complete(root, wf, id, content) }) : printMarkdownTable(complete(root, wf, id, content))
       break
     }
 
@@ -609,7 +638,7 @@ function handleWorkflow(root: string, args: ReturnType<typeof parseArgs>): void 
       const id = args.flags.instance as string
       const reason = args.flags.reason as string
       const wf = instanceWorkflow(root, id)
-      printMarkdownTable(fail(root, wf, id, reason))
+      args.flags.json ? printJson({ message: fail(root, wf, id, reason), reason }) : printMarkdownTable(fail(root, wf, id, reason))
       break
     }
 
@@ -618,7 +647,7 @@ function handleWorkflow(root: string, args: ReturnType<typeof parseArgs>): void 
       const branch = args.flags.branch as string
       const reason = typeof args.flags.reason === 'string' ? args.flags.reason : undefined
       const wf = instanceWorkflow(root, id)
-      printMarkdownTable(choose(root, wf, id, branch, reason))
+      args.flags.json ? printJson({ message: choose(root, wf, id, branch, reason), branch }) : printMarkdownTable(choose(root, wf, id, branch, reason))
       break
     }
 
@@ -681,13 +710,13 @@ function handleWorkflow(root: string, args: ReturnType<typeof parseArgs>): void 
           logTraceCommand(root, wf, id, 'context set')
           const topic = args.flags.topic as string
           const content = args.flags.content as string
-          printMarkdownTable(contextSet(root, wf, id, topic, content))
+          args.flags.json ? (contextSet(root, wf, id, topic, content), printJson({ action: 'set', topic })) : printMarkdownTable(contextSet(root, wf, id, topic, content))
           break
         }
         case 'get': {
           logTraceCommand(root, wf, id, 'context get')
           const json = args.flags.json === true
-          printMarkdownTable(contextGet(root, wf, id, json))
+          args.flags.json ? printJson({ context: contextGet(root, wf, id, false), instance: id }) : printMarkdownTable(contextGet(root, wf, id, json))
           break
         }
         default:
@@ -700,7 +729,7 @@ function handleWorkflow(root: string, args: ReturnType<typeof parseArgs>): void 
     case 'create': {
       const name = args.positional[0]
       wfGraph.create(root, name)
-      printAction('created', { name })
+      args.flags.json ? printJson({ action: 'created', name }) : printAction('created', { name })
       break
     }
 
@@ -716,7 +745,7 @@ function handleWorkflow(root: string, args: ReturnType<typeof parseArgs>): void 
       }
       const description = typeof args.flags.description === 'string' ? args.flags.description : undefined
       const id = wfGraph.addNode(root, name, type, label, { nodeRefPath, content, condition, description })
-      printAction('added', { nodeId: id })
+      args.flags.json ? printJson({ action: 'added', nodeId: id }) : printAction('added', { nodeId: id })
       break
     }
 
@@ -726,7 +755,7 @@ function handleWorkflow(root: string, args: ReturnType<typeof parseArgs>): void 
       const to = args.flags.to as string
       const branch = typeof args.flags.branch === 'string' ? args.flags.branch : undefined
       const edgeId = wfGraph.connect(root, name, from, to, branch)
-      printAction('connected', { edgeId })
+      args.flags.json ? printJson({ action: 'connected', edgeId }) : printAction('connected', { edgeId })
       break
     }
 
@@ -736,7 +765,7 @@ function handleWorkflow(root: string, args: ReturnType<typeof parseArgs>): void 
       const branchName = args.flags.name as string
       const description = typeof args.flags.description === 'string' ? args.flags.description : undefined
       const branchId = wfGraph.addBranch(root, name, nodeId, branchName, description)
-      printAction('added', { branchId })
+      args.flags.json ? printJson({ action: 'added', branchId }) : printAction('added', { branchId })
       break
     }
 
@@ -744,7 +773,7 @@ function handleWorkflow(root: string, args: ReturnType<typeof parseArgs>): void 
       const name = args.positional[0]
       const nodeId = args.flags.node as string
       wfGraph.removeNode(root, name, nodeId)
-      printAction('removed', { nodeId })
+      args.flags.json ? printJson({ action: 'removed', nodeId }) : printAction('removed', { nodeId })
       break
     }
 
@@ -754,38 +783,40 @@ function handleWorkflow(root: string, args: ReturnType<typeof parseArgs>): void 
       const to = args.flags.to as string
       const branch = typeof args.flags.branch === 'string' ? args.flags.branch : undefined
       wfGraph.disconnect(root, name, from, to, branch)
-      printAction('disconnected', { from, to })
+      args.flags.json ? printJson({ action: 'disconnected', from, to }) : printAction('disconnected', { from, to })
       break
     }
 
     case 'list-nodes': {
       const name = args.positional[0]
-      printMarkdownTable(wfGraph.listNodes(root, name))
+      if (args.flags.json) printJson(markdownTableToJson(wfGraph.listNodes(root, name)))
+      else printMarkdownTable(wfGraph.listNodes(root, name))
       break
     }
 
     case 'list-edges': {
       const name = args.positional[0]
-      printMarkdownTable(wfGraph.listEdges(root, name))
+      if (args.flags.json) printJson(markdownTableToJson(wfGraph.listEdges(root, name)))
+      else printMarkdownTable(wfGraph.listEdges(root, name))
       break
     }
 
     case 'read': {
       const name = args.positional[0]
-      out(stripFrontmatter(wfGraph.readWorkflowMd(root, name)))
+      args.flags.json ? printJson({ content: stripFrontmatter(wfGraph.readWorkflowMd(root, name)) }) : out(stripFrontmatter(wfGraph.readWorkflowMd(root, name)))
       break
     }
 
     case 'read-flow': {
       const name = args.positional[0]
-      out(wfGraph.readFlow(root, name))
+      args.flags.json ? rawOut(wfGraph.readFlow(root, name)) : out(wfGraph.readFlow(root, name))
       break
     }
 
     case 'generate': {
       const name = args.positional[0]
       wfGraph.generate(root, name)
-      printAction('generated', { workflow: name })
+      args.flags.json ? printJson({ action: 'generated', workflow: name }) : printAction('generated', { workflow: name })
       break
     }
 
@@ -800,7 +831,7 @@ function handleWorkflow(root: string, args: ReturnType<typeof parseArgs>): void 
     case 'delete': {
       const name = args.positional[0]
       wfGraph.del(root, name)
-      printAction('deleted', { name })
+      args.flags.json ? printJson({ action: 'deleted', name }) : printAction('deleted', { name })
       break
     }
 
@@ -808,7 +839,7 @@ function handleWorkflow(root: string, args: ReturnType<typeof parseArgs>): void 
       const oldName = args.positional[0]
       const newName = args.positional[1]
       wfGraph.rename(root, oldName, newName)
-      printAction('renamed', { from: oldName, to: newName })
+      args.flags.json ? printJson({ action: 'renamed', from: oldName, to: newName }) : printAction('renamed', { from: oldName, to: newName })
       break
     }
 
@@ -818,24 +849,25 @@ function handleWorkflow(root: string, args: ReturnType<typeof parseArgs>): void 
       const wfName = args.positional[1] || ''
       switch (sub) {
         case 'list':
-          printList(wfGraph.listLocalNodes(root, wfName), '局部节点')
+          if (args.flags.json) printJson(wfGraph.listLocalNodes(root, wfName))
+          else printList(wfGraph.listLocalNodes(root, wfName), '局部节点')
           break
         case 'read': {
           const nodeName = args.positional[2] || ''
-          out(stripFrontmatter(wfGraph.readLocalNode(root, wfName, nodeName)))
+          args.flags.json ? printJson({ content: stripFrontmatter(wfGraph.readLocalNode(root, wfName, nodeName)) }) : out(stripFrontmatter(wfGraph.readLocalNode(root, wfName, nodeName)))
           break
         }
         case 'create': {
           const nodeName = args.positional[2] || ''
           const content = readContent(args.flags)
           wfGraph.createLocalNode(root, wfName, nodeName, content)
-          printAction('created', { name: nodeName })
+          args.flags.json ? printJson({ action: 'created', name: nodeName }) : printAction('created', { name: nodeName })
           break
         }
         case 'delete': {
           const nodeName = args.positional[2] || ''
           wfGraph.delLocalNode(root, wfName, nodeName)
-          printAction('deleted', { name: nodeName })
+          args.flags.json ? printJson({ action: 'deleted', name: nodeName }) : printAction('deleted', { name: nodeName })
           break
         }
         default:
@@ -861,11 +893,12 @@ function handleNode(root: string, args: ReturnType<typeof parseArgs>): void {
   const cmd = args.subcommand
   switch (cmd) {
     case 'list':
-      printList(nodeCrud.list(root), '节点')
+      if (args.flags.json) printJson(nodeCrud.list(root))
+      else printList(nodeCrud.list(root), '节点')
       break
     case 'read': {
       const name = args.positional[0]
-      out(stripFrontmatter(nodeCrud.read(root, name)))
+      args.flags.json ? printJson({ content: stripFrontmatter(nodeCrud.read(root, name)) }) : out(stripFrontmatter(nodeCrud.read(root, name)))
       break
     }
     case 'create': {
@@ -874,7 +907,7 @@ function handleNode(root: string, args: ReturnType<typeof parseArgs>): void {
       const type = typeof args.flags.type === 'string' ? args.flags.type : undefined
       const description = typeof args.flags.description === 'string' ? args.flags.description : undefined
       nodeCrud.create(root, name, content, { type, description })
-      printAction('created', { name })
+      args.flags.json ? printJson({ action: 'created', name }) : printAction('created', { name })
       break
     }
     case 'update': {
@@ -883,13 +916,13 @@ function handleNode(root: string, args: ReturnType<typeof parseArgs>): void {
       const type = typeof args.flags.type === 'string' ? args.flags.type : undefined
       const description = typeof args.flags.description === 'string' ? args.flags.description : undefined
       nodeCrud.update(root, name, content, { type, description })
-      printAction('updated', { name })
+      args.flags.json ? printJson({ action: 'updated', name }) : printAction('updated', { name })
       break
     }
     case 'delete': {
       const name = args.positional[0]
       nodeCrud.del(root, name)
-      printAction('deleted', { name })
+      args.flags.json ? printJson({ action: 'deleted', name }) : printAction('deleted', { name })
       break
     }
     default:
@@ -909,11 +942,12 @@ function handleKnowledge(root: string, args: ReturnType<typeof parseArgs>): void
   const cmd = args.subcommand
   switch (cmd) {
     case 'list':
-      printList(knowledgeCrud.list(root), '知识')
+      if (args.flags.json) printJson(knowledgeCrud.list(root))
+      else printList(knowledgeCrud.list(root), '知识')
       break
     case 'read': {
       const relPath = args.positional[0]
-      out(stripFrontmatter(knowledgeCrud.read(root, relPath)))
+      args.flags.json ? printJson({ content: stripFrontmatter(knowledgeCrud.read(root, relPath)) }) : out(stripFrontmatter(knowledgeCrud.read(root, relPath)))
       break
     }
     case 'create': {
@@ -923,7 +957,7 @@ function handleKnowledge(root: string, args: ReturnType<typeof parseArgs>): void
       const tagsStr = typeof args.flags.tags === 'string' ? args.flags.tags : undefined
       const tags = tagsStr ? tagsStr.split(',').map(t => t.trim()) : undefined
       knowledgeCrud.create(root, relPath, content, { description, tags })
-      printAction('created', { path: relPath })
+      args.flags.json ? printJson({ action: 'created', path: relPath }) : printAction('created', { path: relPath })
       break
     }
     case 'update': {
@@ -933,13 +967,13 @@ function handleKnowledge(root: string, args: ReturnType<typeof parseArgs>): void
       const tagsStr = typeof args.flags.tags === 'string' ? args.flags.tags : undefined
       const tags = tagsStr !== undefined ? tagsStr.split(',').map(t => t.trim()) : undefined
       knowledgeCrud.update(root, relPath, content, { description, tags })
-      printAction('updated', { path: relPath })
+      args.flags.json ? printJson({ action: 'updated', path: relPath }) : printAction('updated', { path: relPath })
       break
     }
     case 'delete': {
       const relPath = args.positional[0]
       knowledgeCrud.del(root, relPath)
-      printAction('deleted', { path: relPath })
+      args.flags.json ? printJson({ action: 'deleted', path: relPath }) : printAction('deleted', { path: relPath })
       break
     }
     default:
@@ -959,11 +993,12 @@ function handleResource(root: string, args: ReturnType<typeof parseArgs>): void 
   const cmd = args.subcommand
   switch (cmd) {
     case 'list':
-      printList(resourceCrud.list(root), '资源')
+      if (args.flags.json) printJson(resourceCrud.list(root))
+      else printList(resourceCrud.list(root), '资源')
       break
     case 'read': {
       const name = args.positional[0]
-      out(stripFrontmatter(resourceCrud.read(root, name)))
+      args.flags.json ? printJson({ content: stripFrontmatter(resourceCrud.read(root, name)) }) : out(stripFrontmatter(resourceCrud.read(root, name)))
       break
     }
     case 'create': {
@@ -972,7 +1007,7 @@ function handleResource(root: string, args: ReturnType<typeof parseArgs>): void 
       const type = typeof args.flags.type === 'string' ? args.flags.type : undefined
       const description = typeof args.flags.description === 'string' ? args.flags.description : undefined
       resourceCrud.create(root, name, content, { type, description })
-      printAction('created', { name })
+      args.flags.json ? printJson({ action: 'created', name }) : printAction('created', { name })
       break
     }
     case 'update': {
@@ -981,13 +1016,13 @@ function handleResource(root: string, args: ReturnType<typeof parseArgs>): void 
       const type = typeof args.flags.type === 'string' ? args.flags.type : undefined
       const description = typeof args.flags.description === 'string' ? args.flags.description : undefined
       resourceCrud.update(root, name, content, { type, description })
-      printAction('updated', { name })
+      args.flags.json ? printJson({ action: 'updated', name }) : printAction('updated', { name })
       break
     }
     case 'delete': {
       const name = args.positional[0]
       resourceCrud.del(root, name)
-      printAction('deleted', { name })
+      args.flags.json ? printJson({ action: 'deleted', name }) : printAction('deleted', { name })
       break
     }
     default:
@@ -1007,11 +1042,12 @@ function handleAgent(root: string, args: ReturnType<typeof parseArgs>): void {
   const cmd = args.subcommand
   switch (cmd) {
     case 'list':
-      printList(agentCrud.list(root), '智能体')
+      if (args.flags.json) printJson(agentCrud.list(root))
+      else printList(agentCrud.list(root), '智能体')
       break
     case 'read': {
       const name = args.positional[0]
-      out(stripFrontmatter(agentCrud.read(root, name)))
+      args.flags.json ? printJson({ content: stripFrontmatter(agentCrud.read(root, name)) }) : out(stripFrontmatter(agentCrud.read(root, name)))
       break
     }
     case 'create': {
@@ -1026,7 +1062,7 @@ function handleAgent(root: string, args: ReturnType<typeof parseArgs>): void {
         inheritProjectContext: args.flags['inherit-project-context'] === true,
         inheritSkills: args.flags['inherit-skills'] === true,
       })
-      printAction('created', { name })
+      args.flags.json ? printJson({ action: 'created', name }) : printAction('created', { name })
       break
     }
     case 'update': {
@@ -1041,13 +1077,13 @@ function handleAgent(root: string, args: ReturnType<typeof parseArgs>): void {
         inheritProjectContext: args.flags['inherit-project-context'] === true ? true : undefined,
         inheritSkills: args.flags['inherit-skills'] === true ? true : undefined,
       })
-      printAction('updated', { name })
+      args.flags.json ? printJson({ action: 'updated', name }) : printAction('updated', { name })
       break
     }
     case 'delete': {
       const name = args.positional[0]
       agentCrud.del(root, name)
-      printAction('deleted', { name })
+      args.flags.json ? printJson({ action: 'deleted', name }) : printAction('deleted', { name })
       break
     }
     default:
@@ -1067,11 +1103,12 @@ function handleSkill(root: string, args: ReturnType<typeof parseArgs>): void {
   const cmd = args.subcommand
   switch (cmd) {
     case 'list':
-      printList(skillCrud.list(root), '技能')
+      if (args.flags.json) printJson(skillCrud.list(root))
+      else printList(skillCrud.list(root), '技能')
       break
     case 'read': {
       const name = args.positional[0]
-      out(stripFrontmatter(skillCrud.read(root, name)))
+      args.flags.json ? printJson({ content: stripFrontmatter(skillCrud.read(root, name)) }) : out(stripFrontmatter(skillCrud.read(root, name)))
       break
     }
     case 'create': {
@@ -1079,20 +1116,20 @@ function handleSkill(root: string, args: ReturnType<typeof parseArgs>): void {
       const content = readContent(args.flags)
       const description = args.flags.description as string
       skillCrud.create(root, name, content, description)
-      printAction('created', { name })
+      args.flags.json ? printJson({ action: 'created', name }) : printAction('created', { name })
       break
     }
     case 'update': {
       const name = args.positional[0]
       const content = readContent(args.flags)
       skillCrud.update(root, name, content)
-      printAction('updated', { name })
+      args.flags.json ? printJson({ action: 'updated', name }) : printAction('updated', { name })
       break
     }
     case 'delete': {
       const name = args.positional[0]
       skillCrud.del(root, name)
-      printAction('deleted', { name })
+      args.flags.json ? printJson({ action: 'deleted', name }) : printAction('deleted', { name })
       break
     }
     default:
@@ -1112,7 +1149,7 @@ function handleConfig(root: string, args: ReturnType<typeof parseArgs>): void {
   const cmd = args.subcommand
   switch (cmd) {
     case 'asset-root':
-      printAction('queried', { 'asset-root': resolveAssetDir(root) })
+      args.flags.json ? printJson({ action: 'queried', 'asset-root': resolveAssetDir(root) }) : printAction('queried', { 'asset-root': resolveAssetDir(root) })
       break
     default:
       if (!cmd) {
