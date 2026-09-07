@@ -542,6 +542,7 @@ export const MarkdownEditor: FC<MarkdownEditorProps> = ({
     setWikiLinkRelation('')
     setWikiLinkPosition(null)
     setEditingWikiLink(null)
+    pendingWikiLinkRef.current = null
   }, [selectedWikiLinkItem, wikiLinkRelation, editingWikiLink, value, onChange])
 
   // 返回按钮 - 回到编辑页面或选择弹窗
