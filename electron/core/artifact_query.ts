@@ -516,6 +516,7 @@ export function diff(
       const diffArr = diffs.map(({ v1, v2, lines }) => ({
         from_version: v1, to_version: v2,
         changes: formatDiffChanges(lines),
+      }))
       return sortedJsonStringify({ instance: instanceId, node, invoke, diffs: diffArr })
     }
 
@@ -573,7 +574,6 @@ export function diff(
     s += `## [${i + 1}→${i + 2}] ${nodeDisplay(e1.node, e1.branch)} (${e1.invoke} ${e1.version})\n`
     s += `> 对比: ${e1.invoke} ${e1.version} (${e1.status}, ${e1.time}) → ${e2.invoke} ${e2.version} (${e2.status}, ${e2.time})\n\n`
     s += formatDiffLines(lines)
-    }
     if (i + 1 < diffs.length) s += '\n'
   }
   return s
