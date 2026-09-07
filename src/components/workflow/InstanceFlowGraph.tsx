@@ -362,12 +362,15 @@ export const InstanceFlowGraph: FC<InstanceFlowGraphProps> = ({ traceLog, flowDa
             <div className="flex-1 overflow-y-auto p-4">
               {selectedArtifacts.length > 0 ? (
                 selectedArtifacts.length === 1 ? (
-                  <MarkdownRenderer content={selectedArtifacts[0].content} className="text-sm" />
+                  <div>
+                    <div className="text-xs font-mono text-macos-text-tertiary mb-1.5">{selectedArtifacts[0].invokeId} {selectedArtifacts[0].version}</div>
+                    <MarkdownRenderer content={selectedArtifacts[0].content} className="text-sm" />
+                  </div>
                 ) : (
                   <div className="flex flex-col gap-3">
                     {selectedArtifacts.map((art, i) => (
                       <div key={i}>
-                        <div className="text-xs font-mono text-macos-text-tertiary mb-1.5">{art.invokeId}</div>
+                        <div className="text-xs font-mono text-macos-text-tertiary mb-1.5">{art.invokeId} {art.version}</div>
                         <div className="bg-gray-50 rounded-lg p-3 border border-gray-100">
                           <MarkdownRenderer content={art.content} className="text-sm" />
                         </div>

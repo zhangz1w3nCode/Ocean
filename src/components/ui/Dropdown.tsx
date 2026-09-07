@@ -14,9 +14,11 @@ interface DropdownProps {
   onChange: (value: string) => void
   placeholder?: string
   className?: string
+  buttonClassName?: string
+  optionClassName?: string
 }
 
-export const Dropdown: FC<DropdownProps> = ({ value, options, onChange, placeholder, className = '' }) => {
+export const Dropdown: FC<DropdownProps> = ({ value, options, onChange, placeholder, className = '', buttonClassName = '', optionClassName = '' }) => {
   const [isOpen, setIsOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
@@ -46,7 +48,7 @@ export const Dropdown: FC<DropdownProps> = ({ value, options, onChange, placehol
           borderColor: isOpen ? '#9ca3af' : '#d2d2d7',
           boxShadow: isOpen ? '0 4px 12px rgba(0,0,0,0.08)' : 'none',
         }}
-        className="flex items-center gap-2 px-3 py-2 text-sm cursor-pointer focus:outline-none min-w-0"
+        className={`flex items-center gap-2 px-3 py-2 text-sm cursor-pointer focus:outline-none min-w-0 ${buttonClassName}`}
       >
         <span
           className="truncate"
@@ -91,7 +93,7 @@ export const Dropdown: FC<DropdownProps> = ({ value, options, onChange, placehol
                     borderRadius: '8px',
                     transition: 'background 0.15s ease',
                   }}
-                  className="w-full flex items-center justify-between gap-2 px-3 py-2 text-sm hover:bg-[#f5f5f7]"
+                  className={`w-full flex items-center justify-between gap-2 px-3 py-2 text-sm hover:bg-[#f5f5f7] ${optionClassName}`}
                 >
                   <span
                     className="truncate"

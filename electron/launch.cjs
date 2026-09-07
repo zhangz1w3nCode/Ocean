@@ -617,11 +617,37 @@ function parseArtifacts(instDir) {
       const invokeDir = path.join(artDir, nd.name)
       const invokeDirs = fs.readdirSync(invokeDir, { withFileTypes: true }).filter(d => d.isDirectory())
       for (const id of invokeDirs) {
-        const detailPath = path.join(invokeDir, id.name, 'detail.md')
-        if (fs.existsSync(detailPath)) {
-          const content = fs.readFileSync(detailPath, 'utf-8')
-          const stat = fs.statSync(detailPath)
-          artifacts.push({ nodeName: nd.name, invokeId: id.name, content, updatedAt: stat.mtime.toISOString() })
+        const invokePath = path.join(invokeDir, id.name)
+        const versionDirs = fs.readdirSync(invokePath, { withFileTypes: true })
+          .filter(d => d.isDirectory() && /^v\d+$/.test(d.name))
+          .map(d => d.name)
+          .sort((a, b) => parseInt(a.slice(1)) - parseInt(b.slice(1)))
+        
+        if (versionDirs.length > 0) {
+          for (const ver of versionDirs) {
+            const detailPath = path.join(invokePath, ver, 'detail.md')
+            if (fs.existsSync(detailPath)) {
+              const content = fs.readFileSync(detailPath, 'utf-8')
+              const stat = fs.statSync(detailPath)
+              artifacts.push({ nodeName: nd.name, invokeId: id.name, version: ver, content, updatedAt: stat.mtime.toISOString() })
+            }
+          }
+          // Backward compat: old-style detail.md at root when v1 not in versionDirs
+          if (!versionDirs.includes('v1')) {
+            const oldDetailPath = path.join(invokePath, 'detail.md')
+            if (fs.existsSync(oldDetailPath)) {
+              const content = fs.readFileSync(oldDetailPath, 'utf-8')
+              const stat = fs.statSync(oldDetailPath)
+              artifacts.push({ nodeName: nd.name, invokeId: id.name, version: 'v1', content, updatedAt: stat.mtime.toISOString() })
+            }
+          }
+        } else {
+          const detailPath = path.join(invokePath, 'detail.md')
+          if (fs.existsSync(detailPath)) {
+            const content = fs.readFileSync(detailPath, 'utf-8')
+            const stat = fs.statSync(detailPath)
+            artifacts.push({ nodeName: nd.name, invokeId: id.name, version: 'v1', content, updatedAt: stat.mtime.toISOString() })
+          }
         }
       }
     }
