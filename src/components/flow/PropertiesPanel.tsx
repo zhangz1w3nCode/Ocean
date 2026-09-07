@@ -386,7 +386,7 @@ export const PropertiesPanel: FC = () => {
                     <FileText size={12} />
                     内容
                   </label>
-                  <div className="bg-gray-50 rounded-lg p-3 max-h-80 overflow-y-auto">
+                  <div className="bg-gray-50 rounded-lg p-3 overflow-y-auto">
                     <MarkdownRenderer content={nodeInfo.content} />
                   </div>
                 </div>
@@ -412,7 +412,7 @@ export const PropertiesPanel: FC = () => {
                       <label className="text-xs font-medium text-gray-500 mb-1">
                         内容
                       </label>
-                      <div className="text-xs text-gray-600 bg-blue-50 rounded-lg p-2 max-h-32 overflow-y-auto">
+                      <div className="text-xs text-gray-600 bg-blue-50 rounded-lg p-2 overflow-y-auto">
                         {nodeInfo.content}
                       </div>
                     </div>
