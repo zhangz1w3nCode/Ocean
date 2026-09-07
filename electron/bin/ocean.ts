@@ -146,7 +146,7 @@ let _helpJsonBuf: string[] | null = null
 
 function out(s: string): void {
   if (_helpJsonBuf !== null) { _helpJsonBuf.push(s); return }
-  const maxBoxW = (process.stdout.columns || 120) - 4
+  const maxBoxW = Math.min((process.stdout.columns || 120) - 4, 70)
   const wrapped: string[] = []
   for (const line of s.split('\n')) {
     if (displayWidth(line) <= maxBoxW) {
