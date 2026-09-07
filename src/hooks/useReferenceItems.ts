@@ -99,8 +99,8 @@ export function useReferenceItems(options: UseReferenceItemsOptions = {}): Refer
       })
     }
     workflows.forEach((workflow) => {
-      // 工作流使用新的文件夹结构，路径为 .workflows/{name}/WORKFLOW.md
-      const path = `.workflows/${workflow.name}/WORKFLOW.md`
+      // 工作流引用只拼接 workflow 名称，不拼接相对路径（CLI/主进程按名称寻址 .workflows/{name}/）
+      const path = workflow.name
       if (path !== excludePath) {
         items.push({
           id: workflow.id,

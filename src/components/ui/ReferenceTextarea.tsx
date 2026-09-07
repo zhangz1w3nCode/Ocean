@@ -10,8 +10,8 @@ interface ReferenceTextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElem
   excludePath?: string  // 排除特定路径（如 ".nodes/xxx.md"）
 }
 
-// 引用路径的正则匹配：`xxx/xxx.md` 或 `xxx/`（库引用）
-const REFERENCE_PATTERN = /`([^`\n]+(\.md|\/))`/g
+// 引用路径的正则匹配：反引号包裹的任意单行内容均视为引用块（与 MarkdownEditor 保持一致）
+const REFERENCE_PATTERN = /`([^`\n]+)`/g
 
 export const ReferenceTextarea: FC<ReferenceTextareaProps> = ({
   label,
@@ -176,7 +176,8 @@ export const ReferenceTextarea: FC<ReferenceTextareaProps> = ({
     // 退格键：如果光标在引用块末尾，整体删除
     if (e.key === 'Backspace') {
       const beforeCursor = currentValue.slice(0, cursorPos)
-      const match = beforeCursor.match(/`[^`\n]+(\.md|\/)`$/)
+      // 与 REFERENCE_PATTERN 同口径，保证高亮/点击/退格整块删除一致
+      const match = beforeCursor.match(/`[^`\n]+`$/)
       if (match) {
         e.preventDefault()
         const start = cursorPos - match[0].length

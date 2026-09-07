@@ -40,9 +40,22 @@ export function extractDisplayName(path: string): string {
 }
 
 /**
- * 根据路径判断引用类型
+ * 纯名称引用的资产类型判定依据
+ * @ 引用只写名称（不带路径）时，用已知资产名称集合区分技能与工作流
  */
-export function getReferenceType(path: string): { icon: string; color: string; bgColor: string } {
+export interface PureNameAssetNames {
+  skillNames?: string[]
+  workflowNames?: string[]
+}
+
+/**
+ * 根据路径判断引用类型
+ * @param pureNameAssetNames 可选；不传时纯名称一律按技能处理（保持旧行为）
+ */
+export function getReferenceType(
+  path: string,
+  pureNameAssetNames: PureNameAssetNames = {},
+): { icon: string; color: string; bgColor: string } {
   if (path.includes('/agents/')) {
     return { icon: '智能体', color: '#9333EA', bgColor: '#F3E8FF' } // 紫色
   }
@@ -61,9 +74,16 @@ export function getReferenceType(path: string): { icon: string; color: string; b
   if (path.includes('/knowledges/') || path.includes('.knowledges/')) {
     return { icon: '知识', color: '#2563EB', bgColor: '#DBEAFE' } // 蓝色
   }
-  // 纯名称引用（无路径分隔符且无 .md 扩展名）视为技能引用
+  // 纯名称引用（无路径分隔符且无 .md 扩展名）：技能名优先，其次工作流名，均未知时兜底为技能
   const cleanPath = path.replace(/^`+|`+$/g, '')
   if (!cleanPath.includes('/') && !cleanPath.match(/\.(?:md|mdx)$/)) {
+    const { skillNames, workflowNames } = pureNameAssetNames
+    if (skillNames?.includes(cleanPath)) {
+      return { icon: '技能', color: '#7C3AED', bgColor: '#EDE9FE' } // 紫罗兰色
+    }
+    if (workflowNames?.includes(cleanPath)) {
+      return { icon: '工作流', color: '#DC2626', bgColor: '#FEE2E2' } // 红色
+    }
     return { icon: '技能', color: '#7C3AED', bgColor: '#EDE9FE' } // 紫罗兰色
   }
   // 默认样式
