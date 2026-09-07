@@ -130,7 +130,7 @@ export function complete(root: string, workflow: string, instanceId: string, out
   pf.mermaid = renderMermaid(flow, pf.state, instDir)
   pf.write(path.join(instDir, 'process.md'))
 
-  return `已推进到 ${nextNode.data.label}`
+  return `产物已保存，请执行 \`ocean workflow next --instance ${instanceId}\` 推进工作流并执行下一个节点的任务`
 }
 
 // ---------------------------------------------------------------------------
