@@ -1,14 +1,16 @@
+/**
+ * 状态中文映射。同时服务两种语义不同的状态：
+ * - 实例整体状态（三态）：pending / running / completed
+ * - 节点 trace 事件状态（时间线表）：active / completed / failed
+ * 两者仅在 completed 上同形，其余不可混用。
+ */
 export function formatStatus(status: string): string {
   const statusMap: Record<string, string> = {
+    pending: '待执行',
+    running: '执行中',
     completed: '已完成',
     active: '执行中',
-    executing: '执行中',
-    idle: '待执行',
-    awaitingchoice: '等待选择',
-    awaiting_choice: '等待选择',
-    aborted: '已中止',
     failed: '失败',
-    'in-progress': '进行中',
     unknown: '未知',
   }
   return statusMap[status] || status
