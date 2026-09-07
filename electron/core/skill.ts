@@ -83,6 +83,10 @@ function validateAttachments(attachments: SkillAttachments): void {
     const seen = new Set<string>()
     for (const file of files) {
       assertSafeFileName(subDir, file && file.name)
+      // 与 addResource 的内容必填校验保持一致，避免同一语义两条路径规则不对称
+      if (typeof file.content !== 'string' || !file.content.trim()) {
+        throw new Error(`${subDir} 附件 ${file.name} 内容为空（与 addResource 一致，附属文件内容必填）`)
+      }
       if (seen.has(file.name)) {
         throw new Error(`${subDir} 文件名重复: ${file.name}`)
       }
@@ -112,7 +116,7 @@ export type SkillResourceType = 'scripts' | 'references' | 'examples'
 export function listResources(root: string, name: string, type: string): string[] {
   const skillDir = requireSkill(root, name)
   const t = assertResourceType(type)
-  const d = path.join(skillDir, t)
+  const d = resolveTypeDir(skillDir, t)
   if (!fs.existsSync(d)) return []
   // 只排除目录：保留普通文件与符号链接，与 GUI list-skill-resources 的无过滤 readdirSync 对齐
   return fs.readdirSync(d, { withFileTypes: true }).filter(e => !e.isDirectory()).map(e => e.name).sort()
@@ -122,7 +126,7 @@ export function readResource(root: string, name: string, type: string, fileName:
   const skillDir = requireSkill(root, name)
   const t = assertResourceType(type)
   assertSafeFileName(t, fileName)
-  const filePath = path.join(skillDir, t, fileName)
+  const filePath = path.join(resolveTypeDir(skillDir, t), fileName)
   if (!fs.existsSync(filePath)) throw new Error(`${t} 下不存在文件: ${fileName}`)
   return fs.readFileSync(filePath, 'utf-8')
 }
@@ -138,8 +142,9 @@ export function addResource(root: string, name: string, type: string, fileName: 
   if (!content || !content.trim()) {
     throw new Error('资源文件内容为必填项（与 GUI SkillResourceEditModal 新建校验一致）')
   }
-  fs.mkdirSync(path.join(skillDir, t), { recursive: true })
-  const filePath = path.join(skillDir, t, fileName)
+  const dir = resolveTypeDir(skillDir, t)
+  fs.mkdirSync(dir, { recursive: true })
+  const filePath = path.join(dir, fileName)
   if (fs.existsSync(filePath)) {
     throw new Error(`${t} 下文件已存在: ${fileName}（GUI 新建时同样拒绝重名）`)
   }
@@ -150,15 +155,33 @@ export function deleteResource(root: string, name: string, type: string, fileNam
   const skillDir = requireSkill(root, name)
   const t = assertResourceType(type)
   assertSafeFileName(t, fileName)
-  const filePath = path.join(skillDir, t, fileName)
+  const filePath = path.join(resolveTypeDir(skillDir, t), fileName)
   if (fs.existsSync(filePath)) fs.unlinkSync(filePath)
 }
 
 function requireSkill(root: string, name: string): string {
   assertSkillName(name)
-  const skillDir = path.join(baseDir(root), name)
+  const d = baseDir(root)
+  const skillDir = path.join(d, name)
   if (!fs.existsSync(path.join(skillDir, 'SKILL.md'))) throw new Error(`技能不存在: ${name}`)
+  // 技能目录本身被换成指向 skills 根外的符号链接时，后续读写会穿透，故先校真实路径
+  assertWithinParent(fs.realpathSync(d), fs.realpathSync(skillDir), '技能目录')
   return skillDir
+}
+
+function assertWithinParent(realParent: string, realTarget: string, label: string): void {
+  if (!realTarget.startsWith(realParent + path.sep)) {
+    throw new Error(`${label}的真实路径超出允许范围，已拒绝以避免越界读写: ${realTarget}`)
+  }
+}
+
+// 解析附属文件类型目录；若已存在则先确认其真实路径仍在技能目录内
+function resolveTypeDir(skillDir: string, t: SkillResourceType): string {
+  const dir = path.join(skillDir, t)
+  if (fs.existsSync(dir)) {
+    assertWithinParent(fs.realpathSync(skillDir), fs.realpathSync(dir), `${t} 目录`)
+  }
+  return dir
 }
 
 function assertSkillName(name: string): void {
