@@ -104,6 +104,24 @@ function readContent(flags: Record<string, string | boolean>): string {
   return require('fs').readFileSync(0, 'utf-8')
 }
 
+function readAttachmentFiles(flags: Record<string, string | boolean>, key: string): skillCrud.SkillAttachment[] {
+  const raw = flags[key]
+  if (typeof raw !== 'string' || !raw.trim()) return []
+  const files: skillCrud.SkillAttachment[] = []
+  for (const seg of raw.split(',')) {
+    const p = seg.trim()
+    if (!p) continue
+    let content: string
+    try {
+      content = require('fs').readFileSync(p, 'utf-8')
+    } catch (e: any) {
+      throw new UsageError(`读取 --${key} 文件失败 ${p}: ${e.message}`)
+    }
+    files.push({ name: require('path').basename(p), content })
+  }
+  return files
+}
+
 function rawOut(s: string): void {
   process.stdout.write(s + '\n')
 }
@@ -612,6 +630,108 @@ flag:
   stdin                        管道输入（三选一）`)
       break
     case 'skill':
+      if (subcommand) {
+        switch (subcommand) {
+          case 'list':
+            out(`ocean skill list — 列出所有技能
+
+用法: ocean skill list [--json]
+
+说明:
+  返回 {asset-root}/skills/ 下的技能目录名，按字母序排列
+  资产根随 ocean config asset-root 在 .pi 与 .claude 间自动切换`)
+            break
+          case 'read':
+            out(`ocean skill read — 读取技能正文
+
+用法: ocean skill read <技能名> [--json]
+
+参数:
+  <技能名>   必填，只能含字母、数字、中划线、下划线
+
+说明:
+  输出 SKILL.md 去掉 frontmatter 后的正文
+  技能不存在时报「技能不存在: <技能名>」并 exit 1
+  要看附属文件请用 ocean skill resource read`)
+            break
+          case 'create':
+            out(`ocean skill create — 创建技能（可一次带上附属文件）
+
+用法: ocean skill create <技能名> --description <text> (--content <文本> | --content-file <路径> | stdin)
+                 --references <文件,文件> --examples <文件,文件> [--scripts <文件,文件>] [--json]
+
+必填: --description、正文、--references、--examples
+选填: --scripts
+
+附属文件参数说明:
+  值为逗号分隔的源文件，可裸文件名、相对路径或绝对路径
+  目标子目录由参数名固定决定，源文件不需按这些目录组织
+  落盘文件名取源文件的 basename；同一类内 basename 重复会被拒
+    --references  写入 skills/{name}/references/
+    --examples    写入 skills/{name}/examples/
+    --scripts     写入 skills/{name}/scripts/
+  注: GUI 侧 create-skill-directory 对三类附件均为可选，上面的必填是 CLI 额外的产品约束；
+      写入能力与字段形状则与 GUI CreateSkillInput 同构
+
+失败行为: 缺必填 exit 2；全部校验先于写盘，失败不留半成品目录
+注意: --content-file 传入自带 frontmatter 的文件会产生重复 frontmatter 块，正文建议走 --content 或 stdin`)
+            break
+          case 'update':
+            out(`ocean skill update — 更新技能正文
+
+用法: ocean skill update <技能名> (--content <文本> | --content-file <路径> | stdin)
+
+说明:
+  保留原 frontmatter 全部字段，只替换正文
+  不改动 references/examples/scripts 里的附属文件（请用 ocean skill resource）
+  --content-file 传入自带 frontmatter 的文件会产生重复块，正文建议走 --content 或 stdin`)
+            break
+          case 'delete':
+            out(`ocean skill delete — 删除技能
+
+用法: ocean skill delete <技能名>
+
+说明:
+  递归删除整个技能目录，含 SKILL.md 与三类附属文件
+  技能不存在时静默成功（幂等）`)
+            break
+          case 'resource':
+            out(`ocean skill resource — 管理技能的单个附属文件
+
+对齐 GUI 技能页四个 Tab 对 scripts/references/examples 的逐个操作。
+
+用法:
+  ocean skill resource list   <技能名> <类型>
+  ocean skill resource read   <技能名> <类型> <文件名>
+  ocean skill resource create <技能名> <类型> <文件名> (--content <文本> | --content-file <路径> | stdin)
+  ocean skill resource delete <技能名> <类型> <文件名>
+
+参数:
+  <技能名>   必须是已存在的技能（GUI 也仅在编辑态提供这些操作）
+  <类型>     scripts | references | examples
+  <文件名>   不得含 . 、.. 或路径分隔符
+
+子命令语义（逐条对齐 GUI）:
+  list    列出该类型下的文件；类型目录不存在时返回空而非报错
+  read    输出文件内容；文件不存在报错
+  create  新建文件。重名直接拒绝且原文件不被覆盖（对齐 GUI 新建态校验）；内容必填；
+          类型子目录缺失时自动创建（对齐 getSkillSubDir）
+  delete  删除指定文件；不存在时静默成功
+
+与 GUI 的对应关系:
+  list   → list-skill-resources    read   → load-skill-resource
+  create → save-skill-resource     delete → delete-skill-resource
+
+说明: GUI 的 save IPC 本身是无条件覆写，拒绝重名来自 UI 层的新建态校验；
+      因此本 CLI 要改已存在文件的内容需先 delete 再 create。
+      文件名越界防护是 CLI 额外加固，GUI 侧该缺口未修。`)
+            break
+          default:
+            out(`未知的 skill 子命令: ${subcommand}
+运行 'ocean skill --help' 查看可用子命令。`)
+        }
+        break
+      }
       out(`ocean skill — 技能 CRUD
 
 用法: ocean skill <subcommand> <name> [--flags...]
@@ -622,12 +742,35 @@ flag:
   create <name>                创建技能
   update <name>                更新技能
   delete <name>                删除技能
+  resource <sub> <skill> <类型> [文件名]   管理 scripts/references/examples 里的单个文件
 
 常用 flag:
-  --description <text>         技能描述
+  --description <text>         技能描述（create 必填）
   --content "文本"             短内容直接传
   --content-file <path>         长内容指向文件
-  stdin                        管道输入（三选一）`)
+  stdin                        管道输入（三选一）
+
+create 附属文件 flag（目标子目录由参数名固定决定，源文件不需按目录组织）:
+  传入值为逗号分隔的源文件，可裸文件名、相对路径或绝对路径；落盘文件名取源文件的 basename
+  --references <f1,f2>        → skills/{name}/references/（本项目约束：create 必填，至少一个）
+  --examples <f1,f2>          → skills/{name}/examples/（本项目约束：create 必填，至少一个）
+  --scripts <f1,f2>           → skills/{name}/scripts/（选填）
+  注：GUI 侧 create-skill-directory 对三类附件均为可选；上面的“必填”是 CLI 额外的产品约束，不是 GUI 行为。
+      写入能力与字段形状则与 GUI CreateSkillInput 同构。
+
+resource 子命令（类型 = scripts | references | examples，对应 GUI 技能页四个 Tab 的文件操作）:
+  list   <skill> <类型>                        列出该类型下的文件
+  read   <skill> <类型> <文件名>               输出文件内容
+  create <skill> <类型> <文件名> --content ...  新建一个文件（已存在则拒绝，类型子目录缺失时自动创建）
+  delete <skill> <类型> <文件名>               删除一个文件
+
+示例:
+  ocean skill create my-skill --description "..." --content-file SKILL.md \
+    --references note.md,api.md --examples demo.md --scripts build.sh
+  ocean skill resource create my-skill references guide.md --content "# 指南"
+  ocean skill resource list my-skill references
+  ocean skill resource read my-skill references guide.md
+  ocean skill resource delete my-skill references guide.md`)
       break
     case 'config':
       out(`ocean config — 配置管理
@@ -1255,10 +1398,22 @@ function handleSkill(root: string, args: ReturnType<typeof parseArgs>): void {
     }
     case 'create': {
       const name = args.positional[0]
+      const references = readAttachmentFiles(args.flags, 'references')
+      const examples = readAttachmentFiles(args.flags, 'examples')
+      const scripts = readAttachmentFiles(args.flags, 'scripts')
+      if (!references.length) {
+        throw new UsageError('创建技能时 --references <path1,path2> 为必填参数，需至少提供一个参考文档文件')
+      }
+      if (!examples.length) {
+        throw new UsageError('创建技能时 --examples <path1,path2> 为必填参数，需至少提供一个示例文件')
+      }
       const content = readContent(args.flags)
       const description = args.flags.description as string
-      skillCrud.create(root, name, content, description)
-      args.flags.json ? printJson({ action: 'created', name }) : printAction('created', { name })
+      skillCrud.create(root, name, content, description, { scripts, references, examples })
+      const names = (list: skillCrud.SkillAttachment[]) => list.map(f => f.name).join(',') || '-'
+      args.flags.json
+        ? printJson({ action: 'created', name, attachments: { references: references.map(f => f.name), examples: examples.map(f => f.name), scripts: scripts.map(f => f.name) } })
+        : printAction('created', { name, references: names(references), examples: names(examples), scripts: names(scripts) })
       break
     }
     case 'update': {
@@ -1274,12 +1429,65 @@ function handleSkill(root: string, args: ReturnType<typeof parseArgs>): void {
       args.flags.json ? printJson({ action: 'deleted', name }) : printAction('deleted', { name })
       break
     }
+    case 'resource':
+      handleSkillResource(root, args)
+      break
     default:
       if (!cmd) {
         printHelp('skill')
         return
       }
       throw new UsageError(`未知的 skill 子命令: ${cmd}\n运行 'ocean skill --help' 查看详细用法。`)
+  }
+}
+
+// skill resource 子命令组：与 GUI 技能页对 scripts/references/examples 的四个操作对齐
+function handleSkillResource(root: string, args: ReturnType<typeof parseArgs>): void {
+  const [action, name, type, fileName] = args.positional
+  const json = !!args.flags.json
+  if (!action) {
+    // 不传 json：_helpJsonBuf 的打印只发生在 main 的 --help 分支，这里传入会造成静默空输出
+    printHelp('skill', 'resource')
+    return
+  }
+  switch (action) {
+    case 'list': {
+      requirePositional(action, [name, type], ['<技能名>', '<类型>'])
+      const files = skillCrud.listResources(root, name, type)
+      json ? printJson({ name, type, files }) : printList(files, `${name}/${type}`)
+      break
+    }
+    case 'read': {
+      requirePositional(action, [name, type, fileName], ['<技能名>', '<类型>', '<文件名>'])
+      const content = skillCrud.readResource(root, name, type, fileName)
+      json ? printJson({ name, type, fileName, content }) : out(content)
+      break
+    }
+    case 'create': {
+      requirePositional(action, [name, type, fileName], ['<技能名>', '<类型>', '<文件名>'])
+      const content = readContent(args.flags)
+      skillCrud.addResource(root, name, type, fileName, content)
+      json
+        ? printJson({ action: 'created', name, type, fileName })
+        : printAction('created', { name, type, file: fileName })
+      break
+    }
+    case 'delete': {
+      requirePositional(action, [name, type, fileName], ['<技能名>', '<类型>', '<文件名>'])
+      skillCrud.deleteResource(root, name, type, fileName)
+      json
+        ? printJson({ action: 'deleted', name, type, fileName })
+        : printAction('deleted', { name, type, file: fileName })
+      break
+    }
+    default:
+      throw new UsageError(`未知的 skill resource 子命令: ${action}\n运行 'ocean skill --help' 查看详细用法。`)
+  }
+}
+
+function requirePositional(action: string, vals: (string | undefined)[], labels: string[]): void {
+  for (let i = 0; i < vals.length; i++) {
+    if (!vals[i]) throw new UsageError(`skill resource ${action} 缺少参数 ${labels[i]}`)
   }
 }
 

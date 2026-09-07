@@ -13,5 +13,6 @@
     "outDir": "./dist",
     "rootDir": "."
   },
-  "include": ["core/**/*.ts", "bin/**/*.ts"]
+  "include": ["core/**/*.ts", "bin/**/*.ts"],
+  "exclude": ["dist", "**/*.test.ts"]
 }

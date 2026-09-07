@@ -11,7 +11,8 @@
     "build": "tsc && vite build",
     "build:electron": "tsc -p electron/tsconfig.json && esbuild electron/core/workflow.ts --bundle --platform=node --format=cjs --outfile=electron/dist/core/workflow.js && esbuild electron/bin/ocean.ts --bundle --platform=node --format=cjs --outfile=electron/dist/bin/ocean.js && node -e \"require('fs').writeFileSync('electron/dist/package.json', JSON.stringify({type:'commonjs', version: require('./package.json').version}))\"",
     "electron:build": "npm run build && npm run build:electron && electron-builder",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "vitest run"
   },
   "build": {
     "appId": "com.ocean.app",
