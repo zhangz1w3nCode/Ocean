@@ -2,7 +2,7 @@ import * as fs from 'node:fs'
 import * as path from 'node:path'
 
 import { ProcessFile, formatLocalTime, statusAsStr, sortedJsonStringify } from './state'
-import { artifactDir } from './artifact'
+import { artifactDir, getLatestVersion, listVersions, readContentAtVersion, updateDetail } from './artifact'
 
 // ---------------------------------------------------------------------------
 // Private types
@@ -22,6 +22,7 @@ interface ArtifactEntry {
   order: number
   node: string
   invoke: string
+  version: string
   artifact_type: ArtifactType
   status: string
   time: string
@@ -54,24 +55,28 @@ function collectEntries(root: string, workflow: string, instanceId: string): [Ar
   for (let i = 0; i < pf.trace.length; i++) {
     const event = pf.trace[i]
     let atype: ArtifactType
+    let version = '-'
     if (event.invoke === '-') {
       atype = ArtifactType.None
     } else {
-      const dir = artifactDir(root, workflow, instanceId, event.node, event.invoke)
-      const detailPath = path.join(dir, 'detail.md')
-      const errorPath = path.join(dir, 'error.md')
-      if (fileExistsNonEmpty(detailPath)) {
-        atype = ArtifactType.Detail
-      } else if (fileExistsNonEmpty(errorPath)) {
-        atype = ArtifactType.Error
-      } else {
+      const latest = getLatestVersion(root, workflow, instanceId, event.node, event.invoke)
+      if (latest === 0) {
         atype = ArtifactType.None
+      } else {
+        version = `v${latest}`
+        const content = readContentAtVersion(root, workflow, instanceId, event.node, event.invoke, version)
+        if (content) {
+          atype = content[0] === 'detail' ? ArtifactType.Detail : ArtifactType.Error
+        } else {
+          atype = ArtifactType.None
+        }
       }
     }
     entries.push({
       order: i + 1,
       node: event.node,
       invoke: event.invoke,
+      version,
       artifact_type: atype,
       status: event.status,
       time: event.time,
@@ -81,29 +86,26 @@ function collectEntries(root: string, workflow: string, instanceId: string): [Ar
   return [entries, pf]
 }
 
+// 读取最新版本的产物内容
+// 注：getLatestVersion 和 readContentAtVersion 各自扫描目录，存在轻微冗余 I/O
+// CLI 场景下 trace 长度有限，性能影响可忽略
 function readContent(
   root: string, workflow: string, instanceId: string, node: string, invoke: string,
 ): [ArtifactType, string] | null {
-  const dir = artifactDir(root, workflow, instanceId, node, invoke)
-  const detailPath = path.join(dir, 'detail.md')
-  const errorPath = path.join(dir, 'error.md')
-  if (fs.existsSync(detailPath)) {
-    try {
-      const content = fs.readFileSync(detailPath, 'utf-8')
-      if (content !== '') return [ArtifactType.Detail, content]
-    } catch {
-      // fall through
-    }
-  }
-  if (fs.existsSync(errorPath)) {
-    try {
-      const content = fs.readFileSync(errorPath, 'utf-8')
-      if (content !== '') return [ArtifactType.Error, content]
-    } catch {
-      // fall through
-    }
-  }
-  return null
+  const latest = getLatestVersion(root, workflow, instanceId, node, invoke)
+  if (latest === 0) return null
+  const raw = readContentAtVersion(root, workflow, instanceId, node, invoke, `v${latest}`)
+  if (!raw) return null
+  return [raw[0] === 'detail' ? ArtifactType.Detail : ArtifactType.Error, raw[1]]
+}
+
+function readContentVersion(
+  root: string, workflow: string, instanceId: string,
+  node: string, invoke: string, version: string,
+): [ArtifactType, string] | null {
+  const raw = readContentAtVersion(root, workflow, instanceId, node, invoke, version)
+  if (!raw) return null
+  return [raw[0] === 'detail' ? ArtifactType.Detail : ArtifactType.Error, raw[1]]
 }
 
 // ---------------------------------------------------------------------------
@@ -118,6 +120,7 @@ export function list(root: string, workflow: string, instanceId: string, json: b
       order: e.order,
       node: e.node,
       invoke: e.invoke,
+      version: e.version,
       type: artifactTypeStr(e.artifact_type),
       status: e.status,
       time: e.time,
@@ -131,9 +134,9 @@ export function list(root: string, workflow: string, instanceId: string, json: b
     })
   }
 
-  let s = '| # | 节点 | 执行ID | 类型 | 状态 | 执行时间 |\n|---|------|--------|------|------|---------|\n'
+  let s = '| # | 节点 | 执行ID | 版本 | 类型 | 状态 | 执行时间 |\n|---|------|--------|------|------|------|---------|\n'
   for (const e of entries) {
-    s += `| ${e.order} | ${nodeDisplay(e.node, e.branch)} | ${e.invoke} | ${artifactTypeStr(e.artifact_type)} | ${e.status} | ${e.time} |\n`
+    s += `| ${e.order} | ${nodeDisplay(e.node, e.branch)} | ${e.invoke} | ${e.version} | ${artifactTypeStr(e.artifact_type)} | ${e.status} | ${e.time} |\n`
   }
   return s
 }
@@ -145,6 +148,7 @@ export function list(root: string, workflow: string, instanceId: string, json: b
 export function view(
   root: string, workflow: string, instanceId: string,
   node?: string, invoke?: string, json: boolean = false,
+  version?: string,
 ): string {
   const [entries] = collectEntries(root, workflow, instanceId)
 
@@ -164,7 +168,9 @@ export function view(
 
   const results = matched.map((e) => ({
     entry: e,
-    content: readContent(root, workflow, instanceId, e.node, e.invoke),
+    content: version
+      ? readContentVersion(root, workflow, instanceId, e.node, e.invoke, version)
+      : readContent(root, workflow, instanceId, e.node, e.invoke),
   }))
 
   if (json) {
@@ -176,6 +182,7 @@ export function view(
         order: e.order,
         node: e.node,
         invoke: e.invoke,
+        version: version ?? e.version,
         type: atype,
         status: e.status,
         time: e.time,
@@ -190,7 +197,8 @@ export function view(
   let s = ''
   for (let i = 0; i < results.length; i++) {
     const { entry: e, content } = results[i]
-    s += `## [${i + 1}/${total}] ${nodeDisplay(e.node, e.branch)} (${e.invoke})\n`
+    const verLabel = version ?? e.version
+    s += `## [${i + 1}/${total}] ${nodeDisplay(e.node, e.branch)} (${e.invoke} ${verLabel})\n`
     if (content) {
       const [atype, text] = content
       s += `> 类型: ${artifactTypeStr(atype)} | 状态: ${e.status} | 时间: ${e.time}\n\n`
@@ -225,6 +233,7 @@ export function search(
       order: e.order,
       node: e.node,
       invoke: e.invoke,
+      version: e.version,
       type: artifactTypeStr(e.artifact_type),
       status: e.status,
       time: e.time,
@@ -233,9 +242,9 @@ export function search(
     return sortedJsonStringify({ instance: instanceId, keyword, results: artifacts })
   }
 
-  let s = '| # | 节点 | 执行ID | 类型 | 状态 | 执行时间 |\n|---|------|--------|------|------|---------|\n'
+  let s = '| # | 节点 | 执行ID | 版本 | 类型 | 状态 | 执行时间 |\n|---|------|--------|------|------|------|---------|\n'
   for (const e of results) {
-    s += `| ${e.order} | ${nodeDisplay(e.node, e.branch)} | ${e.invoke} | ${artifactTypeStr(e.artifact_type)} | ${e.status} | ${e.time} |\n`
+    s += `| ${e.order} | ${nodeDisplay(e.node, e.branch)} | ${e.invoke} | ${e.version} | ${artifactTypeStr(e.artifact_type)} | ${e.status} | ${e.time} |\n`
   }
   return s
 }
@@ -270,6 +279,7 @@ export function timeline(root: string, workflow: string, instanceId: string, jso
         order: e.order,
         node: e.node,
         invoke: e.invoke,
+        version: e.version,
         type: atype,
         status: e.status,
         time: e.time,
@@ -299,13 +309,13 @@ export function timeline(root: string, workflow: string, instanceId: string, jso
     if (!context.endsWith('\n')) s += '\n'
   }
   s += '\n## 执行时间线\n\n'
-  s += '| # | 节点 | 执行ID | 类型 | 状态 | 执行时间 |\n|---|------|--------|------|------|---------|\n'
+  s += '| # | 节点 | 执行ID | 版本 | 类型 | 状态 | 执行时间 |\n|---|------|--------|------|------|------|---------|\n'
   for (const e of entries) {
-    s += `| ${e.order} | ${nodeDisplay(e.node, e.branch)} | ${e.invoke} | ${artifactTypeStr(e.artifact_type)} | ${e.status} | ${e.time} |\n`
+    s += `| ${e.order} | ${nodeDisplay(e.node, e.branch)} | ${e.invoke} | ${e.version} | ${artifactTypeStr(e.artifact_type)} | ${e.status} | ${e.time} |\n`
   }
   s += '\n## 产物详情\n\n'
   for (const { entry: e, content } of results) {
-    s += `### [${e.order}] ${nodeDisplay(e.node, e.branch)} (${e.invoke})\n`
+    s += `### [${e.order}] ${nodeDisplay(e.node, e.branch)} (${e.invoke} ${e.version})\n`
     if (content) {
       const [atype, text] = content
       s += `> 类型: ${artifactTypeStr(atype)} | 状态: ${e.status} | 时间: ${e.time}\n\n`
@@ -418,10 +428,109 @@ function diffLineValue(line: DiffLine): string {
 
 const MAX_DIFF_LINES = 5000
 
+// 格式化 diff 行为 diff 代码块字符串
+function formatDiffLines(lines: DiffLine[]): string {
+  if (lines.length === 0) return '无变更\n'
+  let s = '```diff\n'
+  for (const l of lines) {
+    switch (l.type) {
+      case DiffLineType.Context: s += `  ${l.text}\n`; break
+      case DiffLineType.Added: s += `+ ${l.text}\n`; break
+      case DiffLineType.Removed: s += `- ${l.text}\n`; break
+      case DiffLineType.Separator: s += '...\n'; break
+    }
+  }
+  s += '```\n'
+  return s
+}
+
+// 格式化 diff 行为 JSON changes 数组
+function formatDiffChanges(lines: DiffLine[]): any[] {
+  return lines.map((l) => ({ type: diffLineTag(l.type), value: diffLineValue(l) }))
+}
+
+// 计算 diff 并应用 context 限制
+function computeAndLimitDiff(text1: string, text2: string, context: number, full: boolean): DiffLine[] {
+  const lines1 = text1.split('\n').filter((_, idx, arr) => !(text1 === '' && arr.length === 1))
+  const lines2 = text2.split('\n').filter((_, idx, arr) => !(text2 === '' && arr.length === 1))
+  if (lines1.length > MAX_DIFF_LINES || lines2.length > MAX_DIFF_LINES) {
+    throw new Error(`产物行数超过 ${MAX_DIFF_LINES} 行上限，已跳过 diff 计算`)
+  }
+  const raw = computeDiff(text1, text2)
+  return full ? raw : applyContextLimit(raw, context)
+}
+
 export function diff(
   root: string, workflow: string, instanceId: string,
   node: string, json: boolean, context: number, full: boolean,
+  invoke?: string, versionFrom?: string, versionTo?: string,
 ): string {
+  // Version-based diff: compare specific versions within same invoke
+  if (invoke && versionFrom && versionTo) {
+    const content1 = readContentVersion(root, workflow, instanceId, node, invoke, versionFrom)
+    const content2 = readContentVersion(root, workflow, instanceId, node, invoke, versionTo)
+    if (!content1) throw new Error(`未找到 ${node} (${invoke}) ${versionFrom} 的产物`)
+    if (!content2) throw new Error(`未找到 ${node} (${invoke}) ${versionTo} 的产物`)
+
+    const display = computeAndLimitDiff(content1[1], content2[1], context, full)
+
+    if (json) {
+      return sortedJsonStringify({
+        instance: instanceId, node, invoke,
+        diffs: [{
+          from_version: versionFrom, to_version: versionTo,
+          changes: formatDiffChanges(display),
+        }],
+      })
+    }
+
+    let s = `## ${node} (${invoke}) ${versionFrom} → ${versionTo}\n`
+    s += `> 对比: ${versionFrom} → ${versionTo}\n\n`
+    s += formatDiffLines(display)
+    return s
+  }
+
+  // Version diff within same invoke: compare adjacent versions
+  if (invoke) {
+    const versions = listVersions(root, workflow, instanceId, node, invoke)
+    if (versions.length === 0) {
+      const latest = getLatestVersion(root, workflow, instanceId, node, invoke)
+      if (latest === 0) throw new Error(`未找到节点 ${node} (${invoke}) 的产物`)
+      throw new Error(`节点 ${node} (${invoke}) 仅 1 个版本，需至少 2 个版本才能对比`)
+    }
+    if (versions.length < 2) {
+      throw new Error(`节点 ${node} (${invoke}) 仅 ${versions.length} 个版本，需至少 2 个版本才能对比`)
+    }
+
+    const diffs: Array<{ v1: string; v2: string; lines: DiffLine[] }> = []
+    for (let i = 0; i < versions.length - 1; i++) {
+      const v1 = versions[i]
+      const v2 = versions[i + 1]
+      const c1 = readContentVersion(root, workflow, instanceId, node, invoke, v1)?.[1] ?? ''
+      const c2 = readContentVersion(root, workflow, instanceId, node, invoke, v2)?.[1] ?? ''
+      const display = computeAndLimitDiff(c1, c2, context, full)
+      diffs.push({ v1, v2, lines: display })
+    }
+
+    if (json) {
+      const diffArr = diffs.map(({ v1, v2, lines }) => ({
+        from_version: v1, to_version: v2,
+        changes: formatDiffChanges(lines),
+      return sortedJsonStringify({ instance: instanceId, node, invoke, diffs: diffArr })
+    }
+
+    let s = ''
+    for (let i = 0; i < diffs.length; i++) {
+      const { v1, v2, lines } = diffs[i]
+      s += `## [${i + 1}→${i + 2}] ${node} (${invoke}) ${v1} → ${v2}\n`
+      s += `> 对比: ${v1} → ${v2}\n\n`
+      s += formatDiffLines(lines)
+      if (i + 1 < diffs.length) s += '\n'
+    }
+    return s
+  }
+
+  // Original: compare adjacent invokes (backward compat)
   const [entries] = collectEntries(root, workflow, instanceId)
   const matched = entries.filter((e) => e.node === node)
 
@@ -439,15 +548,7 @@ export function diff(
     const { entry: e1, content: text1 } = contents[i]
     const { entry: e2, content: text2 } = contents[i + 1]
 
-    const lines1 = text1.split('\n').filter((_, idx, arr) => !(text1 === '' && arr.length === 1))
-    const lines2 = text2.split('\n').filter((_, idx, arr) => !(text2 === '' && arr.length === 1))
-
-    if (lines1.length > MAX_DIFF_LINES || lines2.length > MAX_DIFF_LINES) {
-      throw new Error(`产物行数超过 ${MAX_DIFF_LINES} 行上限，已跳过 diff 计算`)
-    }
-
-    const raw = computeDiff(text1, text2)
-    const display = full ? raw : applyContextLimit(raw, context)
+    const display = computeAndLimitDiff(text1, text2, context, full)
     diffs.push({ e1, e2, lines: display })
   }
 
@@ -455,11 +556,13 @@ export function diff(
     const diffArr = diffs.map(({ e1, e2, lines }) => ({
       from_invoke: e1.invoke,
       to_invoke: e2.invoke,
+      from_version: e1.version,
+      to_version: e2.version,
       from_status: e1.status,
       to_status: e2.status,
       from_time: e1.time,
       to_time: e2.time,
-      changes: lines.map((l) => ({ type: diffLineTag(l.type), value: diffLineValue(l) })),
+      changes: formatDiffChanges(lines),
     }))
     return sortedJsonStringify({ instance: instanceId, node, diffs: diffArr })
   }
@@ -467,25 +570,33 @@ export function diff(
   let s = ''
   for (let i = 0; i < diffs.length; i++) {
     const { e1, e2, lines } = diffs[i]
-    s += `## [${i + 1}→${i + 2}] ${nodeDisplay(e1.node, e1.branch)} (${e1.invoke})\n`
-    s += `> 对比: ${e1.invoke} (${e1.status}, ${e1.time}) → ${e2.invoke} (${e2.status}, ${e2.time})\n\n`
-    if (lines.length === 0) {
-      s += '无变更\n'
-    } else {
-      s += '```diff\n'
-      for (const l of lines) {
-        switch (l.type) {
-          case DiffLineType.Context: s += `  ${l.text}\n`; break
-          case DiffLineType.Added: s += `+ ${l.text}\n`; break
-          case DiffLineType.Removed: s += `- ${l.text}\n`; break
-          case DiffLineType.Separator: s += '...\n'; break
-        }
-      }
-      s += '```\n'
+    s += `## [${i + 1}→${i + 2}] ${nodeDisplay(e1.node, e1.branch)} (${e1.invoke} ${e1.version})\n`
+    s += `> 对比: ${e1.invoke} ${e1.version} (${e1.status}, ${e1.time}) → ${e2.invoke} ${e2.version} (${e2.status}, ${e2.time})\n\n`
+    s += formatDiffLines(lines)
     }
     if (i + 1 < diffs.length) s += '\n'
   }
   return s
+}
+
+// ---------------------------------------------------------------------------
+// update
+// ---------------------------------------------------------------------------
+
+export function update(
+  root: string, workflow: string, instanceId: string,
+  node: string, invoke: string, content: string,
+): string {
+  if (!node) throw new Error('请通过 --node 指定节点')
+  if (!invoke) throw new Error('请通过 --invoke 指定执行ID')
+  if (content.trim() === '') throw new Error('请通过 --output / --output-file / stdin 提供产物')
+
+  const latest = getLatestVersion(root, workflow, instanceId, node, invoke)
+  if (latest === 0) throw new Error(`未找到节点 ${node} (${invoke}) 的产物，无法更新`)
+
+  const filePath = updateDetail(root, workflow, instanceId, node, invoke, content)
+  const newVersion = `v${latest + 1}`
+  return `已更新产物 ${newVersion}\n路径: ${filePath}`
 }
 
 // ---------------------------------------------------------------------------

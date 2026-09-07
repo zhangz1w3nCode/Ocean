@@ -196,7 +196,7 @@ function formatDurationMs(start: string, end: string): number {
 }
 
 
-const TraceTable = memo(({ trace, artifacts, flowData }: { trace: InstanceTraceEvent[]; artifacts: InstanceArtifact[]; flowData: { nodes: any[]; edges: any[] } | null }) => {
+const TraceTable = memo(({ trace, artifacts, flowData, onViewArtifact }: { trace: InstanceTraceEvent[]; artifacts: InstanceArtifact[]; flowData: { nodes: any[]; edges: any[] } | null; onViewArtifact?: (art: InstanceArtifact, nodeName: string, allArts: InstanceArtifact[]) => void }) => {
   const [sortCol, setSortCol] = useState<'time' | 'duration'>('time')
   const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('asc')
 
@@ -268,7 +268,8 @@ const TraceTable = memo(({ trace, artifacts, flowData }: { trace: InstanceTraceE
           <div className="flex-1 min-w-0 flex justify-center">
             {art ? (
               <button onClick={() => {
-                if (useWorkflowInstanceStore.getState().selectedInstance) useWorkflowInstanceStore.getState().selectArtifact(art)
+                const nodeArts = artifacts.filter(a => a.nodeName === evt.node)
+                onViewArtifact?.(art, evt.node, nodeArts)
               }} className="text-xs text-blue-500 hover:text-blue-600 hover:underline cursor-pointer">查看</button>
             ) : (
               <span className="text-xs text-macos-text-tertiary">-</span>
@@ -295,7 +296,7 @@ const ArtifactList = memo(({ artifacts, selected, onSelect }: { artifacts: Insta
         >
           <div className="w-1.5 h-1.5 rounded-full bg-gray-300 flex-shrink-0" />
           <span className="text-sm text-macos-text truncate flex-1 min-w-0">{art.nodeName}</span>
-          <span className="text-[10px] font-mono text-macos-text-tertiary flex-shrink-0">{art.invokeId.replace('invoke-', '')}</span>
+          <span className="text-[10px] font-mono text-macos-text-tertiary flex-shrink-0">{art.invokeId.replace('invoke-', '')} {art.version}</span>
         </button>
       ))}
     </div>
@@ -303,10 +304,18 @@ const ArtifactList = memo(({ artifacts, selected, onSelect }: { artifacts: Insta
 )
 
 const InstanceDetail: FC = () => {
-  const { selectedInstance, detail, isLoadingDetail, selectedArtifact, selectInstance, selectArtifact, clearDetail, isLiveRefresh, startLiveRefresh, stopLiveRefresh } = useWorkflowInstanceStore()
+  const { selectedInstance, detail, isLoadingDetail, selectInstance, clearDetail, isLiveRefresh, startLiveRefresh, stopLiveRefresh } = useWorkflowInstanceStore()
   const [isFlowFullscreen, setIsFlowFullscreen] = useState(false)
   const [isContextFullscreen, setIsContextFullscreen] = useState(false)
-  const [diffData, setDiffData] = useState<{ nodeName: string; pairs: { oldContent: string; newContent: string; fromInvoke: string; toInvoke: string }[] } | null>(null)
+  const [diffData, setDiffData] = useState<{
+    nodeName: string; arts: InstanceArtifact[];
+    fromInvoke: string; fromVersion: string;
+    toInvoke: string; toVersion: string;
+  } | null>(null)
+  const [detailArts, setDetailArts] = useState<InstanceArtifact[] | null>(null)
+  const [detailNodeName, setDetailNodeName] = useState('')
+  const [detailInvoke, setDetailInvoke] = useState('')
+  const [detailVersion, setDetailVersion] = useState('')
   const [artifactSearch, setArtifactSearch] = useState('')
   const [flowPos, setFlowPos] = useState({ x: Math.max(16, (window.innerWidth - 1000) / 2), y: 60 })
   const [flowDim, setFlowDim] = useState({ width: Math.min(1000, window.innerWidth - 32), height: Math.min(600, window.innerHeight - 80) })
@@ -489,7 +498,7 @@ const InstanceDetail: FC = () => {
               {detail.artifacts.length > 0 && (
                 <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
                   <div className="flex items-center justify-between mb-4">
-                    <span className="text-sm font-bold text-macos-text">产物 ({detail.artifacts.length})</span>
+                    <span className="text-sm font-bold text-macos-text">产物</span>
                     <div className="relative">
                       <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-macos-text-tertiary" />
                       <input
@@ -517,33 +526,25 @@ const InstanceDetail: FC = () => {
                       const nodeType = flowNode ? (typeLabels[flowNode.type] || flowNode.type) : '-'
                       const isMatched = artifactSearch && (nodeName.toLowerCase().includes(artifactSearch.toLowerCase()) || arts.some(a => a.content.toLowerCase().includes(artifactSearch.toLowerCase())))
                       return (
-                        <div key={nodeName} className={`rounded-lg border p-3 transition-colors ${isMatched ? 'border-blue-300 bg-blue-50/30' : 'border-gray-100 hover:border-gray-200 hover:bg-gray-50/50'}`}>
-                          <div className="flex items-center justify-between mb-2">
+                        <div key={nodeName} className={`rounded-lg border p-3 transition-colors cursor-pointer ${isMatched ? 'border-blue-300 bg-blue-50/30' : 'border-gray-100 hover:border-gray-200 hover:bg-gray-50/50'}`} onClick={() => {
+                          setDetailArts(arts)
+                          setDetailNodeName(nodeName)
+                          const byInvoke = new Map<string, InstanceArtifact[]>()
+                          for (const art of arts) {
+                            const list = byInvoke.get(art.invokeId) || []
+                            list.push(art)
+                            byInvoke.set(art.invokeId, list)
+                          }
+                          const invokeIds = [...byInvoke.keys()].sort((a, b) => b.localeCompare(a))
+                          const latestInvoke = invokeIds[0] || ''
+                          const latestArts = (byInvoke.get(latestInvoke) || []).sort((a, b) => (parseInt(a.version.slice(1), 10) || 0) - (parseInt(b.version.slice(1), 10) || 0))
+                          setDetailInvoke(latestInvoke)
+                          setDetailVersion(latestArts[latestArts.length - 1]?.version || 'v1')
+                        }}>
+                          <div className="flex items-center justify-between mb-1">
                             <span className="text-sm font-medium text-macos-text truncate">{nodeName}</span>
                             {flowNode && <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-medium ${typeColors[flowNode.type] || 'bg-gray-100 text-gray-500'}`}>{nodeType}</span>}
                           </div>
-                          <div className="text-xs text-macos-text-tertiary mb-2">{arts.length} 个产物</div>
-                          <div className="flex flex-wrap gap-1.5">
-                            {arts.map((art, i) => (
-                              <button
-                                key={i}
-                                onClick={() => selectArtifact(art)}
-                                className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-gray-100 text-macos-text-secondary hover:bg-blue-100 hover:text-blue-600 transition-colors cursor-pointer"
-                              >{art.invokeId.replace('invoke-', '').slice(-8)}</button>
-                            ))}
-                          </div>
-                          {arts.length > 1 && (
-                            <button
-                              onClick={() => {
-                                const pairs: { oldContent: string; newContent: string; fromInvoke: string; toInvoke: string }[] = []
-                                for (let i = 1; i < arts.length; i++) {
-                                  pairs.push({ oldContent: arts[i - 1].content, newContent: arts[i].content, fromInvoke: arts[i - 1].invokeId, toInvoke: arts[i].invokeId })
-                                }
-                                setDiffData({ nodeName, pairs })
-                              }}
-                              className="mt-2 text-xs text-amber-500 hover:text-amber-600 hover:underline cursor-pointer"
-                            >对比 {arts.length} 次执行</button>
-                          )}
                         </div>
                       )
                     })}
@@ -555,7 +556,12 @@ const InstanceDetail: FC = () => {
               {detail.trace.length > 0 && (
                 <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 col-span-2">
                   <div className="text-sm font-bold text-macos-text mb-3">时间线</div>
-                  <TraceTable trace={detail.trace} artifacts={detail.artifacts} flowData={detail.flowData} />
+                  <TraceTable trace={detail.trace} artifacts={detail.artifacts} flowData={detail.flowData} onViewArtifact={(art, nodeName, allArts) => {
+                    setDetailArts(allArts)
+                    setDetailNodeName(nodeName)
+                    setDetailInvoke(art.invokeId)
+                    setDetailVersion(art.version)
+                  }} />
                 </div>
               )}
 
@@ -582,53 +588,139 @@ const InstanceDetail: FC = () => {
               </div>
 
               {/* 选中产物弹框 — 复用项目 Modal 组件（拖拽/缩放/双击全屏） */}
-              {selectedArtifact && (
-                <Modal
-                  isOpen={true}
-                  onClose={() => selectArtifact(null)}
-                  title={selectedArtifact.nodeName}
-                  size="lg"
-                  layoutKey="instance-artifact"
-                  persistLayout
-                >
-                  <div className="mb-3 pb-2 border-b border-gray-100">
-                    <span className="text-xs font-mono text-macos-text-tertiary">{selectedArtifact.invokeId}</span>
-                  </div>
-                  <div className="flex-1 min-h-0 overflow-y-auto">
-                    <MarkdownRenderer content={selectedArtifact.content} className="text-sm" />
-                  </div>
-                </Modal>
-              )}
-
+              {/* 产物详情弹框 */}
+              {detailArts && (() => {
+                const arts = detailArts
+                const invokeIds = [...new Set(arts.map(a => a.invokeId))].sort((a, b) => b.localeCompare(a))
+                const versions = arts.filter(a => a.invokeId === detailInvoke).map(a => a.version).sort((a, b) => parseInt(a.slice(1), 10) - parseInt(b.slice(1), 10))
+                const current = arts.find(a => a.invokeId === detailInvoke && a.version === detailVersion)
+                return (
+                  <Modal isOpen={true} onClose={() => setDetailArts(null)} title={detailNodeName} size="lg" layoutKey="instance-artifact" persistLayout>
+                    <div className="flex items-center gap-2 mb-3 pb-2 border-b border-gray-100">
+                      <span className="text-base text-macos-text-tertiary flex-shrink-0">Invoke-Id</span>
+                      <Dropdown
+                        value={detailInvoke}
+                        onChange={(v) => {
+                          setDetailInvoke(v)
+                          const vList = arts.filter(a => a.invokeId === v).map(a => a.version).sort((a, b) => parseInt(a.slice(1), 10) - parseInt(b.slice(1), 10))
+                          setDetailVersion(vList[vList.length - 1] || 'v1')
+                        }}
+                        options={invokeIds.map(inv => ({ value: inv, label: inv.replace('invoke-', '').slice(-8) }))}
+                        placeholder="Invoke"
+                        className="min-w-[120px]"
+                      />
+                      <span className="text-base text-macos-text-tertiary flex-shrink-0">Version</span>
+                      <Dropdown
+                        value={detailVersion}
+                        onChange={setDetailVersion}
+                        options={versions.map(v => ({ value: v, label: v }))}
+                        placeholder="Version"
+                        className="min-w-[80px]"
+                      />
+                      {arts.length >= 2 && (
+                        <Button
+                          variant="outline"
+                          onClick={() => {
+                            const byInvoke = new Map<string, InstanceArtifact[]>()
+                            for (const art of arts) {
+                              const list = byInvoke.get(art.invokeId) || []
+                              list.push(art)
+                              byInvoke.set(art.invokeId, list)
+                            }
+                            const invIds = [...byInvoke.keys()].sort().reverse()
+                            const latestInv = invIds[0]
+                            const latestArts = (byInvoke.get(latestInv) || []).sort((a, b) => parseInt(a.version.slice(1), 10) - parseInt(b.version.slice(1), 10))
+                            const fromVer = latestArts.length >= 2 ? latestArts[latestArts.length - 2].version : latestArts[0].version
+                            const toVer = latestArts[latestArts.length - 1].version
+                            setDiffData({
+                              nodeName: detailNodeName, arts,
+                              fromInvoke: latestInv, fromVersion: fromVer,
+                              toInvoke: latestInv, toVersion: toVer,
+                            })
+                          }}
+                          className="bg-[#E5E7EB] border border-gray-300 text-gray-700 hover:bg-gray-200 hover:border-gray-400 rounded-lg py-1.5 px-3 text-xs ml-auto flex items-center gap-1.5"
+                        >
+                          <GitBranch size={14} className="flex-shrink-0" />
+                          查看节点变化
+                        </Button>
+                      )}
+                    </div>
+                    <div className="flex-1 min-h-0 overflow-y-auto">
+                      {current ? (
+                        <MarkdownRenderer content={current.content} className="text-sm" />
+                      ) : (
+                        <p className="text-sm text-macos-text-tertiary text-center py-8">未找到产物</p>
+                      )}
+                    </div>
+                  </Modal>
+                )
+              })()}
               {/* 产物 diff 弹框 */}
-              {diffData && (
-                <Modal
-                  isOpen={true}
-                  onClose={() => setDiffData(null)}
-                  title={`产物对比 - ${diffData.nodeName}`}
-                  size="xl"
-                  layoutKey="instance-diff"
-                  persistLayout
-                >
-                  <div className="flex flex-col gap-4">
-                    {diffData.pairs.map((pair, i) => (
-                      <div key={i}>
-                        <div className="text-xs text-macos-text-tertiary mb-2 pb-1 border-b border-gray-100">
-                          {pair.fromInvoke.replace('invoke-', '')} → {pair.toInvoke.replace('invoke-', '')}
-                        </div>
+              {diffData && (() => {
+                const arts = diffData.arts
+                const invokeIds = [...new Set(arts.map(a => a.invokeId))].sort((a, b) => b.localeCompare(a))
+                const fromVersions = arts.filter(a => a.invokeId === diffData.fromInvoke).map(a => a.version).sort((a, b) => parseInt(a.slice(1), 10) - parseInt(b.slice(1), 10))
+                const toVersions = arts.filter(a => a.invokeId === diffData.toInvoke).map(a => a.version).sort((a, b) => parseInt(a.slice(1), 10) - parseInt(b.slice(1), 10))
+                const fromArt = arts.find(a => a.invokeId === diffData.fromInvoke && a.version === diffData.fromVersion)
+                const toArt = arts.find(a => a.invokeId === diffData.toInvoke && a.version === diffData.toVersion)
+                return (
+                  <Modal isOpen={true} onClose={() => setDiffData(null)} title={`产物对比 - ${diffData.nodeName}`} size="xl" layoutKey="instance-diff" persistLayout>
+                    <div className="flex-1 flex flex-col min-h-0">
+                      <div className="flex items-center gap-2 pb-2 border-b border-gray-100 flex-shrink-0 flex-wrap">
+                        <span className="text-base text-macos-text-tertiary flex-shrink-0">Invoke-Id</span>
+                        <Dropdown
+                          value={diffData.fromInvoke}
+                          onChange={(v) => {
+                            const vList = arts.filter(a => a.invokeId === v).map(a => a.version).sort((a, b) => parseInt(a.slice(1), 10) - parseInt(b.slice(1), 10))
+                            setDiffData({...diffData, fromInvoke: v, fromVersion: vList[vList.length - 1] || 'v1'})
+                          }}
+                          options={invokeIds.map(inv => ({ value: inv, label: inv.replace('invoke-', '').slice(-8) }))}
+                          placeholder="From Invoke"
+                          className="min-w-[120px]"
+                        />
+                        <span className="text-base text-macos-text-tertiary flex-shrink-0">Version</span>
+                        <Dropdown
+                          value={diffData.fromVersion}
+                          onChange={(v) => setDiffData({...diffData, fromVersion: v})}
+                          options={fromVersions.map(v => ({ value: v, label: v }))}
+                          placeholder="From Version"
+                          className="min-w-[80px]"
+                        />
+                        <ChevronRight size={14} className="text-macos-text-tertiary flex-shrink-0" />
+                        <span className="text-base text-macos-text-tertiary flex-shrink-0">Invoke-Id</span>
+                        <Dropdown
+                          value={diffData.toInvoke}
+                          onChange={(v) => {
+                            const vList = arts.filter(a => a.invokeId === v).map(a => a.version).sort((a, b) => parseInt(a.slice(1), 10) - parseInt(b.slice(1), 10))
+                            setDiffData({...diffData, toInvoke: v, toVersion: vList[vList.length - 1] || 'v1'})
+                          }}
+                          options={invokeIds.map(inv => ({ value: inv, label: inv.replace('invoke-', '').slice(-8) }))}
+                          placeholder="To Invoke"
+                          className="min-w-[120px]"
+                        />
+                        <span className="text-base text-macos-text-tertiary flex-shrink-0">Version</span>
+                        <Dropdown
+                          value={diffData.toVersion}
+                          onChange={(v) => setDiffData({...diffData, toVersion: v})}
+                          options={toVersions.map(v => ({ value: v, label: v }))}
+                          placeholder="To Version"
+                          className="min-w-[80px]"
+                        />
+                      </div>
+                      <div className="flex-1 min-h-0 overflow-auto">
                         <ReactDiffViewer
-                          oldValue={pair.oldContent}
-                          newValue={pair.newContent}
+                          oldValue={fromArt?.content || ''}
+                          newValue={toArt?.content || ''}
                           splitView={true}
                           useDarkTheme={false}
                           hideLineNumbers={false}
                           styles={{ contentText: { fontSize: '12px', fontFamily: 'monospace' } }}
                         />
                       </div>
-                    ))}
-                  </div>
-                </Modal>
-              )}
+                    </div>
+                  </Modal>
+                )
+              })()}
             </div>
           ) : (
             <div className="py-20 text-center">

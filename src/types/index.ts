@@ -407,6 +407,7 @@ export interface WorkflowInstance {
 export interface InstanceArtifact {
   nodeName: string
   invokeId: string
+  version: string
   content: string
   updatedAt: string
 }

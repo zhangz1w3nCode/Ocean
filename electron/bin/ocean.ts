@@ -4,7 +4,7 @@
 
 import { resolveRoot, resolveAssetDir, instanceWorkflow, readOutput, logTraceCommand, listWorkflows, listInstances, next, complete, fail, choose, status } from '../core/executor'
 import { create } from '../core/instance'
-import { list, view, search, timeline, diff, contextSet, contextGet } from '../core/artifact_query'
+import { list, view, search, timeline, diff, update, contextSet, contextGet } from '../core/artifact_query'
 import { genId } from '../core/state'
 import { defaultLimits } from '../core/state'
 import type { Limits } from '../core/state'
@@ -452,6 +452,7 @@ flag:
   search                       按关键词搜索产物
   timeline                     产物时间线
   diff                         产物 diff
+  update                       更新产物（自动创建新版本）
 
 flag（所有子命令通用）:
   --instance <id>             实例 ID（必填）
@@ -461,14 +462,24 @@ flag（所有子命令通用）:
 flag（view 专用）:
   --node <id>                 节点 ID
   --invoke <id>               invoke ID
+  --artifact-version <v>       版本号（如 v1、v2）
 
 flag（search 专用）:
   --keyword <string>          搜索关键词
 
 flag（diff 专用）:
   --node <id>                 节点 ID
+  --invoke <id>               invoke ID（指定后对比同 invoke 的版本差异）
+  --version-from <v>          起始版本号（如 v1）
+  --version-to <v>            目标版本号（如 v2）
   --context <n>               上下文行数（默认 3）
-  --full                       输出完整 diff`)
+  --full                       输出完整 diff
+
+flag（update 专用）:
+  --node <id>                 节点 ID（必填）
+  --invoke <id>               invoke ID（必填）
+  --output <string>           产物内容
+  --output-file <path>        从文件读取产物内容`)
             break
           case 'context':
             out(`ocean workflow context — 上下文操作
@@ -818,7 +829,8 @@ function handleWorkflow(root: string, args: ReturnType<typeof parseArgs>): void 
           logTraceCommand(root, wf, id, 'artifact view')
           const node = typeof args.flags.node === 'string' ? args.flags.node : undefined
           const invoke = typeof args.flags.invoke === 'string' ? args.flags.invoke : undefined
-          printMarkdownTable(view(root, wf, id, node, invoke, json))
+          const version = typeof args.flags['artifact-version'] === 'string' ? args.flags['artifact-version'] as string : undefined
+          printMarkdownTable(view(root, wf, id, node, invoke, json, version))
           break
         }
         case 'search': {
@@ -836,7 +848,20 @@ function handleWorkflow(root: string, args: ReturnType<typeof parseArgs>): void 
           const node = args.flags.node as string
           const context = typeof args.flags.context === 'string' ? parseInt(args.flags.context as string, 10) : 3
           const full = args.flags.full === true
-          printMarkdownTable(diff(root, wf, id, node, json, context, full))
+          const invoke = typeof args.flags.invoke === 'string' ? args.flags.invoke : undefined
+          const versionFrom = typeof args.flags['version-from'] === 'string' ? args.flags['version-from'] as string : undefined
+          const versionTo = typeof args.flags['version-to'] === 'string' ? args.flags['version-to'] as string : undefined
+          printMarkdownTable(diff(root, wf, id, node, json, context, full, invoke, versionFrom, versionTo))
+          break
+        }
+        case 'update': {
+          logTraceCommand(root, wf, id, 'artifact update')
+          const node = args.flags.node as string
+          const invoke = args.flags.invoke as string
+          const output = typeof args.flags.output === 'string' ? args.flags.output : undefined
+          const outputFile = typeof args.flags['output-file'] === 'string' ? args.flags['output-file'] : undefined
+          const content = readOutput(output, outputFile)
+          args.flags.json ? printJson({ message: update(root, wf, id, node, invoke, content) }) : printMarkdownTable(update(root, wf, id, node, invoke, content))
           break
         }
         default:
