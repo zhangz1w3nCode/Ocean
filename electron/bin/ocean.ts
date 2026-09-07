@@ -447,12 +447,12 @@ flag:
 用法: ocean workflow artifact <sub> --instance <id> [--flags...]
 
 子命令:
-  list                         列出所有兀产
-  view                         查看兀产详情
-  search                       按关键词搜索兀产
-  timeline                     兀产时间线
-  diff                         兀产 diff
-  update                       更新兀产（自动创建新版本）
+  list                         列出所有产物
+  view                         查看产物详情
+  search                       按关键词搜索产物
+  timeline                     产物时间线
+  diff                         产物 diff
+  update                       更新产物（自动创建新版本）
 
 flag（所有子命令通用）:
   --instance <id>             实例 ID（必填）
@@ -478,8 +478,8 @@ flag（diff 专用）:
 flag（update 专用）:
   --node <id>                 节点 ID（必填）
   --invoke <id>               invoke ID（必填）
-  --output <string>           兀产内容
-  --output-file <path>        从文件读取兀产内容`)
+  --output <string>           产物内容
+  --output-file <path>        从文件读取产物内容`)
             break
           case 'context':
             out(`ocean workflow context — 上下文操作
