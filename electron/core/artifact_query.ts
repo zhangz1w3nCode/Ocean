@@ -86,6 +86,9 @@ function collectEntries(root: string, workflow: string, instanceId: string): [Ar
   return [entries, pf]
 }
 
+// 读取最新版本的产物内容
+// 注：getLatestVersion 和 readContentAtVersion 各自扫描目录，存在轻微冗余 I/O
+// CLI 场景下 trace 长度有限，性能影响可忽略
 function readContent(
   root: string, workflow: string, instanceId: string, node: string, invoke: string,
 ): [ArtifactType, string] | null {
@@ -425,6 +428,38 @@ function diffLineValue(line: DiffLine): string {
 
 const MAX_DIFF_LINES = 5000
 
+// 格式化 diff 行为 diff 代码块字符串
+function formatDiffLines(lines: DiffLine[]): string {
+  if (lines.length === 0) return '无变更\n'
+  let s = '```diff\n'
+  for (const l of lines) {
+    switch (l.type) {
+      case DiffLineType.Context: s += `  ${l.text}\n`; break
+      case DiffLineType.Added: s += `+ ${l.text}\n`; break
+      case DiffLineType.Removed: s += `- ${l.text}\n`; break
+      case DiffLineType.Separator: s += '...\n'; break
+    }
+  }
+  s += '```\n'
+  return s
+}
+
+// 格式化 diff 行为 JSON changes 数组
+function formatDiffChanges(lines: DiffLine[]): any[] {
+  return lines.map((l) => ({ type: diffLineTag(l.type), value: diffLineValue(l) }))
+}
+
+// 计算 diff 并应用 context 限制
+function computeAndLimitDiff(text1: string, text2: string, context: number, full: boolean): DiffLine[] {
+  const lines1 = text1.split('\n').filter((_, idx, arr) => !(text1 === '' && arr.length === 1))
+  const lines2 = text2.split('\n').filter((_, idx, arr) => !(text2 === '' && arr.length === 1))
+  if (lines1.length > MAX_DIFF_LINES || lines2.length > MAX_DIFF_LINES) {
+    throw new Error(`产物行数超过 ${MAX_DIFF_LINES} 行上限，已跳过 diff 计算`)
+  }
+  const raw = computeDiff(text1, text2)
+  return full ? raw : applyContextLimit(raw, context)
+}
+
 export function diff(
   root: string, workflow: string, instanceId: string,
   node: string, json: boolean, context: number, full: boolean,
@@ -437,42 +472,21 @@ export function diff(
     if (!content1) throw new Error(`未找到 ${node} (${invoke}) ${versionFrom} 的产物`)
     if (!content2) throw new Error(`未找到 ${node} (${invoke}) ${versionTo} 的产物`)
 
-    const text1 = content1[1]
-    const text2 = content2[1]
-    const lines1 = text1.split('\n').filter((_, idx, arr) => !(text1 === '' && arr.length === 1))
-    const lines2 = text2.split('\n').filter((_, idx, arr) => !(text2 === '' && arr.length === 1))
-    if (lines1.length > MAX_DIFF_LINES || lines2.length > MAX_DIFF_LINES) {
-      throw new Error(`产物行数超过 ${MAX_DIFF_LINES} 行上限，已跳过 diff 计算`)
-    }
-    const raw = computeDiff(text1, text2)
-    const display = full ? raw : applyContextLimit(raw, context)
+    const display = computeAndLimitDiff(content1[1], content2[1], context, full)
 
     if (json) {
       return sortedJsonStringify({
         instance: instanceId, node, invoke,
         diffs: [{
           from_version: versionFrom, to_version: versionTo,
-          changes: display.map((l) => ({ type: diffLineTag(l.type), value: diffLineValue(l) })),
+          changes: formatDiffChanges(display),
         }],
       })
     }
 
     let s = `## ${node} (${invoke}) ${versionFrom} → ${versionTo}\n`
     s += `> 对比: ${versionFrom} → ${versionTo}\n\n`
-    if (display.length === 0) {
-      s += '无变更\n'
-    } else {
-      s += '```diff\n'
-      for (const l of display) {
-        switch (l.type) {
-          case DiffLineType.Context: s += `  ${l.text}\n`; break
-          case DiffLineType.Added: s += `+ ${l.text}\n`; break
-          case DiffLineType.Removed: s += `- ${l.text}\n`; break
-          case DiffLineType.Separator: s += '...\n'; break
-        }
-      }
-      s += '```\n'
-    }
+    s += formatDiffLines(display)
     return s
   }
 
@@ -494,21 +508,14 @@ export function diff(
       const v2 = versions[i + 1]
       const c1 = readContentVersion(root, workflow, instanceId, node, invoke, v1)?.[1] ?? ''
       const c2 = readContentVersion(root, workflow, instanceId, node, invoke, v2)?.[1] ?? ''
-      const lines1 = c1.split('\n').filter((_, idx, arr) => !(c1 === '' && arr.length === 1))
-      const lines2 = c2.split('\n').filter((_, idx, arr) => !(c2 === '' && arr.length === 1))
-      if (lines1.length > MAX_DIFF_LINES || lines2.length > MAX_DIFF_LINES) {
-        throw new Error(`产物行数超过 ${MAX_DIFF_LINES} 行上限，已跳过 diff 计算`)
-      }
-      const raw = computeDiff(c1, c2)
-      const display = full ? raw : applyContextLimit(raw, context)
+      const display = computeAndLimitDiff(c1, c2, context, full)
       diffs.push({ v1, v2, lines: display })
     }
 
     if (json) {
       const diffArr = diffs.map(({ v1, v2, lines }) => ({
         from_version: v1, to_version: v2,
-        changes: lines.map((l) => ({ type: diffLineTag(l.type), value: diffLineValue(l) })),
-      }))
+        changes: formatDiffChanges(lines),
       return sortedJsonStringify({ instance: instanceId, node, invoke, diffs: diffArr })
     }
 
@@ -517,20 +524,7 @@ export function diff(
       const { v1, v2, lines } = diffs[i]
       s += `## [${i + 1}→${i + 2}] ${node} (${invoke}) ${v1} → ${v2}\n`
       s += `> 对比: ${v1} → ${v2}\n\n`
-      if (lines.length === 0) {
-        s += '无变更\n'
-      } else {
-        s += '```diff\n'
-        for (const l of lines) {
-          switch (l.type) {
-            case DiffLineType.Context: s += `  ${l.text}\n`; break
-            case DiffLineType.Added: s += `+ ${l.text}\n`; break
-            case DiffLineType.Removed: s += `- ${l.text}\n`; break
-            case DiffLineType.Separator: s += '...\n'; break
-          }
-        }
-        s += '```\n'
-      }
+      s += formatDiffLines(lines)
       if (i + 1 < diffs.length) s += '\n'
     }
     return s
@@ -554,15 +548,7 @@ export function diff(
     const { entry: e1, content: text1 } = contents[i]
     const { entry: e2, content: text2 } = contents[i + 1]
 
-    const lines1 = text1.split('\n').filter((_, idx, arr) => !(text1 === '' && arr.length === 1))
-    const lines2 = text2.split('\n').filter((_, idx, arr) => !(text2 === '' && arr.length === 1))
-
-    if (lines1.length > MAX_DIFF_LINES || lines2.length > MAX_DIFF_LINES) {
-      throw new Error(`产物行数超过 ${MAX_DIFF_LINES} 行上限，已跳过 diff 计算`)
-    }
-
-    const raw = computeDiff(text1, text2)
-    const display = full ? raw : applyContextLimit(raw, context)
+    const display = computeAndLimitDiff(text1, text2, context, full)
     diffs.push({ e1, e2, lines: display })
   }
 
@@ -576,7 +562,7 @@ export function diff(
       to_status: e2.status,
       from_time: e1.time,
       to_time: e2.time,
-      changes: lines.map((l) => ({ type: diffLineTag(l.type), value: diffLineValue(l) })),
+      changes: formatDiffChanges(lines),
     }))
     return sortedJsonStringify({ instance: instanceId, node, diffs: diffArr })
   }
@@ -586,19 +572,7 @@ export function diff(
     const { e1, e2, lines } = diffs[i]
     s += `## [${i + 1}→${i + 2}] ${nodeDisplay(e1.node, e1.branch)} (${e1.invoke} ${e1.version})\n`
     s += `> 对比: ${e1.invoke} ${e1.version} (${e1.status}, ${e1.time}) → ${e2.invoke} ${e2.version} (${e2.status}, ${e2.time})\n\n`
-    if (lines.length === 0) {
-      s += '无变更\n'
-    } else {
-      s += '```diff\n'
-      for (const l of lines) {
-        switch (l.type) {
-          case DiffLineType.Context: s += `  ${l.text}\n`; break
-          case DiffLineType.Added: s += `+ ${l.text}\n`; break
-          case DiffLineType.Removed: s += `- ${l.text}\n`; break
-          case DiffLineType.Separator: s += '...\n'; break
-        }
-      }
-      s += '```\n'
+    s += formatDiffLines(lines)
     }
     if (i + 1 < diffs.length) s += '\n'
   }

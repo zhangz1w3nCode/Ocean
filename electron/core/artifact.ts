@@ -149,7 +149,10 @@ export function hasDetail(
   invoke: string,
 ): boolean {
   const dir = artifactDir(root, workflow, instanceId, nodeName, invoke)
-  // Check version directories
+  // 混合场景处理策略：
+  // 1. 先遍历 version 子目录（v1/, v2/ 等）检查 detail.md 是否存在且非空
+  // 2. 若所有 version 目录都无 detail.md，回退检查 invoke 根目录下的旧式 detail.md
+  // 这确保纯旧实例（无 version 目录）、混合实例（旧 detail.md + 新 version 目录）都能正确检测
   if (fs.existsSync(dir)) {
     try {
       for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -173,6 +176,10 @@ export function readContentAtVersion(
   invoke: string,
   version: string,
 ): ['detail' | 'error', string] | null {
+  // 两种失败场景：
+  // 1. version 目录不存在且 version != 'v1' → 返回 null（该版本不存在）
+  // 2. version='v1' 但 v1 目录不存在 → 回退到 invoke 根目录读旧式 detail.md
+  //    若旧式 detail.md 也不存在 → 返回 null
   const dir = artifactDir(root, workflow, instanceId, nodeName, invoke, version)
   if (!fs.existsSync(dir)) {
     // Backward compat: v1 may not have a version dir, read from invoke dir directly

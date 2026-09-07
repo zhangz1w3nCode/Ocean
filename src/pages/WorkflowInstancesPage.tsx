@@ -307,7 +307,7 @@ const ArtifactList = memo(({ artifacts, selected, onSelect }: { artifacts: Insta
 )
 
 const InstanceDetail: FC = () => {
-  const { selectedInstance, detail, isLoadingDetail, selectedArtifact, selectInstance, selectArtifact, clearDetail, isLiveRefresh, startLiveRefresh, stopLiveRefresh } = useWorkflowInstanceStore()
+  const { selectedInstance, detail, isLoadingDetail, selectInstance, clearDetail, isLiveRefresh, startLiveRefresh, stopLiveRefresh } = useWorkflowInstanceStore()
   const [isFlowFullscreen, setIsFlowFullscreen] = useState(false)
   const [isContextFullscreen, setIsContextFullscreen] = useState(false)
   const [diffData, setDiffData] = useState<{
