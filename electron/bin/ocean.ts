@@ -630,6 +630,108 @@ flag:
   stdin                        管道输入（三选一）`)
       break
     case 'skill':
+      if (subcommand) {
+        switch (subcommand) {
+          case 'list':
+            out(`ocean skill list — 列出所有技能
+
+用法: ocean skill list [--json]
+
+说明:
+  返回 {asset-root}/skills/ 下的技能目录名，按字母序排列
+  资产根随 ocean config asset-root 在 .pi 与 .claude 间自动切换`)
+            break
+          case 'read':
+            out(`ocean skill read — 读取技能正文
+
+用法: ocean skill read <技能名> [--json]
+
+参数:
+  <技能名>   必填，只能含字母、数字、中划线、下划线
+
+说明:
+  输出 SKILL.md 去掉 frontmatter 后的正文
+  技能不存在时报「技能不存在: <技能名>」并 exit 1
+  要看附属文件请用 ocean skill resource read`)
+            break
+          case 'create':
+            out(`ocean skill create — 创建技能（可一次带上附属文件）
+
+用法: ocean skill create <技能名> --description <text> (--content <文本> | --content-file <路径> | stdin)
+                 --references <文件,文件> --examples <文件,文件> [--scripts <文件,文件>] [--json]
+
+必填: --description、正文、--references、--examples
+选填: --scripts
+
+附属文件参数说明:
+  值为逗号分隔的源文件，可裸文件名、相对路径或绝对路径
+  目标子目录由参数名固定决定，源文件不需按这些目录组织
+  落盘文件名取源文件的 basename；同一类内 basename 重复会被拒
+    --references  写入 skills/{name}/references/
+    --examples    写入 skills/{name}/examples/
+    --scripts     写入 skills/{name}/scripts/
+  注: GUI 侧 create-skill-directory 对三类附件均为可选，上面的必填是 CLI 额外的产品约束；
+      写入能力与字段形状则与 GUI CreateSkillInput 同构
+
+失败行为: 缺必填 exit 2；全部校验先于写盘，失败不留半成品目录
+注意: --content-file 传入自带 frontmatter 的文件会产生重复 frontmatter 块，正文建议走 --content 或 stdin`)
+            break
+          case 'update':
+            out(`ocean skill update — 更新技能正文
+
+用法: ocean skill update <技能名> (--content <文本> | --content-file <路径> | stdin)
+
+说明:
+  保留原 frontmatter 全部字段，只替换正文
+  不改动 references/examples/scripts 里的附属文件（请用 ocean skill resource）
+  --content-file 传入自带 frontmatter 的文件会产生重复块，正文建议走 --content 或 stdin`)
+            break
+          case 'delete':
+            out(`ocean skill delete — 删除技能
+
+用法: ocean skill delete <技能名>
+
+说明:
+  递归删除整个技能目录，含 SKILL.md 与三类附属文件
+  技能不存在时静默成功（幂等）`)
+            break
+          case 'resource':
+            out(`ocean skill resource — 管理技能的单个附属文件
+
+对齐 GUI 技能页四个 Tab 对 scripts/references/examples 的逐个操作。
+
+用法:
+  ocean skill resource list   <技能名> <类型>
+  ocean skill resource read   <技能名> <类型> <文件名>
+  ocean skill resource create <技能名> <类型> <文件名> (--content <文本> | --content-file <路径> | stdin)
+  ocean skill resource delete <技能名> <类型> <文件名>
+
+参数:
+  <技能名>   必须是已存在的技能（GUI 也仅在编辑态提供这些操作）
+  <类型>     scripts | references | examples
+  <文件名>   不得含 . 、.. 或路径分隔符
+
+子命令语义（逐条对齐 GUI）:
+  list    列出该类型下的文件；类型目录不存在时返回空而非报错
+  read    输出文件内容；文件不存在报错
+  create  新建文件。重名直接拒绝且原文件不被覆盖（对齐 GUI 新建态校验）；内容必填；
+          类型子目录缺失时自动创建（对齐 getSkillSubDir）
+  delete  删除指定文件；不存在时静默成功
+
+与 GUI 的对应关系:
+  list   → list-skill-resources    read   → load-skill-resource
+  create → save-skill-resource     delete → delete-skill-resource
+
+说明: GUI 的 save IPC 本身是无条件覆写，拒绝重名来自 UI 层的新建态校验；
+      因此本 CLI 要改已存在文件的内容需先 delete 再 create。
+      文件名越界防护是 CLI 额外加固，GUI 侧该缺口未修。`)
+            break
+          default:
+            out(`未知的 skill 子命令: ${subcommand}
+运行 'ocean skill --help' 查看可用子命令。`)
+        }
+        break
+      }
       out(`ocean skill — 技能 CRUD
 
 用法: ocean skill <subcommand> <name> [--flags...]
@@ -1344,7 +1446,9 @@ function handleSkillResource(root: string, args: ReturnType<typeof parseArgs>): 
   const [action, name, type, fileName] = args.positional
   const json = !!args.flags.json
   if (!action) {
-    throw new UsageError("缺少 resource 子命令：ocean skill resource <list|read|create|delete> <技能名> <类型> [文件名]")
+    // 不传 json：_helpJsonBuf 的打印只发生在 main 的 --help 分支，这里传入会造成静默空输出
+    printHelp('skill', 'resource')
+    return
   }
   switch (action) {
     case 'list': {
