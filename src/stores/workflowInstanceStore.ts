@@ -23,15 +23,25 @@ interface WorkflowInstanceState {
   instances: WorkflowInstance[]
   isLoaded: boolean
   isLoadingDetail: boolean
+  openTabs: WorkflowInstance[]
+  activeTabId: string | null
   selectedInstance: WorkflowInstance | null
   detail: InstanceDetail | null
   selectedArtifact: InstanceArtifact | null
   isLiveRefresh: boolean
   _unsubDelta: (() => void) | null
+  listSearchQuery: string
+  listFilterWorkflow: string
+  listFilterStatus: string
+  listSortOrder: 'desc' | 'asc'
   loadInstances: () => Promise<void>
   selectInstance: (instance: WorkflowInstance | null) => void
   loadInstanceDetail: (instance: WorkflowInstance) => Promise<void>
   selectArtifact: (artifact: InstanceArtifact | null) => void
+  closeTab: (instanceId: string) => void
+  switchTab: (instanceId: string) => void
+  reorderTabs: (newOrder: WorkflowInstance[]) => void
+  showList: () => void
   clearDetail: () => void
   startLiveRefresh: () => void
   stopLiveRefresh: () => void
@@ -42,12 +52,18 @@ export const useWorkflowInstanceStore = create<WorkflowInstanceState>((set, get)
   instances: [],
   isLoaded: false,
   isLoadingDetail: false,
+  openTabs: [],
+  activeTabId: null,
   selectedInstance: null,
   detail: null,
   selectedArtifact: null,
   isLiveRefresh: false,
 
   _unsubDelta: null as (() => void) | null,
+  listSearchQuery: '',
+  listFilterWorkflow: '',
+  listFilterStatus: '',
+  listSortOrder: 'desc' as 'desc' | 'asc',
 
   loadInstances: async () => {
     if (!isElectron()) {
@@ -69,10 +85,16 @@ export const useWorkflowInstanceStore = create<WorkflowInstanceState>((set, get)
   },
 
   selectInstance: (instance) => {
-    set({ selectedInstance: instance, detail: null, selectedArtifact: null })
-    if (instance) {
-      get().loadInstanceDetail(instance)
+    if (!instance) {
+      get().showList()
+      return
     }
+    const { openTabs } = get()
+    const exists = openTabs.find(t => t.instanceId === instance.instanceId)
+    const newTabs = exists ? openTabs : [...openTabs, instance]
+    get().stopLiveRefresh()
+    set({ openTabs: newTabs, activeTabId: instance.instanceId, selectedInstance: instance, detail: null, selectedArtifact: null })
+    get().loadInstanceDetail(instance)
   },
 
   loadInstanceDetail: async (instance) => {
@@ -98,9 +120,46 @@ export const useWorkflowInstanceStore = create<WorkflowInstanceState>((set, get)
     set({ selectedArtifact: artifact })
   },
 
-  clearDetail: () => {
+
+  closeTab: (instanceId) => {
+    const { openTabs, activeTabId } = get()
+    const newTabs = openTabs.filter(t => t.instanceId !== instanceId)
+    if (activeTabId === instanceId) {
+      const closedIndex = openTabs.findIndex(t => t.instanceId === instanceId)
+      const neighbor = newTabs[closedIndex] || newTabs[closedIndex - 1] || null
+      if (neighbor) {
+        get().stopLiveRefresh()
+        set({ openTabs: newTabs, activeTabId: neighbor.instanceId, selectedInstance: neighbor, detail: null, selectedArtifact: null })
+        get().loadInstanceDetail(neighbor)
+      } else {
+        get().stopLiveRefresh()
+        set({ openTabs: [], activeTabId: null, selectedInstance: null, detail: null, selectedArtifact: null })
+      }
+    } else {
+      set({ openTabs: newTabs })
+    }
+  },
+
+  switchTab: (instanceId) => {
+    const { openTabs } = get()
+    const tab = openTabs.find(t => t.instanceId === instanceId)
+    if (!tab) return
     get().stopLiveRefresh()
-    set({ selectedInstance: null, detail: null, selectedArtifact: null })
+    set({ activeTabId: instanceId, selectedInstance: tab, detail: null, selectedArtifact: null })
+    get().loadInstanceDetail(tab)
+  },
+
+  reorderTabs: (newOrder) => {
+    set({ openTabs: newOrder })
+  },
+
+  showList: () => {
+    get().stopLiveRefresh()
+    set({ activeTabId: null, selectedInstance: null, detail: null, selectedArtifact: null })
+  },
+
+  clearDetail: () => {
+    get().showList()
   },
 
   startLiveRefresh: () => {
@@ -127,6 +186,6 @@ export const useWorkflowInstanceStore = create<WorkflowInstanceState>((set, get)
 
   reset: () => {
     get().stopLiveRefresh()
-    set({ instances: [], isLoaded: false, selectedInstance: null, detail: null, selectedArtifact: null })
+    set({ instances: [], isLoaded: false, openTabs: [], activeTabId: null, selectedInstance: null, detail: null, selectedArtifact: null })
   },
 }))

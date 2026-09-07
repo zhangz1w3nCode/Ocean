@@ -1,7 +1,7 @@
 import type { FC } from 'react'
 import { useState, useEffect, useCallback, useRef, memo } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
-import { Search, RefreshCw, Activity, FileText, Package, ChevronRight, ChevronLeft, Clock, Hash, GitBranch, Repeat, RotateCcw, Maximize2, X, Radio, ChevronUp, ChevronDown, CircleDot, ListOrdered, Files, Terminal } from 'lucide-react'
+import { motion, AnimatePresence, Reorder, useDragControls } from 'framer-motion'
+import { Search, RefreshCw, Activity, FileText, Package, ChevronRight, ChevronLeft, Clock, Hash, GitBranch, Repeat, RotateCcw, Maximize2, X, Radio, ChevronUp, ChevronDown, CircleDot, ListOrdered, Files, Terminal, Home } from 'lucide-react'
 import { Button, Dropdown, MarkdownRenderer, Modal } from '../components/ui'
 import ReactDiffViewer from 'react-diff-viewer-continued'
 import { useWorkflowInstanceStore } from '../stores/workflowInstanceStore'
@@ -42,11 +42,8 @@ const statusDotColors: Record<string, string> = {
 // ===== 列表视图 =====
 
 const InstanceList: FC = () => {
-  const { instances, isLoaded, loadInstances, selectInstance } = useWorkflowInstanceStore()
-  const [searchQuery, setSearchQuery] = useState('')
-  const [filterWorkflow, setFilterWorkflow] = useState('')
-  const [filterStatus, setFilterStatus] = useState('')
-  const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc')
+  const { instances, isLoaded, loadInstances, selectInstance, listSearchQuery: searchQuery, listFilterWorkflow: filterWorkflow, listFilterStatus: filterStatus, listSortOrder: sortOrder } = useWorkflowInstanceStore()
+  const setListState = useWorkflowInstanceStore.setState
 
   useEffect(() => {
     loadInstances()
@@ -77,7 +74,7 @@ const InstanceList: FC = () => {
         <div className="flex items-center gap-2.5">
           <Dropdown
             value={filterWorkflow}
-            onChange={setFilterWorkflow}
+            onChange={(v) => setListState({ listFilterWorkflow: v })}
             placeholder="全部工作流"
             options={[
               { value: '', label: '全部工作流' },
@@ -86,7 +83,7 @@ const InstanceList: FC = () => {
           />
           <Dropdown
             value={filterStatus}
-            onChange={setFilterStatus}
+            onChange={(v) => setListState({ listFilterStatus: v })}
             placeholder="全部状态"
             options={[
               { value: '', label: '全部状态' },
@@ -99,7 +96,7 @@ const InstanceList: FC = () => {
               type="text"
               placeholder="搜索"
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e) => setListState({ listSearchQuery: e.target.value })}
               className="pl-9 pr-4 py-2 w-48 text-sm bg-white border border-gray-200 rounded-lg
                          placeholder:text-macos-text-tertiary focus:outline-none
                          hover:border-gray-300 focus:border-gray-400
@@ -125,7 +122,7 @@ const InstanceList: FC = () => {
               <span className="flex-1 min-w-0 text-center">工作流</span>
               <span className="flex-1 min-w-0 text-center">输入信息</span>
               <span className="flex-1 min-w-0 text-center">状态</span>
-              <button onClick={() => setSortOrder(sortOrder === 'desc' ? 'asc' : 'desc')} className="flex-1 min-w-0 flex items-center justify-center gap-1 cursor-pointer hover:text-macos-text transition-colors">
+              <button onClick={() => setListState({ listSortOrder: sortOrder === 'desc' ? 'asc' : 'desc' })} className="flex-1 min-w-0 flex items-center justify-center gap-1 cursor-pointer hover:text-macos-text transition-colors">
                 创建时间
                 {sortOrder === 'desc' ? <ChevronDown size={12} /> : <ChevronUp size={12} />}
               </button>
@@ -730,23 +727,92 @@ const InstanceDetail: FC = () => {
   )
 }
 
-// ===== 主组件 =====
+// ===== Tab 标签栏 =====
 
-export const WorkflowInstancesPage: FC = () => {
-  const { selectedInstance } = useWorkflowInstanceStore()
+const InstanceTabItem: FC<{ tab: WorkflowInstance; isActive: boolean }> = ({ tab, isActive }) => {
+  const { switchTab, closeTab } = useWorkflowInstanceStore()
+  const dragControls = useDragControls()
+  const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [isDragging, setIsDragging] = useState(false)
+  const status = instanceStatusOfInstance(tab)
 
   return (
-    <AnimatePresence mode="wait">
-      <motion.div
-        key={selectedInstance ? 'detail' : 'list'}
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: -10 }}
-        transition={{ duration: 0.2 }}
-        className="flex-1 flex flex-col overflow-hidden"
+    <Reorder.Item
+      value={tab}
+      dragListener={false}
+      dragControls={dragControls}
+      dragTransition={{ bounceStiffness: 800, bounceDamping: 40 }}
+      onPointerDown={(e) => {
+        if (e.button !== 0) return
+        const ev = e
+        pressTimer.current = setTimeout(() => { setIsDragging(true); dragControls.start(ev) }, 200)
+      }}
+      onPointerUp={() => { if (pressTimer.current) { clearTimeout(pressTimer.current); pressTimer.current = null } }}
+      onPointerLeave={() => { if (pressTimer.current) { clearTimeout(pressTimer.current); pressTimer.current = null } }}
+      onDragEnd={() => setIsDragging(false)}
+      onClick={() => switchTab(tab.instanceId)}
+      className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs cursor-grab transition-colors flex-1 min-w-0 max-w-[200px] select-none ${isDragging ? 'cursor-grabbing' : ''} ${isActive ? 'bg-white text-macos-text shadow-sm border border-gray-200' : 'text-macos-text-secondary hover:bg-gray-100 hover:text-macos-text'}`}
+    >
+      <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${statusDotColors[status] || statusDotColors.unknown}`} />
+      <span className="flex-1 min-w-0 truncate">{tab.initialInput || tab.instanceId}</span>
+      <button
+        onClick={(e) => { e.stopPropagation(); closeTab(tab.instanceId) }}
+        className="hover:bg-gray-200 rounded p-0.5 transition-colors flex-shrink-0"
       >
-        {selectedInstance ? <InstanceDetail /> : <InstanceList />}
-      </motion.div>
-    </AnimatePresence>
+        <X size={12} strokeWidth={2} />
+      </button>
+    </Reorder.Item>
+  )
+}
+
+const InstanceTabs: FC = () => {
+  const { openTabs, activeTabId, reorderTabs, showList } = useWorkflowInstanceStore()
+
+  return (
+    <div className="h-10 px-2 flex items-center gap-0.5 flex-shrink-0">
+      <button
+        onClick={() => showList()}
+        className={`flex items-center gap-1 px-4 py-1.5 rounded-lg text-xs cursor-grab transition-colors flex-shrink-0 ${activeTabId === null ? 'bg-white text-macos-text shadow-sm border border-gray-200' : 'text-macos-text-secondary hover:bg-gray-100 hover:text-macos-text'}`}
+      >
+        <Home size={14} strokeWidth={1.5} />
+        <span>首页</span>
+      </button>
+      <Reorder.Group
+        axis="x"
+        values={openTabs}
+        onReorder={reorderTabs}
+        className="flex items-center gap-0.5 flex-1 min-w-0"
+      >
+        <AnimatePresence mode="popLayout">
+          {openTabs.map((tab) => (
+            <InstanceTabItem key={tab.instanceId} tab={tab} isActive={activeTabId === tab.instanceId} />
+          ))}
+        </AnimatePresence>
+      </Reorder.Group>
+    </div>
+  )
+}
+
+
+export const WorkflowInstancesPage: FC = () => {
+  const { openTabs, activeTabId } = useWorkflowInstanceStore()
+  const showDetail = activeTabId !== null
+
+  return (
+    <div className="flex-1 flex flex-col overflow-hidden">
+      <InstanceTabs />
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={showDetail ? `detail-${activeTabId}` : 'list'}
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -10 }}
+          transition={{ duration: 0.15 }}
+          className="flex-1 flex flex-col overflow-hidden"
+        >
+          {showDetail ? <InstanceDetail /> : <InstanceList />}
+        </motion.div>
+      </AnimatePresence>
+    </div>
   )
 }
