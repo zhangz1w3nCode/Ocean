@@ -41,17 +41,6 @@ const generateProjectId = (projectPath) => {
   return crypto.createHash('md5').update(projectPath).digest('hex').slice(0, 16)
 }
 
-// 实例整体状态（三态）：pending 待执行 / running 执行中 / completed 已完成
-// 与引擎的节点推进状态（idle/executing/awaitingchoice/completed/aborted）解耦。
-// 规范实现见 electron/core/instance-status.ts；本文件是手写 CJS 且 electron/dist 被
-// gitignore 无法复用其编译产物，故保留这份等价镜像，真值表由
-// electron/core/instance-status.test.ts 锁定，改动必须两侧同步。
-const deriveInstanceStatus = ({ engineStatus, step, completedCount }) => {
-  if (engineStatus === 'completed' || engineStatus === 'aborted') return 'completed'
-  if (step > 0 || completedCount > 0) return 'running'
-  return 'pending'
-}
-
 // 数据迁移：.workflow-maker -> 当前资产根目录(.claude/.pi)
 const migrateDataDir = (projectPath) => {
   const oldDir = path.join(projectPath, '.workflow-maker')
@@ -474,7 +463,7 @@ ipcMain.handle('list-workflow-instances', () => {
           }
         }
         // 解析 process.md frontmatter
-        let engineStatus = 'unknown'
+        let status = 'unknown'
         let initialInput = null
         let currentName = ''
         let step = 0
@@ -490,7 +479,7 @@ ipcMain.handle('list-workflow-instances', () => {
           if (fmMatch) {
             const yaml = fmMatch[1]
             const statusMatch = yaml.match(/^status:\s*(.+)/m)
-            if (statusMatch) engineStatus = statusMatch[1].trim()
+            if (statusMatch) status = statusMatch[1].trim()
             const inputMatch = yaml.match(/^initial_input:\s*(.*)/m)
             if (inputMatch && inputMatch[1].trim()) initialInput = inputMatch[1].trim()
             const nameMatch = yaml.match(/^current_name:\s*(.+)/m)
@@ -525,7 +514,7 @@ ipcMain.handle('list-workflow-instances', () => {
           workflowName: wfName,
           createdAt,
           updatedAt: stat.mtime.toISOString(),
-          status: deriveInstanceStatus({ engineStatus, step, completedCount: completedNodes.length }),
+          status,
           initialInput,
           currentName,
           step,
@@ -591,14 +580,7 @@ function parseProcess(instDir) {
     const lpm = yaml.match(/^loop_count:\s*(\d+)/m); if (lpm) wfLoopCount = parseInt(lpm[1])
     const rpm = yaml.match(/^retry_count:\s*(\d+)/m); if (rpm) wfRetryCount = parseInt(rpm[1])
   }
-  // wfStatus 保留引擎原始节点推进状态（InstanceFlowGraph 的结束节点渲染依赖它）；
-  // instanceStatus 才是实例整体三态，详情页「状态」字段用后者。
-  const instanceStatus = deriveInstanceStatus({
-    engineStatus: wfStatus,
-    step: wfStep,
-    completedCount: completedNodes.length,
-  })
-  return { processRaw, mermaid, completedNodes, currentName, wfStatus, instanceStatus, wfStep, wfLoopCount, wfRetryCount }
+  return { processRaw, mermaid, completedNodes, currentName, wfStatus, wfStep, wfLoopCount, wfRetryCount }
 }
 
 function parseTrace(instDir) {

@@ -11,7 +11,6 @@ import {
 } from './state'
 import { writeDetail, writeError, hasDetail } from './artifact'
 import { checkStepLimit, checkLoopLimit, checkRetryLimit } from './limits'
-import { deriveInstanceStatus } from './instance-status'
 
 // ---------------------------------------------------------------------------
 // Private helpers
@@ -266,8 +265,7 @@ export function status(root: string, workflow: string, instanceId: string, json:
     `| 字段 | 值 |\n|------|-----|\n` +
     `| 实例 | ${s.instance_id} |\n` +
     `| 工作流 | ${s.workflow} |\n` +
-    `| 实例状态 | ${deriveInstanceStatus({ engineStatus: serializeStatus(s.status), step: s.step, completedCount: s.completed.length })} |\n` +
-    `| 节点推进状态 | ${statusAsStr(s.status)} |\n` +
+    `| 状态 | ${statusAsStr(s.status)} |\n` +
     `| 当前节点 | ${s.current_name} (${s.current_invoke}) |\n` +
     `| 步数 | ${s.step} |\n` +
     `| 环回次数 | ${s.loop_count} |\n` +
@@ -275,19 +273,12 @@ export function status(root: string, workflow: string, instanceId: string, json:
     `| 限制 | max_steps=${s.limits.max_steps} / max_loop=${s.limits.max_loop} / max_retry=${s.limits.max_retry} |`
   )
 }
-export function instanceStatusOfState(state: ProcessState): string {
-  return deriveInstanceStatus({
-    engineStatus: serializeStatus(state.status),
-    step: state.step,
-    completedCount: state.completed.length,
-  })
-}
+
 function serializeProcessStateJson(state: ProcessState): string {
   const obj: Record<string, any> = {}
   obj.workflow = state.workflow
   obj.instance_id = state.instance_id
   if (state.initial_input != null) obj.initial_input = state.initial_input
-  obj.instance_status = instanceStatusOfState(state)
   obj.status = serializeStatus(state.status)
   obj.current = state.current
   obj.current_name = state.current_name
@@ -340,12 +331,12 @@ export function listInstances(root: string, workflowFilter?: string): string {
     }
     ids.sort()
     for (const id of ids) {
-      let st = 'pending'
+      let st = 'unknown'
       try {
         const pf = ProcessFile.read(path.join(instDir, id, 'process.md'))
-        st = instanceStatusOfState(pf.state)
+        st = statusAsStr(pf.state.status)
       } catch {
-        // read failure -> 无 process.md 可读，归为待执行
+        // read failure → unknown
       }
       out += `| ${id} | ${wfName} | ${st} |\n`
     }

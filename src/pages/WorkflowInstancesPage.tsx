@@ -7,6 +7,7 @@ import ReactDiffViewer from 'react-diff-viewer-continued'
 import { useWorkflowInstanceStore } from '../stores/workflowInstanceStore'
 import type { WorkflowInstance, InstanceTraceEvent, InstanceArtifact } from '../types'
 import { formatStatus, formatRelativeTime } from '../utils/format'
+import { INSTANCE_STATUSES, instanceStatusOfInstance, instanceStatusOfDetail } from '../utils/instanceStatus'
 import { InstanceFlowGraph } from '../components/workflow'
 
 type ResizeDirection = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw'
@@ -52,16 +53,18 @@ const InstanceList: FC = () => {
   }, [loadInstances])
 
   const workflowNames = [...new Set(instances.map(i => i.workflowName))]
-  const statusOptions = ['pending', 'running', 'completed']
+  const statusOptions = [...INSTANCE_STATUSES]
 
   const filtered = instances.filter((inst) => {
     if (filterWorkflow && inst.workflowName !== filterWorkflow) return false
-    if (filterStatus && inst.status !== filterStatus) return false
+    // 实例状态不直接用引擎原始值，而是在展示层由 status + step + completedNodes 投影成三态
+    const st = instanceStatusOfInstance(inst)
+    if (filterStatus && st !== filterStatus) return false
     const q = searchQuery.toLowerCase()
     return inst.instanceId.toLowerCase().includes(q) ||
       inst.workflowName.toLowerCase().includes(q) ||
-      inst.status.toLowerCase().includes(q) ||
-      formatStatus(inst.status).includes(searchQuery) ||
+      st.toLowerCase().includes(q) ||
+      formatStatus(st).includes(searchQuery) ||
       (inst.initialInput || '').toLowerCase().includes(q)
   }).sort((a, b) => {
     const cmp = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
@@ -134,7 +137,7 @@ const InstanceList: FC = () => {
                 onClick={() => selectInstance(inst)}
               >
                 <div className="flex-1 min-w-0 flex items-center justify-center gap-2">
-                  <div className={`w-2 h-2 rounded-full flex-shrink-0 ${statusDotColors[inst.status] || statusDotColors.unknown}`} />
+                  <div className={`w-2 h-2 rounded-full flex-shrink-0 ${statusDotColors[instanceStatusOfInstance(inst)] || statusDotColors.unknown}`} />
                   <span className="text-xs font-mono text-macos-text truncate">{inst.instanceId}</span>
                 </div>
                 <span className="flex-1 min-w-0 text-sm text-macos-text truncate text-center">{inst.workflowName}</span>
@@ -142,8 +145,8 @@ const InstanceList: FC = () => {
                   {inst.initialInput || '-'}
                 </span>
                 <div className="flex-1 min-w-0 flex justify-center">
-                  <span className={`text-xs px-2 py-0.5 rounded-md font-medium ${statusColors[inst.status] || statusColors.unknown}`}>
-                    {formatStatus(inst.status)}
+                  <span className={`text-xs px-2 py-0.5 rounded-md font-medium ${statusColors[instanceStatusOfInstance(inst)] || statusColors.unknown}`}>
+                    {formatStatus(instanceStatusOfInstance(inst))}
                   </span>
                 </div>
                 <span className="flex-1 min-w-0 text-xs text-macos-text-tertiary text-center">
@@ -396,6 +399,8 @@ const InstanceDetail: FC = () => {
 
   if (!selectedInstance) return null
   const inst = selectedInstance
+  // 详情已加载时用详情原始值，否则用列表项原始值；两者均为引擎态，统一在展示层投影
+  const instStatus = detail ? instanceStatusOfDetail(detail) : instanceStatusOfInstance(inst)
 
   return (
     <>
@@ -437,7 +442,7 @@ const InstanceDetail: FC = () => {
               <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
                 <div className="text-sm font-bold text-macos-text mb-3">基本信息</div>
                 <div className="flex flex-col gap-2.5">
-                  <DetailField icon={CircleDot} label="状态"><span className={`text-xs px-2 py-0.5 rounded-md font-medium ${statusColors[detail?.instanceStatus || inst.status] || statusColors.unknown}`}>{formatStatus(detail?.instanceStatus || inst.status)}</span></DetailField>
+                  <DetailField icon={CircleDot} label="状态"><span className={`text-xs px-2 py-0.5 rounded-md font-medium ${statusColors[instStatus] || statusColors.unknown}`}>{formatStatus(instStatus)}</span></DetailField>
                   <DetailField icon={GitBranch} label="工作流">{inst.workflowName}</DetailField>
                   <DetailField icon={Hash} label="实例ID"><span className="font-mono text-xs">{inst.instanceId}</span></DetailField>
                   <DetailField icon={Clock} label="创建">{formatRelativeTime(inst.createdAt)}</DetailField>

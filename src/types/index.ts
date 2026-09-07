@@ -393,7 +393,6 @@ export interface WorkflowInstance {
   workflowName: string
   createdAt: string
   updatedAt: string
-  /** 实例整体状态（三态）：pending | running | completed，由主进程从引擎状态派生 */
   status: string
   initialInput?: string
   currentName?: string
