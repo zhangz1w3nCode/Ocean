@@ -18,13 +18,18 @@ interface KnowledgeGraphModalProps {
   isOpen: boolean
   onClose: () => void
   onNodeClick?: (knowledge: KnowledgeFile) => void
+  /** 内嵌模式：作为二级导航内容区常驻渲染，不带遮罩、不锁 body 滚动、不可关闭 */
+  embedded?: boolean
 }
 
 export const KnowledgeGraphModal: FC<KnowledgeGraphModalProps> = ({
   isOpen,
   onClose,
   onNodeClick,
+  embedded = false,
 }) => {
+  // 图谱的全部副作用门控统一走 active：弹窗模式看 isOpen，内嵌模式常驻为真
+  const active = embedded || isOpen
   const { graphData, hasGraph, knowledgeFiles } = useKnowledgeGraph()
   const [hoveredNode, setHoveredNode] = useState<GraphNode | null>(null)
   const [draggedNode, setDraggedNode] = useState<GraphNode | null>(null)
@@ -35,6 +40,24 @@ export const KnowledgeGraphModal: FC<KnowledgeGraphModalProps> = ({
   const isDraggingRef = useRef(false)
   // 延迟清空悬浮节点的定时器
   const hoverClearTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // ForceGraph2D 不传 width/height 时会沿祖先链量尺寸，在弹窗外或入场动画期间量到的是视口尺寸，
+  // 导致 canvas 大于容器、图谱偏移被裁切。这里显式量容器并用 ResizeObserver 跟随。
+  const graphBoxRef = useRef<HTMLDivElement>(null)
+  const [graphSize, setGraphSize] = useState({ width: 0, height: 0 })
+
+  useEffect(() => {
+    const el = graphBoxRef.current
+    if (!el) return
+    const measure = () => {
+      const w = el.clientWidth
+      const h = el.clientHeight
+      setGraphSize((prev) => (prev.width === w && prev.height === h ? prev : { width: w, height: h }))
+    }
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [active])
 
   // === 使用 ref 存储最新数据，避免 useEffect 依赖问题 ===
   const graphDataRef = useRef(graphData)
@@ -158,11 +181,11 @@ export const KnowledgeGraphModal: FC<KnowledgeGraphModalProps> = ({
       setConfig(savedConfig)
     }
     loadConfig()
-  }, [isOpen]) // 弹窗打开时重新加载配置
+  }, [active]) // 图谱可见时重新加载配置
 
   // 配置加载后更新力导向
   useEffect(() => {
-    if (isOpen && graphRef.current) {
+    if (active && graphRef.current) {
       // 延迟执行确保图谱已初始化
       setTimeout(() => {
         if (graphRef.current) {
@@ -185,7 +208,7 @@ export const KnowledgeGraphModal: FC<KnowledgeGraphModalProps> = ({
         }
       }, 100)
     }
-  }, [isOpen, config.linkDistance, config.linkStrength, config.centerForce, config.chargeStrength])
+  }, [active, config.linkDistance, config.linkStrength, config.centerForce, config.chargeStrength])
 
   // 配置变化时自动保存
   const saveConfig = useCallback(async (newConfig: KnowledgeGraphConfig) => {
@@ -252,10 +275,11 @@ export const KnowledgeGraphModal: FC<KnowledgeGraphModalProps> = ({
     return map
   }, [graphData.links])
 
-  // ESC 键关闭
+  // ESC 键关闭（内嵌模式无关闭语义，跳过）
   useEffect(() => {
+    if (embedded) return
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isOpen) {
+      if (e.key === 'Escape' && active) {
         // 移除当前焦点，避免关闭后按钮显示 focus 样式
         if (document.activeElement instanceof HTMLElement) {
           document.activeElement.blur()
@@ -263,17 +287,18 @@ export const KnowledgeGraphModal: FC<KnowledgeGraphModalProps> = ({
         onClose()
       }
     }
-    if (isOpen) {
+    if (active) {
       document.addEventListener('keydown', handleKeyDown)
     }
     return () => {
       document.removeEventListener('keydown', handleKeyDown)
     }
-  }, [isOpen, onClose])
+  }, [active, onClose, embedded])
 
-  // 打开弹窗时锁定 body 滚动（使用 scrollbar-gutter 防止抖动）
+  // 打开弹窗时锁定 body 滚动（使用 scrollbar-gutter 防止抖动）；内嵌模式不锁
   useEffect(() => {
-    if (isOpen) {
+    if (embedded) return
+    if (active) {
       const originalOverflow = document.body.style.overflow
       document.body.style.overflow = 'hidden'
 
@@ -281,16 +306,16 @@ export const KnowledgeGraphModal: FC<KnowledgeGraphModalProps> = ({
         document.body.style.overflow = originalOverflow
       }
     }
-  }, [isOpen])
+  }, [active, embedded])
 
   // 打开时重新计算布局
   useEffect(() => {
-    if (isOpen && graphRef.current) {
+    if (active && graphRef.current) {
       setTimeout(() => {
         graphRef.current?.zoomToFit(400, 80)
       }, 500)
     }
-  }, [isOpen, graphData])
+  }, [active, graphData])
 
   // 重置配置
   const resetConfig = useCallback(() => {
@@ -693,7 +718,7 @@ export const KnowledgeGraphModal: FC<KnowledgeGraphModalProps> = ({
 
   // 自定义鼠标碰撞检测：精确匹配节点的视觉范围
   useEffect(() => {
-    if (!isOpen || !hasGraph) return
+    if (!active || !hasGraph) return
 
     // 等待 canvas 渲染完成
     const timer = setTimeout(() => {
@@ -817,7 +842,7 @@ export const KnowledgeGraphModal: FC<KnowledgeGraphModalProps> = ({
         }
       })
     }
-  }, [isOpen, hasGraph]) // 只依赖 isOpen 和 hasGraph，使用 ref 获取最新数据
+  }, [active, hasGraph]) // 只依赖 active 和 hasGraph，使用 ref 获取最新数据
 
   const updateConfig = useCallback((key: keyof KnowledgeGraphConfig, value: number | boolean) => {
     const newConfig = { ...config, [key]: value }
@@ -825,61 +850,54 @@ export const KnowledgeGraphModal: FC<KnowledgeGraphModalProps> = ({
     saveConfig(newConfig)
   }, [config, saveConfig])
 
-  return (
-    <AnimatePresence>
-      {isOpen && (
-        <>
-          {/* 遮罩层 */}
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/30 backdrop-blur-sm z-40"
-            onClick={onClose}
-          />
-
-          {/* 弹窗内容 */}
-          <div className="fixed inset-0 z-40 flex items-center justify-center p-6 pointer-events-none">
+  // 图谱主体：弹窗与内嵌两种外壳复用同一份内容
+  const card = (
             <motion.div
               initial={{ opacity: 0, scale: 0.95, y: 10 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 10 }}
               transition={{ duration: 0.15 }}
-              className="w-full max-w-[90vw] h-[85vh] bg-white rounded-2xl shadow-xl pointer-events-auto overflow-hidden flex flex-col relative"
+              className={embedded
+                ? 'w-full h-full bg-white overflow-hidden flex flex-col relative'
+                : 'w-full max-w-[90vw] h-[85vh] bg-white rounded-2xl shadow-xl pointer-events-auto overflow-hidden flex flex-col relative'}
               onClick={(e) => e.stopPropagation()}
             >
-              {/* 头部 */}
-              <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 flex-shrink-0">
-                <div className="flex items-center gap-2">
-                  <Network size={20} className="text-blue-500" />
-                  <span className="text-lg font-medium text-gray-800">知识图谱</span>
-                  <span className="text-sm text-gray-400">
-                    {graphData.nodes.length} 个知识, {graphData.links.length} 条关系
-                  </span>
+              {/* 头部：仅弹窗模式。内嵌模式不要这条顶部栏，设置改为图谱区域内的浮动按钮 */}
+              {!embedded && (
+                <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 flex-shrink-0">
+                  <div className="flex items-center gap-2">
+                    <Network size={20} className="text-blue-500" />
+                    <span className="text-lg font-medium text-gray-800">知识图谱</span>
+                    <span className="text-sm text-gray-400">
+                      {graphData.nodes.length} 个知识, {graphData.links.length} 条关系
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {/* 设置按钮 */}
+                    <button
+                      onClick={() => setShowSettings(!showSettings)}
+                      className={`p-1.5 rounded-lg transition-colors ${showSettings ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100 text-gray-500'}`}
+                      title="设置"
+                    >
+                      <Settings size={18} />
+                    </button>
+                    <button
+                      onClick={onClose}
+                      className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
+                    >
+                      <X size={18} className="text-gray-500" />
+                    </button>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  {/* 设置按钮 */}
-                  <button
-                    onClick={() => setShowSettings(!showSettings)}
-                    className={`p-1.5 rounded-lg transition-colors ${showSettings ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100 text-gray-500'}`}
-                    title="设置"
-                  >
-                    <Settings size={18} />
-                  </button>
-                  <button
-                    onClick={onClose}
-                    className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
-                  >
-                    <X size={18} className="text-gray-500" />
-                  </button>
-                </div>
-              </div>
+              )}
 
               {/* 图谱区域 */}
-              <div className="flex-1 relative bg-gradient-to-br from-gray-50 to-gray-100">
+              <div ref={graphBoxRef} className="flex-1 relative bg-gradient-to-br from-gray-50 to-gray-100 overflow-hidden">
                 {hasGraph ? (
                   <ForceGraph2D
                     ref={graphRef}
+                    width={graphSize.width || undefined}
+                    height={graphSize.height || undefined}
                     graphData={graphData}
                     nodeCanvasObject={paintNode}
                     linkCanvasObject={paintLink}
@@ -922,6 +940,34 @@ export const KnowledgeGraphModal: FC<KnowledgeGraphModalProps> = ({
                 )}
               </div>
 
+              {/*
+                内嵌模式的浮动设置按钮。
+                与下方设置面板共用同一个锚点 top-4 right-4（对齐参照 flow/NodePanel 的节点库折叠按钮），
+                且两者挂在同一层容器上，保证顶部齐平；面板展开时按钮隐藏，收起走面板右上角的 X。
+              */}
+              <AnimatePresence>
+                {embedded && !showSettings && (
+                  <motion.div
+                    key="graph-settings-trigger"
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.9 }}
+                    transition={{ duration: 0.15 }}
+                    className="absolute top-4 right-4 z-20"
+                  >
+                    <button
+                      onClick={() => setShowSettings(true)}
+                      title="图谱设置"
+                      className="w-10 h-10 bg-white rounded-lg border border-gray-200 shadow-md
+                                 flex items-center justify-center
+                                 text-gray-500 hover:bg-gray-50 hover:text-gray-700 transition-colors"
+                    >
+                      <Settings size={16} />
+                    </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
               {/* 设置侧边栏 */}
               <AnimatePresence>
                 {showSettings && (
@@ -930,7 +976,11 @@ export const KnowledgeGraphModal: FC<KnowledgeGraphModalProps> = ({
                     animate={{ x: 0, opacity: 1 }}
                     exit={{ x: 300, opacity: 0 }}
                     transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-                    className="absolute top-16 right-4 w-64 bg-white rounded-2xl shadow-lg border border-gray-100 z-10 overflow-hidden"
+                    className={`bg-white shadow-lg border border-gray-200 z-20 overflow-hidden ${
+                      embedded
+                        ? 'absolute top-4 right-4 w-64 rounded-xl'
+                        : 'absolute top-16 right-4 w-64 rounded-2xl'
+                    }`}
                   >
                     {/* 头部 */}
                     <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
@@ -1116,28 +1166,32 @@ export const KnowledgeGraphModal: FC<KnowledgeGraphModalProps> = ({
                 )}
               </AnimatePresence>
             </motion.div>
+  )
+
+  // 内嵌模式：直接填满二级导航右侧内容区，不带遮罩与 fixed 定位
+  if (embedded) {
+    return <div className="w-full h-full flex flex-col overflow-hidden">{card}</div>
+  }
+
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <>
+          {/* 遮罩层 */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/30 backdrop-blur-sm z-40"
+            onClick={onClose}
+          />
+
+          {/* 弹窗内容 */}
+          <div className="fixed inset-0 z-40 flex items-center justify-center p-6 pointer-events-none">
+            {card}
           </div>
         </>
       )}
     </AnimatePresence>
-  )
-}
-
-/**
- * 知识图谱按钮组件
- */
-interface KnowledgeGraphButtonProps {
-  onClick: () => void
-}
-
-export const KnowledgeGraphButton: FC<KnowledgeGraphButtonProps> = ({ onClick }) => {
-  return (
-    <button
-      onClick={onClick}
-      className="flex items-center gap-1.5 px-3 py-2 text-sm text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
-    >
-      <Network size={16} />
-      <span>知识图谱</span>
-    </button>
   )
 }

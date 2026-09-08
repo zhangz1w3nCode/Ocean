@@ -2311,6 +2311,67 @@ export const deleteKnowledgeFileFromLocal = async (filepath: string): Promise<bo
   }
 }
 
+// 读取知识文件原文（不剔离 frontmatter，用于知识目录编辑器）
+// 必须逐字节保真：回写时会把这份原文直接写盘
+export const loadKnowledgeRawFile = async (
+  filepath: string,
+): Promise<{ content: string | null; mtime: string | null }> => {
+  if (!isElectron()) return { content: null, mtime: null }
+  try {
+    const result = await window.electronAPI!.loadKnowledgeFile(filepath)
+    return { content: result.content, mtime: result.mtime }
+  } catch (error) {
+    console.error('读取知识文件原文失败:', error)
+    return { content: null, mtime: null }
+  }
+}
+
+// 拆出知识文件开头的 YAML 头与正文。
+// 必须返回**原文字面量**而非重新序列化：实际知识文件的 frontmatter 含 domain/status 等
+// store 并不感知的字段（见 loadKnowledgeFilesFromLocal 只取 name/description/tags/category），
+// 一旦走 YAML 往返就会丢字段。编辑区只展示 body，写回时用 joinKnowledgeRawFile 原样拼回。
+const FRONTMATTER_FENCE = /^---\n([\s\S]*?)\n---\n/
+
+export const splitKnowledgeRawFile = (
+  raw: string,
+): { frontmatter: string; body: string } => {
+  const match = FRONTMATTER_FENCE.exec(raw)
+  if (!match) return { frontmatter: '', body: raw }
+  return { frontmatter: match[0], body: raw.slice(match[0].length) }
+}
+
+export const joinKnowledgeRawFile = (
+  frontmatter: string,
+  body: string,
+): string => `${frontmatter}${body}`
+
+// 直接写回知识文件原文（不走 frontmatter 生成与合并）
+export const saveKnowledgeRawFile = async (
+  filepath: string,
+  rawContent: string,
+): Promise<boolean> => {
+  if (!isElectron()) return false
+  try {
+    const result = await window.electronAPI!.saveKnowledgeFile(filepath, rawContent)
+    return result.success
+  } catch (error) {
+    console.error('写入知识文件原文失败:', error)
+    return false
+  }
+}
+
+// 列出知识库子目录树（项目根 .knowledges/ 下）
+export const listKnowledgeFoldersFromLocal = async (): Promise<KnowledgeFolder[]> => {
+  if (!isElectron()) return []
+  try {
+    const result = await window.electronAPI!.listKnowledgeFolders()
+    return result.success && result.folders ? result.folders : []
+  } catch (error) {
+    console.error('获取知识库目录树失败:', error)
+    return []
+  }
+}
+
 // ===== 应用配置存储方法 =====
 
 const APP_CONFIG_KEY = 'flow-editor-app-config'

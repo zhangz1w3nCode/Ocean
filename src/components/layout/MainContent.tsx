@@ -5,7 +5,7 @@ import { useAppStore, type PageType } from '../../stores/appStore'
 import { NodesPage } from '../../pages/NodesPage'
 import { AgentsPage } from '../../pages/AgentsPage'
 import { ResourcesPage } from '../../pages/ResourcesPage'
-import { KnowledgesPage } from '../../pages/KnowledgesPage'
+import { KnowledgeLayout } from '../knowledge'
 import { SkillsPage } from '../../pages/SkillsPage'
 import { SettingsPage } from '../../pages/SettingsPage'
 import { WorkflowEditorModal, WorkflowLayout } from '../workflow'
@@ -19,7 +19,7 @@ const pageComponents: Record<PageType, FC> = {
   nodes: NodesPage,
   agents: AgentsPage,
   resources: ResourcesPage,
-  knowledges: KnowledgesPage,
+  knowledges: KnowledgeLayout,
   skills: SkillsPage,
   settings: SettingsPage,
 }
