@@ -7,6 +7,9 @@ export type PageType = 'project' | 'agents' | 'workflows' | 'nodes' | 'resources
 // 工作流区域二级导航子页面
 export type WorkflowSubPage = 'nodes' | 'workflows' | 'instances' | 'settings'
 
+// 知识区域二级导航子页面
+export type KnowledgeSubPage = 'library' | 'graph' | 'catalog' | 'settings'
+
 // 默认导航顺序
 const DEFAULT_NAV_ORDER: PageType[] = ['agents', 'skills', 'knowledges', 'workflows', 'resources', 'settings']
 
@@ -33,6 +36,9 @@ interface AppState {
   // 工作流二级导航
   workflowSubPage: WorkflowSubPage
   setWorkflowSubPage: (page: WorkflowSubPage) => void
+  // 知识二级导航
+  knowledgeSubPage: KnowledgeSubPage
+  setKnowledgeSubPage: (page: KnowledgeSubPage) => void
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -111,4 +117,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   // 工作流二级导航 - 默认展示工作流列表
   workflowSubPage: 'workflows',
   setWorkflowSubPage: (page) => set({ workflowSubPage: page }),
+  // 知识二级导航 - 默认展示知识库
+  knowledgeSubPage: 'library',
+  setKnowledgeSubPage: (page) => set({ knowledgeSubPage: page }),
 }))

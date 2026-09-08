@@ -1,14 +1,14 @@
 import type { FC } from 'react'
 import { Plus, Search, BookOpen, FileSearch, FolderOpen } from 'lucide-react'
 import { Button, ConfirmModal } from '../components/ui'
-import { KnowledgeCard, KnowledgeModal, KnowledgeDetailModal, KnowledgeGraphModal, KnowledgeGraphButton, GlobalIndexModal } from '../components/knowledge'
+import { KnowledgeCard, KnowledgeModal, KnowledgeDetailModal, GlobalIndexModal } from '../components/knowledge'
 import { useKnowledgeStore } from '../stores/knowledgeStore'
 import { useToastStore } from '../stores/toastStore'
 import { useState, useEffect, useMemo } from 'react'
 import type { KnowledgeFile } from '../types'
 import { generateIndexContent } from '../utils/storage'
 
-export const KnowledgesPage: FC = () => {
+export const KnowledgesPage: FC<{ nested?: boolean }> = ({ nested = false }) => {
   const { knowledgeFiles, addKnowledgeFile, updateKnowledgeFile, deleteKnowledgeFile, loadKnowledgeFiles } =
     useKnowledgeStore()
   const { addToast } = useToastStore()
@@ -26,9 +26,6 @@ export const KnowledgesPage: FC = () => {
   // 删除确认弹窗状态
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [deletingKnowledgeId, setDeletingKnowledgeId] = useState<string | null>(null)
-
-  // 知识图谱弹窗状态
-  const [isGraphOpen, setIsGraphOpen] = useState(false)
 
   // 全局索引弹窗状态
   const [isGlobalIndexOpen, setIsGlobalIndexOpen] = useState(false)
@@ -226,26 +223,21 @@ export const KnowledgesPage: FC = () => {
     return freshContent
   }
 
-  return (
-    <div className="h-full pl-4 pr-4 pt-4 pb-4">
-      {/* 白色圆角卡片容器 */}
-      <div className="h-full bg-white rounded-2xl shadow-sm flex flex-col overflow-hidden">
-        {/* 页面头部 */}
-        <div className="h-16 px-6 flex items-center justify-between">
-          {/* 左侧：按钮组 */}
-          <div className="flex items-center gap-2">
-            <KnowledgeGraphButton
-              onClick={() => setIsGraphOpen(true)}
-            />
-            {/* 全局索引按钮 */}
-            <button
-              onClick={() => setIsGlobalIndexOpen(true)}
-              className="flex items-center gap-1.5 px-3 py-2 text-sm text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
-            >
-              <FileSearch size={16} />
-              <span>全局索引</span>
-            </button>
-          </div>
+  const innerContent = (
+    <>
+      {/* 页面头部 */}
+      <div className="h-16 px-6 flex items-center justify-between">
+        {/* 左侧：按钮组 */}
+        <div className="flex items-center gap-2">
+          {/* 全局索引按钮 */}
+          <button
+            onClick={() => setIsGlobalIndexOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-2 text-sm text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+          >
+            <FileSearch size={16} />
+            <span>全局索引</span>
+          </button>
+        </div>
 
           {/* 右侧：搜索和新建 */}
           <div className="flex items-center gap-3">
@@ -318,7 +310,6 @@ export const KnowledgesPage: FC = () => {
             </div>
           )}
         </div>
-      </div>
 
       {/* 创建/编辑知识库弹窗 */}
       <KnowledgeModal
@@ -350,13 +341,6 @@ export const KnowledgesPage: FC = () => {
         knowledge={viewingKnowledge}
       />
 
-      {/* 知识图谱弹窗 */}
-      <KnowledgeGraphModal
-        isOpen={isGraphOpen}
-        onClose={() => setIsGraphOpen(false)}
-        onNodeClick={handleCardClick}
-      />
-
       {/* 全局索引弹窗 */}
       <GlobalIndexModal
         isOpen={isGlobalIndexOpen}
@@ -367,6 +351,19 @@ export const KnowledgesPage: FC = () => {
         onSave={handleSaveGlobalIndex}
         onRefresh={handleRefreshGlobalIndex}
       />
+    </>
+  )
+
+  if (nested) {
+    return innerContent
+  }
+
+  return (
+    <div className="h-full pl-4 pr-4 pt-4 pb-4">
+      {/* 白色圆角卡片容器 */}
+      <div className="h-full bg-white rounded-2xl shadow-sm flex flex-col overflow-hidden">
+        {innerContent}
+      </div>
     </div>
   )
 }

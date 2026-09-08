@@ -2311,6 +2311,48 @@ export const deleteKnowledgeFileFromLocal = async (filepath: string): Promise<bo
   }
 }
 
+// 读取知识文件原文（不剔离 frontmatter，用于知识目录编辑器）
+// 必须逐字节保真：回写时会把这份原文直接写盘
+export const loadKnowledgeRawFile = async (
+  filepath: string,
+): Promise<{ content: string | null; mtime: string | null }> => {
+  if (!isElectron()) return { content: null, mtime: null }
+  try {
+    const result = await window.electronAPI!.loadKnowledgeFile(filepath)
+    return { content: result.content, mtime: result.mtime }
+  } catch (error) {
+    console.error('读取知识文件原文失败:', error)
+    return { content: null, mtime: null }
+  }
+}
+
+// 直接写回知识文件原文（不走 frontmatter 生成与合并）
+export const saveKnowledgeRawFile = async (
+  filepath: string,
+  rawContent: string,
+): Promise<boolean> => {
+  if (!isElectron()) return false
+  try {
+    const result = await window.electronAPI!.saveKnowledgeFile(filepath, rawContent)
+    return result.success
+  } catch (error) {
+    console.error('写入知识文件原文失败:', error)
+    return false
+  }
+}
+
+// 列出知识库子目录树（项目根 .knowledges/ 下）
+export const listKnowledgeFoldersFromLocal = async (): Promise<KnowledgeFolder[]> => {
+  if (!isElectron()) return []
+  try {
+    const result = await window.electronAPI!.listKnowledgeFolders()
+    return result.success && result.folders ? result.folders : []
+  } catch (error) {
+    console.error('获取知识库目录树失败:', error)
+    return []
+  }
+}
+
 // ===== 应用配置存储方法 =====
 
 const APP_CONFIG_KEY = 'flow-editor-app-config'
