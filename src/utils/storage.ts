@@ -2326,6 +2326,25 @@ export const loadKnowledgeRawFile = async (
   }
 }
 
+// 拆出知识文件开头的 YAML 头与正文。
+// 必须返回**原文字面量**而非重新序列化：实际知识文件的 frontmatter 含 domain/status 等
+// store 并不感知的字段（见 loadKnowledgeFilesFromLocal 只取 name/description/tags/category），
+// 一旦走 YAML 往返就会丢字段。编辑区只展示 body，写回时用 joinKnowledgeRawFile 原样拼回。
+const FRONTMATTER_FENCE = /^---\n([\s\S]*?)\n---\n/
+
+export const splitKnowledgeRawFile = (
+  raw: string,
+): { frontmatter: string; body: string } => {
+  const match = FRONTMATTER_FENCE.exec(raw)
+  if (!match) return { frontmatter: '', body: raw }
+  return { frontmatter: match[0], body: raw.slice(match[0].length) }
+}
+
+export const joinKnowledgeRawFile = (
+  frontmatter: string,
+  body: string,
+): string => `${frontmatter}${body}`
+
 // 直接写回知识文件原文（不走 frontmatter 生成与合并）
 export const saveKnowledgeRawFile = async (
   filepath: string,

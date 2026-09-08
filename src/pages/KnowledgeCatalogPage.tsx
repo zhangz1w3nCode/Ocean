@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, type FC } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef, type FC } from 'react'
 import {
   ChevronRight, ChevronDown, FolderOpen, FolderClosed, FileText,
   Eye, PencilLine, Save, FileQuestion,
@@ -9,6 +9,7 @@ import { useKnowledgeStore } from '../stores/knowledgeStore'
 import { useToastStore } from '../stores/toastStore'
 import {
   loadKnowledgeRawFile, saveKnowledgeRawFile, listKnowledgeFoldersFromLocal, isElectron,
+  splitKnowledgeRawFile, joinKnowledgeRawFile,
   type KnowledgeFolder,
 } from '../utils/storage'
 
@@ -142,7 +143,9 @@ export const KnowledgeCatalogPage: FC = () => {
   const [folders, setFolders] = useState<KnowledgeFolder[]>([])
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [selectedPath, setSelectedPath] = useState<string | null>(null)
-  const [rawContent, setRawContent] = useState('')
+  const [body, setBody] = useState('')
+  // 当前文件开头 YAML 头的**原文字面量**：编辑区不展示它，写盘时原样拼回
+  const frontmatterRef = useRef('')
   const [dirty, setDirty] = useState(false)
   const [saving, setSaving] = useState(false)
   const [viewMode, setViewMode] = useState<'edit' | 'preview'>('edit')
@@ -181,18 +184,23 @@ export const KnowledgeCatalogPage: FC = () => {
     setSelectedPath(path)
     setDirty(false)
     const { content } = await loadKnowledgeRawFile(path)
-    setRawContent(content ?? '')
+    const { frontmatter, body: bodyOnly } = splitKnowledgeRawFile(content ?? '')
+    frontmatterRef.current = frontmatter
+    setBody(bodyOnly)
   }, [])
 
   const handleChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setRawContent(e.target.value)
+    setBody(e.target.value)
     setDirty(true)
   }, [])
 
   const handleSave = useCallback(async () => {
     if (!selectedPath) return
     setSaving(true)
-    const success = await saveKnowledgeRawFile(selectedPath, rawContent)
+    const success = await saveKnowledgeRawFile(
+      selectedPath,
+      joinKnowledgeRawFile(frontmatterRef.current, body),
+    )
     setSaving(false)
     if (success) {
       setDirty(false)
@@ -203,7 +211,7 @@ export const KnowledgeCatalogPage: FC = () => {
     } else {
       addToast('保存失败，请重试', 'error')
     }
-  }, [selectedPath, rawContent, addToast, loadKnowledgeFiles])
+  }, [selectedPath, body, addToast, loadKnowledgeFiles])
 
   const hasTree = tree.length > 0
 
@@ -265,7 +273,7 @@ export const KnowledgeCatalogPage: FC = () => {
             </div>
           ) : viewMode === 'edit' ? (
             <MarkdownEditor
-              value={rawContent}
+              value={body}
               onChange={handleChange}
               className="min-h-full"
               placeholder=""
@@ -278,7 +286,7 @@ export const KnowledgeCatalogPage: FC = () => {
                 animate={{ opacity: 1 }}
                 transition={{ duration: 0.15 }}
               >
-                <MarkdownRenderer content={rawContent} />
+                <MarkdownRenderer content={body} />
               </motion.div>
             </AnimatePresence>
           )}
