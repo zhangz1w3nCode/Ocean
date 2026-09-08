@@ -273,3 +273,152 @@
 .prose .wiki-link:hover {
   text-decoration: none;
 }
+/* ============================================================
+ * 知识目录「实时编辑」(atomic-editor) 主题对齐
+ * atomic-editor 的浅色主题靠祖先 [data-theme="light"] 激活，
+ * 这里在对齐其 GitHub-light 底色的同时，把关键 token 精确对齐到
+ * 「预览」(MarkdownRenderer / prose) 的观感：
+ *   行内代码 #F3F4F6 底 + #E5E7EB 框 + #1D1D1F 字；正文/标题 #1D1D1F；
+ *   表格无表头底色、仅横向分隔线（对齐 prose 表格）。
+ * ============================================================ */
+/* 特异度 (0,3,0) 压过库自带的 [data-theme="light"] .atomic-cm-editor (0,2,0)，
+ * 否则这些变量会被浅色主题块覆盖回去（代码块文字发紫、左竖条发紫就是这个原因）。
+ * 语法高亮 token 色（--atomic-editor-hl-*）对齐 tailwind.css 里 prose 用的 GitHub-light 色板。 */
+.knowledge-wysiwyg[data-theme="light"] .atomic-cm-editor {
+  /* 宽度：去掉 70ch 居中约束，像预览一样铺满 */
+  --atomic-editor-measure: 100%;
+  /* 正文：对齐预览 prose 的 14px / 24px 行高 / Inter 字体 */
+  --atomic-editor-body-size: 14px;
+  --atomic-editor-body-leading: 1.714;
+  --atomic-editor-font: Inter, -apple-system, system-ui, "Segoe UI", sans-serif;
+  --atomic-editor-font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  /* 引用块左竖条：紫色改灰，对齐预览 #E5E7EB */
+  --atomic-editor-accent-soft: #E5E7EB;
+  /* 正文/列表文字：预览是灰 #6E6E73（atomic 正文与标题共用 fg，故把 fg 设为灰，
+   * 标题/粗体再单独显式设深色） */
+  --atomic-editor-fg: #6E6E73;
+  --atomic-editor-fg-muted: #6E6E73;
+  --atomic-editor-fg-faint: #8E8E93;
+  --atomic-editor-bg: #ffffff;
+  --atomic-editor-code-bg: #F3F4F6;
+  --atomic-editor-bg-panel: #F6F8FA;
+  --atomic-editor-border: #E5E7EB;
+  /* monospace（无语言围栏代码）走 link 色，转深即与预览纯黑代码一致；
+   * Ocean 预览里的链接本身也是深色，比原来的靛紫更贴品牌 */
+  --atomic-editor-link: #1D1D1F;
+  --atomic-editor-link-hover: #1D1D1F;
+  /* 去掉代码块左侧紫色竖条 */
+  --atomic-editor-code-rail: transparent;
+  /* 语法 token 色 → 对齐 highlight.js github.css（与 .prose .hljs-* 同值） */
+  --atomic-editor-hl-keyword: #D73A49;
+  --atomic-editor-hl-string: #032F62;
+  --atomic-editor-hl-number: #005CC5;
+  --atomic-editor-hl-comment: #6A737D;
+  --atomic-editor-hl-type: #6F42C1;
+  --atomic-editor-hl-function: #6F42C1;
+  --atomic-editor-hl-property: #005CC5;
+  --atomic-editor-hl-tag: #22863A;
+  --atomic-editor-hl-variable: #005CC5;
+  --atomic-editor-hl-operator: #D73A49;
+  --atomic-editor-hl-regexp: #032F62;
+  --atomic-editor-hl-escape: #005CC5;
+  --atomic-editor-hl-invalid: #B31D28;
+}
+
+/* 标题字号/字重/颜色对齐预览 prose（h1 30/800, h2 20/700, h3 18/600, h4+ 14/600；标题色 #1D1D1F） */
+.knowledge-wysiwyg .cm-line.cm-atomic-h1 { font-size: 30px !important; font-weight: 800 !important; color: #1D1D1F !important; }
+.knowledge-wysiwyg .cm-line.cm-atomic-h2 { font-size: 20px !important; font-weight: 700 !important; color: #1D1D1F !important; }
+.knowledge-wysiwyg .cm-line.cm-atomic-h3 { font-size: 18px !important; font-weight: 600 !important; color: #1D1D1F !important; }
+.knowledge-wysiwyg .cm-line.cm-atomic-h4 { font-size: 14px !important; font-weight: 600 !important; color: #1D1D1F !important; }
+.knowledge-wysiwyg .cm-line.cm-atomic-h5 { font-size: 14px !important; font-weight: 600 !important; color: #1D1D1F !important; }
+.knowledge-wysiwyg .cm-line.cm-atomic-h6 { font-size: 14px !important; font-weight: 600 !important; color: #1D1D1F !important; }
+
+/* 粗体：atomic 把 strong 文字色绑到 --atomic-editor-fg（正文灰），且真正画字的是内层 CM6 高亮 span，
+ * 故连内层一起强制为预览的深色 #111827 + 字重 600 */
+.knowledge-wysiwyg .cm-atomic-strong,
+.knowledge-wysiwyg .cm-atomic-strong > span,
+.knowledge-wysiwyg .cm-atomic-strong * {
+  color: #111827 !important;
+  font-weight: 600 !important;
+}
+/* 列表标记（有序/无序符号）：对齐预览 ::marker 的浅灰 #D1D5DB */
+.knowledge-wysiwyg .cm-atomic-list-marker { color: #D1D5DB !important; }
+
+/* 光标：atomic 默认取 --atomic-editor-accent-bright（紫），改为中性深色贴合 Ocean 灰调 */
+.knowledge-wysiwyg .cm-cursor { border-left-color: #1D1D1F !important; }
+.knowledge-wysiwyg .cm-content { caret-color: #1D1D1F !important; }
+
+/* 带反引号的 wikilink [[`path`|label]]：atomic 把目标 `path` 当行内代码，
+ * 在隐藏语法区(font-size:0)里它的 bg/border/padding 仍渲染成灰色药丸，中和掉 */
+.knowledge-wysiwyg .cm-atomic-wiki-link .cm-atomic-inline-code,
+.knowledge-wysiwyg .cm-atomic-wiki-link-hidden-syntax .cm-atomic-inline-code,
+.knowledge-wysiwyg .cm-atomic-link .cm-atomic-inline-code {
+  background: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+  color: inherit !important;
+}
+
+/* 引用块：斜体 + 4px 灰竖条，对齐预览 blockquote */
+.knowledge-wysiwyg .cm-line.cm-atomic-blockquote {
+  font-style: italic !important;
+  border-left-width: 4px !important;
+  color: #111827 !important;
+}
+
+/* 行内代码：对齐预览的浅灰胶囊 */
+.knowledge-wysiwyg .cm-atomic-inline-code {
+  background: #F3F4F6 !important;
+  border: 1px solid #E5E7EB !important;
+  border-radius: 4px !important;
+  color: #1D1D1F !important;
+  font-size: 0.875em !important;
+  padding: 2px 6px !important;
+}
+
+/* 表格：去掉深色表头底色与竖向网格，仅保留横向分隔线（对齐 prose） */
+.knowledge-wysiwyg .cm-atomic-table th,
+.knowledge-wysiwyg .cm-atomic-table td {
+  border: none !important;
+  border-bottom: 1px solid #E5E7EB !important;
+  background: transparent !important;
+}
+
+.knowledge-wysiwyg .cm-atomic-table th {
+  border-bottom-width: 2px !important;
+  font-weight: 600 !important;
+  color: #1D1D1F !important;
+}
+
+/* 编辑态聚焦单元格保留一点可辨识度 */
+.knowledge-wysiwyg .cm-atomic-table th:focus-within,
+.knowledge-wysiwyg .cm-atomic-table td:focus-within {
+  outline: 1px solid #D0D7DE !important;
+  outline-offset: -1px;
+}
+
+/* 代码块：底色/描边/文字对齐预览的 #F6F8FA + #E1E4E8 圆角盒子，去紫色左竖条 */
+.knowledge-wysiwyg .cm-line.cm-atomic-fenced-code {
+  background: #F6F8FA !important;
+  box-shadow: none !important;
+  color: #1D1D1F !important;
+  font-size: 13px !important;
+  line-height: 1.6 !important;
+  border-left: 1px solid #E1E4E8 !important;
+  border-right: 1px solid #E1E4E8 !important;
+}
+/* 首行（前面不是代码行）：上边框 + 上圆角 */
+.knowledge-wysiwyg .cm-line.cm-atomic-fenced-code:not(.cm-line.cm-atomic-fenced-code + .cm-line.cm-atomic-fenced-code) {
+  border-top: 1px solid #E1E4E8 !important;
+  border-top-left-radius: 8px !important;
+  border-top-right-radius: 8px !important;
+  padding-top: 0.5em !important;
+}
+/* 末行（后面紧跟非代码行，或就是文档末行）：下边框 + 下圆角 */
+.knowledge-wysiwyg .cm-line.cm-atomic-fenced-code:has(+ .cm-line:not(.cm-atomic-fenced-code)),
+.knowledge-wysiwyg .cm-line.cm-atomic-fenced-code:not(:has(+ .cm-line)) {
+  border-bottom: 1px solid #E1E4E8 !important;
+  border-bottom-left-radius: 8px !important;
+  border-bottom-right-radius: 8px !important;
+  padding-bottom: 0.5em !important;
+}

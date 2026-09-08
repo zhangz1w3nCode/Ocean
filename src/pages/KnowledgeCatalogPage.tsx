@@ -1,10 +1,13 @@
 import { useState, useEffect, useMemo, useCallback, useRef, type FC } from 'react'
 import {
   ChevronRight, ChevronDown, FolderOpen, FolderClosed, FileText,
-  Eye, PencilLine, Save, FileQuestion,
+  Eye, PencilLine, Save, FileQuestion, Code,
 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { MarkdownEditor, MarkdownRenderer } from '../components/ui'
+import { AtomicCodeMirrorEditor, wikiLinks } from '@atomic-editor/editor'
+import { languages as codeLanguages } from '@codemirror/language-data'
+import '@atomic-editor/editor/styles.css'
 import { useKnowledgeStore } from '../stores/knowledgeStore'
 import { useToastStore } from '../stores/toastStore'
 import {
@@ -148,7 +151,7 @@ export const KnowledgeCatalogPage: FC = () => {
   const frontmatterRef = useRef('')
   const [dirty, setDirty] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [viewMode, setViewMode] = useState<'edit' | 'preview'>('edit')
+  const [viewMode, setViewMode] = useState<'edit' | 'preview' | 'wysiwyg'>('edit')
 
   const tree = useMemo(() => {
     const filePaths = Array.from(
@@ -240,19 +243,27 @@ export const KnowledgeCatalogPage: FC = () => {
 
       {/* 右侧编辑区 */}
       <div className="flex-1 flex flex-col min-h-0 border-l border-gray-100 overflow-hidden">
-        <div className="h-12 px-4 flex items-center justify-between flex-shrink-0">
-          <span className="text-sm text-macos-text-secondary truncate">
-            {selectedPath ? `${selectedPath}.md` : ''}
-          </span>
+        <div className="h-12 px-4 flex items-center justify-end flex-shrink-0">
           {selectedPath && (
-            <div className="flex items-center gap-2 flex-shrink-0">
-              <button
-                onClick={() => setViewMode(viewMode === 'edit' ? 'preview' : 'edit')}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 text-sm text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
-              >
-                {viewMode === 'edit' ? <Eye size={15} /> : <PencilLine size={15} />}
-                <span>{viewMode === 'edit' ? '预览' : '编辑'}</span>
-              </button>
+            <div className="flex items-center gap-1 flex-shrink-0">
+              {([
+                { mode: 'edit' as const, icon: PencilLine, label: '编辑' },
+                { mode: 'wysiwyg' as const, icon: Code, label: '实时编辑' },
+                { mode: 'preview' as const, icon: Eye, label: '预览' },
+              ]).map(({ mode, icon: Icon, label }) => (
+                <button
+                  key={mode}
+                  onClick={() => setViewMode(mode)}
+                  className={`flex items-center gap-1.5 px-2.5 py-1.5 text-sm rounded-lg transition-colors ${
+                    viewMode === mode
+                      ? 'bg-[#E5E7EB] border border-gray-300 text-gray-700'
+                      : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
+                  }`}
+                >
+                  <Icon size={15} />
+                  <span>{label}</span>
+                </button>
+              ))}
               <button
                 onClick={handleSave}
                 disabled={!dirty || saving}
@@ -266,10 +277,32 @@ export const KnowledgeCatalogPage: FC = () => {
         </div>
 
         {/* 整块滚动，编辑器不固定高度 */}
-        <div className="flex-1 min-h-0 overflow-y-auto px-4 pb-4">
+        <div className={`flex-1 min-h-0 ${viewMode === 'wysiwyg' ? 'overflow-hidden px-4' : 'overflow-y-auto px-4 pb-4'}`}>
           {!selectedPath ? (
             <div className="h-full flex items-center justify-center">
               <FileQuestion size={32} className="text-macos-text-tertiary" />
+            </div>
+          ) : viewMode === 'wysiwyg' ? (
+            <div className="h-full knowledge-wysiwyg" data-theme="light">
+              <AtomicCodeMirrorEditor
+                markdownSource={body}
+                documentId={selectedPath}
+                onMarkdownChange={(md) => { setBody(md); setDirty(true) }}
+                extensions={[wikiLinks({
+                  suggest: async (q) =>
+                    knowledgeFiles
+                      .filter(k => (k.filepath || k.name).toLowerCase().includes(q.toLowerCase()))
+                      .slice(0, 20)
+                      .map(k => ({ target: k.filepath || k.name, label: k.name })),
+                  resolve: async (t) => {
+                    const found = knowledgeFiles.find(k => (k.filepath || k.name) === t)
+                    return found
+                      ? { target: t, label: found.name, status: 'resolved' as const }
+                      : { target: t, label: t, status: 'missing' as const }
+                  },
+                })]}
+                codeLanguages={codeLanguages}
+              />
             </div>
           ) : viewMode === 'edit' ? (
             <MarkdownEditor
