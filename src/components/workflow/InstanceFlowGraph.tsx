@@ -31,6 +31,7 @@ import {
   LocalNode,
 } from '../flow/nodes'
 import type { InstanceArtifact } from '../../types'
+import { computeGhostSuccessors } from '../../utils/instanceFlowGhost'
 
 const nodeTypes = {
   start: StartNode, end: EndNode, process: ProcessNode,
@@ -43,6 +44,12 @@ const defaultEdgeOptions = {
   markerEnd: { type: MarkerType.ArrowClosed, width: 15, height: 15, color: '#9CA3AF' },
   style: { strokeWidth: 2, stroke: '#9CA3AF' },
 }
+
+// 候选后继的虚化预览：只看不可交互，一旦该节点实体化（进了 visited）就由计算函数自动剔除
+const GHOST_NODE_OPACITY = 0.3
+const GHOST_EDGE_OPACITY = 0.4
+const GHOST_EDGE_DASH = '6 4'
+const GHOST_EDGE_COLOR = '#9CA3AF'
 
 const FIT_PADDING = 0.2
 // fit 的下限必须足够低：节点多的横向 DAG 在窄容器里需要的 zoom 会低于 ReactFlow 默认 0.2 地板，
@@ -192,7 +199,7 @@ export const InstanceFlowGraph: FC<InstanceFlowGraphProps> = ({ traceLog, flowDa
             const tgtNode = flowData.nodes.find(n => n.id === edge.target)
             const isCurrentEdge = isRunning && tgtNode && tgtNode.data?.label === currentName
             traversed.push({
-              id: edge.id, source: edge.source, target: edge.target, type: 'default',
+              id: edge.id, source: edge.source, target: edge.target, type: 'default', sourceHandle: edge.sourceHandle,
               animated: isRunning,
               style: { strokeWidth: 2, stroke: isCurrentEdge ? '#3B82F6' : '#9CA3AF' },
               markerEnd: { type: MarkerType.ArrowClosed, width: 15, height: 15, color: isCurrentEdge ? '#3B82F6' : '#9CA3AF' },
@@ -202,7 +209,7 @@ export const InstanceFlowGraph: FC<InstanceFlowGraphProps> = ({ traceLog, flowDa
           const tgtNode = flowData.nodes.find(n => n.id === edge.target)
           const isCurrentEdge = isRunning && tgtNode && tgtNode.data?.label === currentName
           traversed.push({
-            id: edge.id, source: edge.source, target: edge.target, type: 'default',
+            id: edge.id, source: edge.source, target: edge.target, type: 'default', sourceHandle: edge.sourceHandle,
             animated: isRunning,
             style: { strokeWidth: 2, stroke: isCurrentEdge ? '#3B82F6' : '#9CA3AF' },
             markerEnd: { type: MarkerType.ArrowClosed, width: 15, height: 15, color: isCurrentEdge ? '#3B82F6' : '#9CA3AF' },
@@ -217,7 +224,7 @@ export const InstanceFlowGraph: FC<InstanceFlowGraphProps> = ({ traceLog, flowDa
         const firstTarget = flowMap.get(path[0].node)
         if (firstTarget) for (const edge of flowData.edges) {
           if (edge.source === startNode.id && edge.target === firstTarget.id) {
-            traversed.push({ id: edge.id, source: edge.source, target: edge.target, type: 'default', animated: isRunning, style: { strokeWidth: 2, stroke: '#9CA3AF' }, markerEnd: { type: MarkerType.ArrowClosed, width: 15, height: 15, color: '#9CA3AF' } })
+            traversed.push({ id: edge.id, source: edge.source, target: edge.target, type: 'default', sourceHandle: edge.sourceHandle, animated: isRunning, style: { strokeWidth: 2, stroke: '#9CA3AF' }, markerEnd: { type: MarkerType.ArrowClosed, width: 15, height: 15, color: '#9CA3AF' } })
           }
         }
       }
@@ -228,7 +235,7 @@ export const InstanceFlowGraph: FC<InstanceFlowGraphProps> = ({ traceLog, flowDa
       const endNode = flowData.nodes.find(n => n.type === 'end')
       if (lastNode && endNode) for (const edge of flowData.edges) {
         if (edge.source === lastNode.id && edge.target === endNode.id) {
-          traversed.push({ id: edge.id, source: edge.source, target: edge.target, type: 'default', style: { strokeWidth: 2, stroke: '#9CA3AF' }, markerEnd: { type: MarkerType.ArrowClosed, width: 15, height: 15, color: '#9CA3AF' } })
+          traversed.push({ id: edge.id, source: edge.source, target: edge.target, type: 'default', sourceHandle: edge.sourceHandle, style: { strokeWidth: 2, stroke: '#9CA3AF' }, markerEnd: { type: MarkerType.ArrowClosed, width: 15, height: 15, color: '#9CA3AF' } })
         }
       }
     }
@@ -237,15 +244,47 @@ export const InstanceFlowGraph: FC<InstanceFlowGraphProps> = ({ traceLog, flowDa
     return traversed.filter(e => { if (seen.has(e.id)) { seen.delete(e.id); return true } return false })
   }, [path, flowData, flowMap, completedNodes, currentName, isRunning])
 
-  const [nodes, setNodes] = useState(initialNodes)
-  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges)
+  // frontier = currentName 的候选后继中尚未实体化的那批。不按 wfStatus 做窗口门控：
+  // 引擎在 complete() 里就把 current 推到了下一节点，未知窗口横跨 idle/executing/awaitingchoice/choose
+  const ghost = useMemo(
+    () => computeGhostSuccessors({ flowData, visited, currentName, path, enabled: isRunning }),
+    [flowData, visited, currentName, path, isRunning],
+  )
+
+  const ghostNodes: Node[] = useMemo(() => {
+    if (!flowData?.nodes) return []
+    return ghost.nodeIds.map(id => {
+      const n = flowData.nodes.find(x => x.id === id)
+      if (!n) return null
+      return {
+        id: n.id, type: n.type, position: n.position, data: n.data,
+        // 六类节点组件都靠 selected 画边框 + ring，虚化态必须为 false
+        selected: false, selectable: false, draggable: false, focusable: false,
+        className: 'node-ghost',
+        style: { opacity: GHOST_NODE_OPACITY, pointerEvents: 'none' } as React.CSSProperties,
+      } as Node
+    }).filter(Boolean) as Node[]
+  }, [flowData, ghost])
+
+  const ghostEdges: Edge[] = useMemo(() => ghost.edges.map(e => ({
+    id: e.id, source: e.source, target: e.target, type: 'default', sourceHandle: e.sourceHandle,
+    animated: false, selectable: false,
+    style: { strokeWidth: 2, stroke: GHOST_EDGE_COLOR, strokeDasharray: GHOST_EDGE_DASH, opacity: GHOST_EDGE_OPACITY },
+    markerEnd: { type: MarkerType.ArrowClosed, width: 15, height: 15, color: GHOST_EDGE_COLOR },
+  })) as Edge[], [ghost])
+
+  const displayNodes = useMemo(() => [...initialNodes, ...ghostNodes], [initialNodes, ghostNodes])
+  const displayEdges = useMemo(() => [...initialEdges, ...ghostEdges], [initialEdges, ghostEdges])
+
+  const [nodes, setNodes] = useState(displayNodes)
+  const [edges, setEdges, onEdgesChange] = useEdgesState(displayEdges)
   // 实时刷新时同步新数据到 state
-  useEffect(() => { setNodes(initialNodes) }, [initialNodes, setNodes])
-  useEffect(() => { setEdges(initialEdges) }, [initialEdges, setEdges])
+  useEffect(() => { setNodes(displayNodes) }, [displayNodes, setNodes])
+  useEffect(() => { setEdges(displayEdges) }, [displayEdges, setEdges])
 
   const hasGraph = !!flowData?.nodes?.length && path.length > 0
   // 可见节点 id 集合变化时触发动态 fit（但用户手动操作后停止）
-  const fitKey = useMemo(() => initialNodes.map(n => n.id).join('|'), [initialNodes])
+  const fitKey = useMemo(() => displayNodes.map(n => n.id).join('|'), [displayNodes])
   const userInteracted = useRef(false)
   const containerRef = useRef<HTMLDivElement>(null)
   const [box, setBox] = useState({ w: 0, h: 0 })
