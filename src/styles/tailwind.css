@@ -333,12 +333,17 @@
 }
 
 /* 标题字号/字重/颜色对齐预览 prose（h1 30/800, h2 20/700, h3 18/600, h4+ 14/600；标题色 #1D1D1F） */
-.knowledge-wysiwyg .cm-line.cm-atomic-h1 { font-size: 30px !important; font-weight: 800 !important; color: #1D1D1F !important; }
-.knowledge-wysiwyg .cm-line.cm-atomic-h2 { font-size: 20px !important; font-weight: 700 !important; color: #1D1D1F !important; }
-.knowledge-wysiwyg .cm-line.cm-atomic-h3 { font-size: 18px !important; font-weight: 600 !important; color: #1D1D1F !important; }
-.knowledge-wysiwyg .cm-line.cm-atomic-h4 { font-size: 14px !important; font-weight: 600 !important; color: #1D1D1F !important; }
-.knowledge-wysiwyg .cm-line.cm-atomic-h5 { font-size: 14px !important; font-weight: 600 !important; color: #1D1D1F !important; }
-.knowledge-wysiwyg .cm-line.cm-atomic-h6 { font-size: 14px !important; font-weight: 600 !important; color: #1D1D1F !important; }
+.knowledge-wysiwyg .cm-line.cm-atomic-h1 { font-size: 30px !important; font-weight: 800 !important; color: #1D1D1F !important; line-height: 36px !important; }
+.knowledge-wysiwyg .cm-line.cm-atomic-h2 { font-size: 20px !important; font-weight: 700 !important; color: #1D1D1F !important; line-height: 28px !important; }
+.knowledge-wysiwyg .cm-line.cm-atomic-h3 { font-size: 18px !important; font-weight: 600 !important; color: #1D1D1F !important; line-height: 26px !important; }
+.knowledge-wysiwyg .cm-line.cm-atomic-h4 { font-size: 14px !important; font-weight: 600 !important; color: #1D1D1F !important; line-height: 24px !important; }
+.knowledge-wysiwyg .cm-line.cm-atomic-h5 { font-size: 14px !important; font-weight: 600 !important; color: #1D1D1F !important; line-height: 24px !important; }
+.knowledge-wysiwyg .cm-line.cm-atomic-h6 { font-size: 14px !important; font-weight: 600 !important; color: #1D1D1F !important; line-height: 24px !important; }
+
+/* 正文行字重对齐预览 prose 的 500 */
+.knowledge-wysiwyg .cm-line:not(.cm-atomic-h1):not(.cm-atomic-h2):not(.cm-atomic-h3):not(.cm-atomic-h4):not(.cm-atomic-h5):not(.cm-atomic-h6):not(.cm-atomic-strong):not(.cm-atomic-strong *):not(.cm-atomic-fenced-code):not(.cm-atomic-inline-code) {
+  font-weight: 500 !important;
+}
 
 /* 粗体：atomic 把 strong 文字色绑到 --atomic-editor-fg（正文灰），且真正画字的是内层 CM6 高亮 span，
  * 故连内层一起强制为预览的深色 #111827 + 字重 600 */
@@ -447,5 +452,6 @@
  * 导致实时编辑模式滚到底后下方多出一大块空白，与「编辑」「预览」两个模式不一致。
  * 这里按 CodeMirror 基础主题的默认值收回。 */
 .knowledge-wysiwyg .cm-content {
+  padding-top: 0;
   padding-bottom: 4px;
 }
