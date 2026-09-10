@@ -219,9 +219,9 @@ export const KnowledgeCatalogPage: FC = () => {
   const hasTree = tree.length > 0
 
   return (
-    <div className="flex-1 flex min-h-0 overflow-hidden">
+    <div className="flex-1 flex min-h-0 gap-2 overflow-hidden">
       {/* 左侧文件树 */}
-      <div className="w-56 flex-shrink-0 h-full overflow-y-auto py-2 px-2">
+      <div className="w-56 flex-shrink-0 h-full overflow-y-auto py-2 px-2 rounded-lg border border-gray-100">
         {hasTree ? (
           tree.map((node) => (
             <TreeRow
@@ -242,7 +242,7 @@ export const KnowledgeCatalogPage: FC = () => {
       </div>
 
       {/* 右侧编辑区 */}
-      <div className="flex-1 flex flex-col min-h-0 border-l border-gray-100 overflow-hidden">
+      <div className="flex-1 flex flex-col min-h-0 rounded-lg border border-gray-100 overflow-hidden">
         <div className="h-12 px-4 flex items-center justify-end flex-shrink-0">
           {selectedPath && (
             <div className="flex items-center gap-1 flex-shrink-0">
