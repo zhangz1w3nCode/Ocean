@@ -5,6 +5,7 @@ import {
 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { MarkdownEditor, MarkdownRenderer } from '../components/ui'
+import { mermaidBlocks } from '../components/ui/MarkdownRenderer'
 import { AtomicCodeMirrorEditor, wikiLinks } from '@atomic-editor/editor'
 import { languages as codeLanguages } from '@codemirror/language-data'
 import '@atomic-editor/editor/styles.css'
@@ -300,7 +301,7 @@ export const KnowledgeCatalogPage: FC = () => {
                       ? { target: t, label: found.name, status: 'resolved' as const }
                       : { target: t, label: t, status: 'missing' as const }
                   },
-                })]}
+                }), mermaidBlocks()]}
                 codeLanguages={codeLanguages}
               />
             </div>

@@ -16,7 +16,7 @@ let mermaidIdCounter = 0
 const generateId = () => `mermaid-${Date.now()}-${++mermaidIdCounter}`
 
 // 初始化mermaid（只执行一次）
-const initMermaid = () => {
+export const initMermaid = () => {
   if (isInitialized) return
 
   mermaid.initialize({
@@ -42,7 +42,7 @@ const initMermaid = () => {
 }
 
 // 检查代码是否包含有效的mermaid图表类型
-const isValidMermaidCode = (code: string): boolean => {
+export const isValidMermaidCode = (code: string): boolean => {
   const trimmedCode = code.trim()
   if (!trimmedCode) return false
 

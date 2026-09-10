@@ -422,3 +422,16 @@
   border-bottom-right-radius: 8px !important;
   padding-bottom: 0.5em !important;
 }
+
+/* Mermaid 图表预览（富文本编辑模式）
+ * 卡片底色对齐预览里包裹 MermaidBlock 的 prose <pre>：#F6F8FA / #E1E4E8 / 8px / 16px。
+ * 容器已带 .mermaid-container.mermaid-svg 类，居中/滚动/外边距复用预览既有规则。
+ * 切勿给 svg 加 !important 的 max-width/height：mermaid 把自然宽度写在 svg 内联 style 上，
+ * !important 会覆盖内联值，导致图表被拉伸到撑满容器。 */
+.knowledge-wysiwyg .cm-mermaid-preview {
+  background: #F6F8FA;
+  border: 1px solid #E1E4E8;
+  border-radius: 8px;
+  padding: 16px;
+  cursor: pointer;
+}
