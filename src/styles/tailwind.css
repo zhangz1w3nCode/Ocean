@@ -62,6 +62,13 @@
   animation: node-breathing 1.5s ease-in-out infinite;
 }
 
+/* 候选后继的虚化预览：整体淡化由 node 的 style.opacity 内联承担，
+   这里只给内层（带圆角的可视盒）补一层灰虚线描边，与 .node-breathing 打 > * 同理 */
+.react-flow__node.node-ghost > * {
+  outline: 1px dashed rgba(156, 163, 175, 0.9);
+  outline-offset: 3px;
+}
+
 /* 连接线动态虚线动画 */
 @keyframes dash {
   to {
