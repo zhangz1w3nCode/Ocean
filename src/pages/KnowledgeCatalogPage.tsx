@@ -1,10 +1,11 @@
 import { useState, useEffect, useMemo, useCallback, useRef, type FC } from 'react'
 import {
-  ChevronRight, ChevronDown, FolderOpen, FolderClosed, FileText,
+  FolderOpen, FolderClosed, FileText,
   Eye, PencilLine, Save, FileQuestion, Code,
 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { MarkdownEditor, MarkdownRenderer } from '../components/ui'
+import { mermaidBlocks } from '../components/ui/MarkdownRenderer'
 import { AtomicCodeMirrorEditor, wikiLinks } from '@atomic-editor/editor'
 import { languages as codeLanguages } from '@codemirror/language-data'
 import '@atomic-editor/editor/styles.css'
@@ -54,7 +55,7 @@ function buildTree(folders: KnowledgeFolder[], filePaths: string[]): TreeNode[] 
     const fileName = lastSlash > 0 ? fp.substring(lastSlash + 1) : fp
     const level = dir ? ensureFolder(dir.split('/')) : root
     if (!level.some((n) => n.kind === 'file' && n.path === fp)) {
-      level.push({ name: `${fileName}.md`, path: fp, kind: 'file', children: [] })
+      level.push({ name: fileName, path: fp, kind: 'file', children: [] })
     }
   }
 
@@ -99,11 +100,6 @@ const TreeRow: FC<TreeRowProps> = ({
         {isFolder ? (
           <>
             {isOpen ? (
-              <ChevronDown size={13} className="flex-shrink-0 text-macos-text-tertiary" />
-            ) : (
-              <ChevronRight size={13} className="flex-shrink-0 text-macos-text-tertiary" />
-            )}
-            {isOpen ? (
               <FolderOpen size={14} className="flex-shrink-0 text-macos-text-tertiary" />
             ) : (
               <FolderClosed size={14} className="flex-shrink-0 text-macos-text-tertiary" />
@@ -111,7 +107,7 @@ const TreeRow: FC<TreeRowProps> = ({
           </>
         ) : (
           <>
-            <span className="w-[13px] flex-shrink-0" />
+            <span className="w-[14px] flex-shrink-0" />
             <FileText size={14} className="flex-shrink-0 text-macos-text-tertiary" />
           </>
         )}
@@ -152,6 +148,27 @@ export const KnowledgeCatalogPage: FC = () => {
   const [dirty, setDirty] = useState(false)
   const [saving, setSaving] = useState(false)
   const [viewMode, setViewMode] = useState<'edit' | 'preview' | 'wysiwyg'>('edit')
+  const [treeWidth, setTreeWidth] = useState(224)
+
+  const startTreeResize = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    const container = (e.currentTarget as HTMLElement).parentElement
+    if (!container) return
+    const left = container.getBoundingClientRect().left
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+    const onMove = (ev: MouseEvent) => {
+      setTreeWidth(Math.max(160, Math.min(480, ev.clientX - left)))
+    }
+    const onUp = () => {
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+    }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+  }, [])
 
   const tree = useMemo(() => {
     const filePaths = Array.from(
@@ -221,7 +238,7 @@ export const KnowledgeCatalogPage: FC = () => {
   return (
     <div className="flex-1 flex min-h-0 overflow-hidden">
       {/* 左侧文件树 */}
-      <div className="w-56 flex-shrink-0 h-full overflow-y-auto py-2 px-2">
+      <div className="flex-shrink-0 h-full overflow-y-auto py-2 px-2" style={{ width: treeWidth }}>
         {hasTree ? (
           tree.map((node) => (
             <TreeRow
@@ -240,9 +257,15 @@ export const KnowledgeCatalogPage: FC = () => {
           </div>
         )}
       </div>
+      <div
+        className="w-px flex-shrink-0 bg-gray-200 hover:bg-blue-400 transition-colors cursor-col-resize relative group"
+        onMouseDown={startTreeResize}
+      >
+        <div className="absolute inset-y-0 -left-1.5 -right-1.5" />
+      </div>
 
       {/* 右侧编辑区 */}
-      <div className="flex-1 flex flex-col min-h-0 border-l border-gray-100 overflow-hidden">
+      <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
         <div className="h-12 px-4 flex items-center justify-end flex-shrink-0">
           {selectedPath && (
             <div className="flex items-center gap-1 flex-shrink-0">
@@ -300,7 +323,7 @@ export const KnowledgeCatalogPage: FC = () => {
                       ? { target: t, label: found.name, status: 'resolved' as const }
                       : { target: t, label: t, status: 'missing' as const }
                   },
-                })]}
+                }), mermaidBlocks()]}
                 codeLanguages={codeLanguages}
               />
             </div>
