@@ -106,10 +106,7 @@ const TreeRow: FC<TreeRowProps> = ({
             )}
           </>
         ) : (
-          <>
-            <span className="w-[14px] flex-shrink-0" />
-            <FileText size={14} className="flex-shrink-0 text-macos-text-tertiary" />
-          </>
+          <FileText size={14} className="flex-shrink-0 text-macos-text-tertiary" />
         )}
         <span className="truncate">{node.name}</span>
       </button>
