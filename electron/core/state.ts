@@ -159,80 +159,49 @@ export class ProcessFile {
   }
 
   // -------------------------------------------------------------------------
-  // read — parse process.md + merge trace.jsonl
+  // read — read status.json + merge trace.jsonl
   // -------------------------------------------------------------------------
 
   static read(filePath: string): ProcessFile {
-    let content: string
+    const dir = path.dirname(filePath)
+    const jsonPath = path.join(dir, 'status.json')
+
+    let state: ProcessState
     try {
-      content = fs.readFileSync(filePath, 'utf-8')
+      const jsonContent = fs.readFileSync(jsonPath, 'utf-8')
+      state = parseProcessStateJson(jsonContent)
     } catch (e: any) {
-      throw new Error(`读取 process.md 失败 ${filePath}: ${e.message}`)
+      throw new Error(`读取 status.json 失败 ${jsonPath}: ${e.message}`)
     }
 
-    const lines = content.split('\n')
-    if (lines[0] !== '---') {
-      throw new Error('process.md 缺少 frontmatter 开头 ---')
-    }
-
-    const yamlLines: string[] = []
-    let i = 1
-    for (; i < lines.length; i++) {
-      if (lines[i] === '---') break
-      yamlLines.push(lines[i])
-    }
-    const yamlStr = yamlLines.join('\n')
-    const body = lines.slice(i + 1).join('\n')
-
-    const marker = '## 执行轨迹'
-    let mermaid: string
-    let traceText: string
-    const idx = body.indexOf(marker)
-    if (idx !== -1) {
-      const raw = body.substring(0, idx).trim()
-      const after = body.substring(idx + marker.length).replace(/^\n+/, '')
-      mermaid = raw.startsWith('## 流程进度')
-        ? raw.substring('## 流程进度'.length).trim()
-        : raw
-      traceText = after
-    } else {
-      mermaid = ''
-      traceText = body
-    }
-
-    const state = parseFrontmatter(yamlStr)
-    let trace = parseTraceTable(traceText)
-    const parent = path.dirname(filePath)
-    const logEntries = readTraceJsonl(traceJsonlPath(parent))
+    let trace: TraceEvent[] = []
+    const logEntries = readTraceJsonl(traceJsonlPath(dir))
     const jsonlTrace = reconstructTraceFromJsonl(logEntries)
     if (jsonlTrace.length > 0) {
       mergeTrace(trace, jsonlTrace)
     }
 
-    return new ProcessFile(state, mermaid, trace)
+    return new ProcessFile(state, '', trace)
   }
 
   // -------------------------------------------------------------------------
-  // write — atomic write (.tmp + rename)
+  // write — atomic write status.json (.tmp + rename)
   // -------------------------------------------------------------------------
 
   write(filePath: string): void {
-    const yaml = serializeProcessState(this.state)
-    const traceTable = renderTraceTable(this.trace)
-    const body = `## 流程进度\n\n${this.mermaid}\n\n## 执行轨迹\n\n${traceTable}`
-    const content = `---\n${yaml}---\n\n${body}\n`
-
-    const parsed = path.parse(filePath)
-    const tmp = path.join(parsed.dir, parsed.name + '.tmp')
+    const dir = path.dirname(filePath)
+    const jsonPath = path.join(dir, 'status.json')
+    const jsonContent = serializeProcessStateJson(this.state)
+    const tmp = path.join(dir, 'status.tmp')
     try {
-      fs.writeFileSync(tmp, content)
+      fs.writeFileSync(tmp, jsonContent)
     } catch (e: any) {
-      throw new Error(`写入失败: ${e.message}`)
+      throw new Error(`写入 status.json 失败: ${e.message}`)
     }
     try {
-      fs.renameSync(tmp, filePath)
+      fs.renameSync(tmp, jsonPath)
     } catch (e: any) {
-      throw new Error(`替换失败: ${e.message}`)
+      throw new Error(`替换 status.json 失败: ${e.message}`)
     }
   }
 
@@ -260,167 +229,49 @@ export class ProcessFile {
 }
 
 // ---------------------------------------------------------------------------
-// Frontmatter serializer — hand-written to match serde_yaml output
+// JSON serializer — replaces yaml frontmatter, handles multi-line values
 // ---------------------------------------------------------------------------
 
-export function serializeProcessState(state: ProcessState): string {
-  const lines: string[] = []
-  lines.push(`workflow: ${state.workflow}`)
-  lines.push(`instance_id: ${state.instance_id}`)
-  if (state.initial_input != null) {
-    lines.push(`initial_input: ${state.initial_input}`)
+export function serializeProcessStateJson(state: ProcessState): string {
+  const obj: Record<string, any> = {}
+  obj.workflow = state.workflow
+  obj.instance_id = state.instance_id
+  if (state.initial_input != null) obj.initial_input = state.initial_input
+  obj.status = serializeStatus(state.status)
+  obj.current = state.current
+  obj.current_name = state.current_name
+  obj.current_invoke = state.current_invoke
+  obj.step = state.step
+  obj.loop_count = state.loop_count
+  obj.retry_count = state.retry_count
+  if (state.last_node != null) obj.last_node = state.last_node
+  if (state.last_invoke != null) obj.last_invoke = state.last_invoke
+  if (state.completed.length > 0) obj.completed = state.completed
+  obj.limits = state.limits
+  return JSON.stringify(obj, null, 2)
+}
+
+export function parseProcessStateJson(json: string): ProcessState {
+  const obj = JSON.parse(json)
+  return {
+    workflow: obj.workflow ?? '',
+    instance_id: obj.instance_id ?? '',
+    initial_input: obj.initial_input,
+    status: typeof obj.status === 'string' ? parseStatus(obj.status) : Status.Idle,
+    current: obj.current ?? '',
+    current_name: obj.current_name ?? '',
+    current_invoke: obj.current_invoke ?? '',
+    step: obj.step ?? 0,
+    loop_count: obj.loop_count ?? 0,
+    retry_count: obj.retry_count ?? 0,
+    last_node: obj.last_node,
+    last_invoke: obj.last_invoke,
+    completed: Array.isArray(obj.completed) ? obj.completed : [],
+    limits: obj.limits ?? defaultLimits(),
   }
-  lines.push(`status: ${serializeStatus(state.status)}`)
-  lines.push(`current: ${state.current}`)
-  lines.push(`current_name: ${state.current_name}`)
-  lines.push(`current_invoke: ${state.current_invoke}`)
-  lines.push(`step: ${state.step}`)
-  lines.push(`loop_count: ${state.loop_count}`)
-  lines.push(`retry_count: ${state.retry_count}`)
-  if (state.last_node != null) {
-    lines.push(`last_node: ${state.last_node}`)
-  }
-  if (state.last_invoke != null) {
-    lines.push(`last_invoke: ${state.last_invoke}`)
-  }
-  if (state.completed.length > 0) {
-    lines.push('completed:')
-    for (const item of state.completed) {
-      lines.push(`- ${item}`)
-    }
-  }
-  lines.push('limits:')
-  lines.push(`  max_steps: ${state.limits.max_steps}`)
-  lines.push(`  max_loop: ${state.limits.max_loop}`)
-  lines.push(`  max_retry: ${state.limits.max_retry}`)
-  return lines.join('\n') + '\n'
 }
 
 // ---------------------------------------------------------------------------
-// Frontmatter parser — reads key:value, lists, nested objects
-// ---------------------------------------------------------------------------
-
-function parseFrontmatter(yaml: string): ProcessState {
-  const lines = yaml.split('\n')
-  const state: ProcessState = {
-    workflow: '',
-    instance_id: '',
-    status: Status.Idle,
-    current: '',
-    current_name: '',
-    current_invoke: '',
-    step: 0,
-    loop_count: 0,
-    retry_count: 0,
-    completed: [],
-    limits: defaultLimits(),
-  }
-
-  let inCompleted = false
-  let inLimits = false
-
-  for (const line of lines) {
-    if (line === '') continue
-    if (line.startsWith('  ')) {
-      if (inLimits) {
-        const idx = line.indexOf(':')
-        const key = line.substring(0, idx).trim()
-        const val = line.substring(idx + 1).trim()
-        if (key === 'max_steps' || key === 'max_loop' || key === 'max_retry') {
-          state.limits[key] = parseInt(val, 10)
-        }
-      }
-      continue
-    }
-    if (line.startsWith('- ')) {
-      if (inCompleted) {
-        state.completed.push(line.substring(2))
-      }
-      continue
-    }
-    inCompleted = false
-    inLimits = false
-    const idx = line.indexOf(':')
-    if (idx === -1) continue
-    const key = line.substring(0, idx).trim()
-    const val = line.substring(idx + 1).trim()
-
-    switch (key) {
-      case 'workflow': state.workflow = val; break
-      case 'instance_id': state.instance_id = val; break
-      case 'initial_input':
-        if (val) state.initial_input = val
-        break
-      case 'status': state.status = parseStatus(val); break
-      case 'current': state.current = val; break
-      case 'current_name': state.current_name = val; break
-      case 'current_invoke': state.current_invoke = val; break
-      case 'step': state.step = parseInt(val, 10); break
-      case 'loop_count': state.loop_count = parseInt(val, 10); break
-      case 'retry_count': state.retry_count = parseInt(val, 10); break
-      case 'last_node':
-        if (val) state.last_node = val
-        break
-      case 'last_invoke':
-        if (val) state.last_invoke = val
-        break
-      case 'completed':
-        inCompleted = true
-        break
-      case 'limits':
-        inLimits = true
-        break
-    }
-  }
-
-  return state
-}
-
-// ---------------------------------------------------------------------------
-// Trace table render/parse
-// ---------------------------------------------------------------------------
-
-function renderTraceTable(trace: TraceEvent[]): string {
-  let s = '| # | 状态 | 节点 | 节点执行ID | 执行时间 |\n|---|------|------|-----------|---------|\n'
-  for (let i = 0; i < trace.length; i++) {
-    const e = trace[i]
-    const nodeDisplay = e.branch ? `${e.node}(${e.branch})` : e.node
-    s += `| ${i + 1} | ${e.status} | ${nodeDisplay} | ${e.invoke} | ${e.time} |\n`
-  }
-  return s
-}
-
-function parseTraceTable(text: string): TraceEvent[] {
-  const events: TraceEvent[] = []
-  for (const rawLine of text.split('\n')) {
-    const line = rawLine.trim()
-    if (!line.startsWith('|')) continue
-    const cells = line.split('|').map((s) => s.trim())
-    if (cells.length < 6) continue
-    const num = cells[1]
-    if (!num || num === '#' || num.startsWith('-')) continue
-    const { node, branch } = parseNodeCell(cells[3])
-    events.push({
-      status: cells[2],
-      node,
-      invoke: cells[4],
-      branch: branch ?? undefined,
-      time: cells[5],
-    })
-  }
-  return events
-}
-
-function parseNodeCell(cell: string): { node: string; branch?: string } {
-  const openIdx = cell.indexOf('(')
-  if (openIdx !== -1 && cell.endsWith(')')) {
-    return {
-      node: cell.substring(0, openIdx),
-      branch: cell.substring(openIdx + 1, cell.length - 1),
-    }
-  }
-  return { node: cell }
-}
 
 // ---------------------------------------------------------------------------
 // trace.jsonl — compact JSON, field order: ts,command,node,invoke,status,branch

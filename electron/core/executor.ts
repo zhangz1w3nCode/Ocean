@@ -7,7 +7,7 @@ import {
   ProcessFile, Status, TraceLogEntry, Limits, ProcessState,
   genInvokeId, logTrace, traceJsonlPath, readTraceJsonl,
   serializeStatus, statusAsStr, formatLocalTime, defaultLimits,
-  sortedJsonStringifyCompact,
+  sortedJsonStringifyCompact, serializeProcessStateJson,
 } from './state'
 import { writeDetail, writeError, hasDetail } from './artifact'
 import { checkStepLimit, checkLoopLimit, checkRetryLimit } from './limits'
@@ -41,17 +41,6 @@ export function next(root: string, workflow: string, instanceId: string, json: b
   const currentNode = getNode(flow, pf.state.current)
   if (!currentNode) throw new Error('当前节点不存在')
 
-  if (currentNode.type === 'end') {
-    pf.state.status = Status.Completed
-    pf.appendTrace('completed', currentNode.data.label, '-')
-    logTrace(instDir, {
-      ts: formatLocalTime(), command: 'next',
-      node: currentNode.data.label, invoke: '-', status: 'completed',
-    })
-    pf.mermaid = renderMermaid(flow, pf.state, instDir)
-    pf.write(path.join(instDir, 'process.md'))
-    return '工作流已完成'
-  }
 
   const lastNode = pf.state.last_node
   const lastInvoke = pf.state.last_invoke
@@ -66,7 +55,6 @@ export function next(root: string, workflow: string, instanceId: string, json: b
     checkStepLimit(pf.state)
   } catch (e: any) {
     pf.state.status = Status.Aborted
-    pf.mermaid = renderMermaid(flow, pf.state, instDir)
     pf.write(path.join(instDir, 'process.md'))
     throw e
   }
@@ -78,7 +66,6 @@ export function next(root: string, workflow: string, instanceId: string, json: b
     ts: formatLocalTime(), command: 'next',
     node: currentNode.data.label, invoke, status: 'active',
   })
-  pf.mermaid = renderMermaid(flow, pf.state, instDir)
   pf.write(path.join(instDir, 'process.md'))
 
   return renderNode(root, currentNode, pf.state.current_invoke, json)
@@ -95,13 +82,14 @@ export function complete(root: string, workflow: string, instanceId: string, out
   if (pf.state.status !== Status.Executing) {
     throw new Error('当前无执行中的业务节点')
   }
+  const flow = loadFlow(root, workflow)
+  const graph = new Graph(flow)
+  const currentNode = getNode(flow, pf.state.current)
+  if (!currentNode) throw new Error('当前节点不存在')
+
   if (output.trim() === '') {
     throw new Error('请通过 --output / --output-file / stdin 提供产物')
   }
-
-  const flow = loadFlow(root, workflow)
-  const graph = new Graph(flow)
-
   writeDetail(root, workflow, instanceId, pf.state.current_name, pf.state.current_invoke, output)
 
   const name = pf.state.current_name
@@ -113,6 +101,12 @@ export function complete(root: string, workflow: string, instanceId: string, out
   })
   if (!pf.state.completed.includes(pf.state.current_name)) {
     pf.state.completed.push(pf.state.current_name)
+  }
+
+  if (currentNode.type === 'end') {
+    pf.state.status = Status.Completed
+    pf.write(path.join(instDir, 'process.md'))
+    return '工作流已完成'
   }
 
   const nextId = graph.nextNode(pf.state.current)
@@ -127,7 +121,6 @@ export function complete(root: string, workflow: string, instanceId: string, out
   pf.state.current_invoke = nextInvoke
   pf.state.retry_count = 0
   pf.state.status = Status.Idle
-  pf.mermaid = renderMermaid(flow, pf.state, instDir)
   pf.write(path.join(instDir, 'process.md'))
 
   return `产物已保存，请执行 \`ocean workflow next --instance ${instanceId}\` 推进工作流并执行下一个节点的任务`
@@ -161,7 +154,6 @@ export function fail(root: string, workflow: string, instanceId: string, reason:
     checkRetryLimit(pf.state)
   } catch (e: any) {
     pf.state.status = Status.Aborted
-    pf.mermaid = renderMermaid(flow, pf.state, instDir)
     pf.write(path.join(instDir, 'process.md'))
     throw e
   }
@@ -170,7 +162,6 @@ export function fail(root: string, workflow: string, instanceId: string, reason:
   pf.state.last_invoke = undefined
   pf.state.current_invoke = genInvokeId()
   pf.state.status = Status.Idle
-  pf.mermaid = renderMermaid(flow, pf.state, instDir)
   pf.write(path.join(instDir, 'process.md'))
 
   return '已标记失败，可重新 next 重试'
@@ -238,12 +229,10 @@ export function choose(
     checkLoopLimit(pf.state)
   } catch (e: any) {
     pf.state.status = Status.Aborted
-    pf.mermaid = renderMermaid(flow, pf.state, instDir)
     pf.write(path.join(instDir, 'process.md'))
     throw e
   }
 
-  pf.mermaid = renderMermaid(flow, pf.state, instDir)
   pf.write(path.join(instDir, 'process.md'))
   return `已选择分支 ${branch}，推进到 ${nextNode.data.label}`
 }
@@ -272,25 +261,6 @@ export function status(root: string, workflow: string, instanceId: string, json:
     `| 失败重试 | ${s.retry_count} |\n` +
     `| 限制 | max_steps=${s.limits.max_steps} / max_loop=${s.limits.max_loop} / max_retry=${s.limits.max_retry} |`
   )
-}
-
-function serializeProcessStateJson(state: ProcessState): string {
-  const obj: Record<string, any> = {}
-  obj.workflow = state.workflow
-  obj.instance_id = state.instance_id
-  if (state.initial_input != null) obj.initial_input = state.initial_input
-  obj.status = serializeStatus(state.status)
-  obj.current = state.current
-  obj.current_name = state.current_name
-  obj.current_invoke = state.current_invoke
-  obj.step = state.step
-  obj.loop_count = state.loop_count
-  obj.retry_count = state.retry_count
-  if (state.last_node != null) obj.last_node = state.last_node
-  if (state.last_invoke != null) obj.last_invoke = state.last_invoke
-  if (state.completed.length > 0) obj.completed = state.completed
-  obj.limits = state.limits
-  return JSON.stringify(obj, null, 2)
 }
 
 // ---------------------------------------------------------------------------
@@ -390,6 +360,12 @@ function renderNode(root: string, node: Node, invoke: string, json: boolean): st
 }
 
 function readNodeMd(root: string, node: Node): string {
+  if (node.type === 'start') {
+    return `## ${node.data.label}\n\n工作流已开始，请确认后推进到下一个节点。`
+  }
+  if (node.type === 'end') {
+    return `## ${node.data.label}\n\n工作流已全部执行完毕，请生成详细的markdown报告。`
+  }
   if (node.type === 'process') {
     return node.data.content ?? `process 节点 ${node.data.label} 缺少 content`
   }
@@ -425,164 +401,6 @@ function stripFrontmatter(content: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// mermaid rendering
-// ---------------------------------------------------------------------------
-
-function mermaidId(s: string): string {
-  return [...s].map((c) => (/[\p{L}\p{N}_]/u.test(c) ? c : '_')).join('')
-}
-
-function nodeRefName(flow: Flow, id: string): string {
-  const n = getNode(flow, id)
-  if (n) {
-    if (n.type === 'start') return 'start_node'
-    if (n.type === 'end') return 'end_node'
-    return mermaidId(n.data.label)
-  }
-  return mermaidId(id)
-}
-
-export function renderMermaid(flow: Flow, state: ProcessState, instDir: string): string {
-  let s = '```mermaid\nflowchart TD\n\n'
-
-  // visited set
-  const visited = new Set<string>()
-  visited.add('开始')
-  for (const label of state.completed) {
-    visited.add(label)
-  }
-  if (state.status !== Status.Idle) {
-    visited.add(state.current_name)
-  }
-
-  // rebuild path from trace.jsonl
-  const jsonlPath = traceJsonlPath(instDir)
-  const logEntries = readTraceJsonl(jsonlPath)
-  const traversedEdges = new Set<string>()
-  const path: Array<[string, string | undefined]> = []
-
-  for (const entry of logEntries) {
-    if (entry.node == null || entry.status == null) continue
-    if (entry.status === 'active') {
-      path.push([entry.node, entry.branch])
-    } else if (entry.status === 'completed' && entry.branch != null) {
-      const last = path[path.length - 1]
-      if (last) {
-        last[1] = entry.branch
-      }
-    }
-  }
-
-  // map path to flow edges
-  for (const [nodeLabel, branch] of path) {
-    const n = flow.nodes.find((nd) => nd.data.label === nodeLabel)
-    if (!n) continue
-    for (const edge of flow.edges) {
-      if (edge.source !== n.id) continue
-      if (n.type === 'decision') {
-        if (edge.branchId) {
-          const ebn = n.data.branches.find((b) => b.id === edge.branchId)?.name
-          if (ebn === branch) {
-            traversedEdges.add(`${n.id}\0${edge.target}\0${edge.branchId ?? ''}`)
-          }
-        }
-      } else {
-        traversedEdges.add(`${n.id}\0${edge.target}\0`)
-      }
-    }
-  }
-
-  // start → first path node edge
-  if (path.length > 0) {
-    const start = flow.nodes.find((n) => n.type === 'start')
-    if (start) {
-      for (const edge of flow.edges) {
-        if (edge.source === start.id) {
-          const targetNode = getNode(flow, edge.target)
-          if (targetNode && targetNode.data.label === path[0][0]) {
-            traversedEdges.add(`${start.id}\0${edge.target}\0`)
-          }
-        }
-      }
-    }
-  }
-
-  // last path node → end edge if completed
-  if (state.status === Status.Completed && path.length > 0) {
-    const lastLabel = path[path.length - 1][0]
-    const ln = flow.nodes.find((n) => n.data.label === lastLabel)
-    if (ln) {
-      for (const edge of flow.edges) {
-        if (edge.source === ln.id) {
-          const targetNode = getNode(flow, edge.target)
-          if (targetNode && targetNode.type === 'end') {
-            traversedEdges.add(`${ln.id}\0${edge.target}\0`)
-          }
-        }
-      }
-    }
-  }
-
-  // render visited nodes
-  for (const n of flow.nodes) {
-    if (!visited.has(n.data.label)) continue
-    const name = nodeRefName(flow, n.id)
-    if (n.type === 'start' || n.type === 'end') {
-      s += `    ${name}([${n.data.label}])\n`
-    } else if (n.type === 'decision') {
-      s += `    ${name}{${n.data.label}}\n`
-    } else {
-      s += `    ${name}[${n.data.label}]\n`
-    }
-  }
-  s += '\n'
-
-  // render traversed edges (both endpoints must be visited)
-  for (const edge of flow.edges) {
-    const key = `${edge.source}\0${edge.target}\0${edge.branchId ?? ''}`
-    if (!traversedEdges.has(key)) continue
-    const srcNode = getNode(flow, edge.source)
-    const dstNode = getNode(flow, edge.target)
-    if (!srcNode || !dstNode) continue
-    if (!visited.has(srcNode.data.label) || !visited.has(dstNode.data.label)) continue
-
-    const src = nodeRefName(flow, edge.source)
-    const dst = nodeRefName(flow, edge.target)
-    if (edge.branchId) {
-      const srcNd = getNode(flow, edge.source)
-      const branchName = srcNd?.data.branches.find((b) => b.id === edge.branchId)?.name ?? ''
-      s += `    ${src} -->|${branchName}| ${dst}\n`
-    } else {
-      s += `    ${src} --> ${dst}\n`
-    }
-  }
-  s += '\n'
-
-  // classDef + class assignments
-  s += '    classDef done fill:#4caf50,color:#fff;\n'
-  s += '    classDef current fill:#ff9800,color:#fff;\n\n'
-  const doneNodes: string[] = []
-  const currentNodes: string[] = []
-  for (const n of flow.nodes) {
-    if (!visited.has(n.data.label)) continue
-    const name = nodeRefName(flow, n.id)
-    if (n.type === 'start' || (n.type === 'end' && state.status === Status.Completed)) {
-      doneNodes.push(name)
-    } else if (state.current_name === n.data.label && state.status !== Status.Completed) {
-      currentNodes.push(name)
-    } else if (state.completed.includes(n.data.label)) {
-      doneNodes.push(name)
-    }
-  }
-  if (doneNodes.length > 0) {
-    s += `    class ${doneNodes.join(',')} done;\n`
-  }
-  if (currentNodes.length > 0) {
-    s += `    class ${currentNodes.join(',')} current;\n`
-  }
-  s += '```'
-  return s
-}
 
 // ---------------------------------------------------------------------------
 // instance_workflow reverse lookup (from main.rs)

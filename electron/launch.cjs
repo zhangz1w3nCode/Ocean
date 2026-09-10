@@ -462,7 +462,7 @@ ipcMain.handle('list-workflow-instances', () => {
             }
           }
         }
-        // 解析 process.md frontmatter
+        // 从 status.json 读取状态
         let status = 'unknown'
         let initialInput = null
         let currentName = ''
@@ -471,33 +471,19 @@ ipcMain.handle('list-workflow-instances', () => {
         let retryCount = 0
         let lastNode = null
         let completedNodes = []
-        const processMdPath = path.join(instPath, 'process.md')
-        if (fs.existsSync(processMdPath)) {
-          const content = fs.readFileSync(processMdPath, 'utf-8')
-          // 提取 YAML frontmatter
-          const fmMatch = content.match(/^---\n([\s\S]*?)\n---/)
-          if (fmMatch) {
-            const yaml = fmMatch[1]
-            const statusMatch = yaml.match(/^status:\s*(.+)/m)
-            if (statusMatch) status = statusMatch[1].trim()
-            const inputMatch = yaml.match(/^initial_input:\s*(.*)/m)
-            if (inputMatch && inputMatch[1].trim()) initialInput = inputMatch[1].trim()
-            const nameMatch = yaml.match(/^current_name:\s*(.+)/m)
-            if (nameMatch) currentName = nameMatch[1].trim()
-            const stepMatch = yaml.match(/^step:\s*(\d+)/m)
-            if (stepMatch) step = parseInt(stepMatch[1])
-            const loopMatch = yaml.match(/^loop_count:\s*(\d+)/m)
-            if (loopMatch) loopCount = parseInt(loopMatch[1])
-            const retryMatch = yaml.match(/^retry_count:\s*(\d+)/m)
-            if (retryMatch) retryCount = parseInt(retryMatch[1])
-            const lastMatch = yaml.match(/^last_node:\s*(.+)/m)
-            if (lastMatch) lastNode = lastMatch[1].trim()
-            // 解析 completed 列表
-            const completedMatch = yaml.match(/^completed:\n([\s\S]*?)(?=\n[a-z]|\n$)/m)
-            if (completedMatch) {
-              completedNodes = completedMatch[1].split('\n').map(l => l.replace(/^\s*-\s*/, '').trim()).filter(Boolean)
-            }
-          }
+        const statusJsonPath = path.join(instPath, 'status.json')
+        if (fs.existsSync(statusJsonPath)) {
+          try {
+            const s = JSON.parse(fs.readFileSync(statusJsonPath, 'utf-8'))
+            if (s.status) status = s.status
+            if (s.initial_input) initialInput = s.initial_input
+            if (s.current_name) currentName = s.current_name
+            if (s.step != null) step = s.step
+            if (s.loop_count != null) loopCount = s.loop_count
+            if (s.retry_count != null) retryCount = s.retry_count
+            if (s.last_node) lastNode = s.last_node
+            if (Array.isArray(s.completed)) completedNodes = s.completed
+          } catch (e) { console.error('status.json 解析失败:', e.message) }
         }
         // 从 trace.jsonl 读取创建时间（比文件系统 birthtime 更准确）
         let createdAt = stat.birthtime.toISOString()
@@ -557,30 +543,23 @@ ipcMain.handle('read-instance-file', (_, workflowName, instanceId, fileName) => 
 // filename → 字段映射，watcher 只读变化的文件，不需全量重读 + diffDetail 比较
 
 function parseProcess(instDir) {
-  let processRaw = ''
-  const processPath = path.join(instDir, 'process.md')
-  if (fs.existsSync(processPath)) processRaw = fs.readFileSync(processPath, 'utf-8')
-  let mermaid = ''
-  const fmMatch = processRaw.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/)
-  if (fmMatch) {
-    const mermaidMatch = fmMatch[2].match(/```mermaid\n([\s\S]*?)```/)
-    if (mermaidMatch) mermaid = mermaidMatch[1].trim()
-  }
   let completedNodes = []
   let currentName = ''
   let wfStatus = 'unknown'
   let wfStep = 0, wfLoopCount = 0, wfRetryCount = 0
-  if (fmMatch) {
-    const yaml = fmMatch[1]
-    const cm = yaml.match(/^completed:\n([\s\S]*?)(?=\n[a-z]|\n$)/m)
-    if (cm) completedNodes = cm[1].split('\n').map(l => l.replace(/^\s*-\s*/, '').trim()).filter(Boolean)
-    const cnm = yaml.match(/^current_name:\s*(.+)/m); if (cnm) currentName = cnm[1].trim()
-    const stm = yaml.match(/^status:\s*(.+)/m); if (stm) wfStatus = stm[1].trim()
-    const spm = yaml.match(/^step:\s*(\d+)/m); if (spm) wfStep = parseInt(spm[1])
-    const lpm = yaml.match(/^loop_count:\s*(\d+)/m); if (lpm) wfLoopCount = parseInt(lpm[1])
-    const rpm = yaml.match(/^retry_count:\s*(\d+)/m); if (rpm) wfRetryCount = parseInt(rpm[1])
+  const statusPath = path.join(instDir, 'status.json')
+  if (fs.existsSync(statusPath)) {
+    try {
+      const s = JSON.parse(fs.readFileSync(statusPath, 'utf-8'))
+      if (s.status) wfStatus = s.status
+      if (s.step != null) wfStep = s.step
+      if (s.loop_count != null) wfLoopCount = s.loop_count
+      if (s.retry_count != null) wfRetryCount = s.retry_count
+      if (s.current_name) currentName = s.current_name
+      if (Array.isArray(s.completed)) completedNodes = s.completed
+    } catch (e) { console.error('status.json 解析失败:', e.message) }
   }
-  return { processRaw, mermaid, completedNodes, currentName, wfStatus, wfStep, wfLoopCount, wfRetryCount }
+  return { completedNodes, currentName, wfStatus, wfStep, wfLoopCount, wfRetryCount }
 }
 
 function parseTrace(instDir) {
@@ -723,7 +702,7 @@ function parseByFilename(instDir, workflowName, filename) {
   if (!filename) return null
   const f = filename.replace(/\\\\/g, '/')
   if (f.includes('trace')) return parseTrace(instDir)
-  if (f.includes('process.md')) return parseProcess(instDir)
+  if (f.includes('status.json')) return parseProcess(instDir)
   if (f.includes('artifacts')) return parseArtifacts(instDir)
   if (f.includes('context.md')) return parseContext(instDir)
   if (f.includes('instance.md')) return parseInstanceMd(instDir)

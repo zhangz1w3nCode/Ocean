@@ -422,8 +422,6 @@ export interface InstanceTraceEvent {
 }
 
 export interface InstanceDetail {
-  processRaw: string
-  mermaid: string
   trace: InstanceTraceEvent[]
   artifacts: InstanceArtifact[]
   traceLog: string
