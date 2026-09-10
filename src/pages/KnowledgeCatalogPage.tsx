@@ -153,6 +153,27 @@ export const KnowledgeCatalogPage: FC = () => {
   const [dirty, setDirty] = useState(false)
   const [saving, setSaving] = useState(false)
   const [viewMode, setViewMode] = useState<'edit' | 'preview' | 'wysiwyg'>('edit')
+  const [treeWidth, setTreeWidth] = useState(224)
+
+  const startTreeResize = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    const container = (e.currentTarget as HTMLElement).parentElement
+    if (!container) return
+    const left = container.getBoundingClientRect().left
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+    const onMove = (ev: MouseEvent) => {
+      setTreeWidth(Math.max(160, Math.min(480, ev.clientX - left)))
+    }
+    const onUp = () => {
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+    }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+  }, [])
 
   const tree = useMemo(() => {
     const filePaths = Array.from(
@@ -222,7 +243,7 @@ export const KnowledgeCatalogPage: FC = () => {
   return (
     <div className="flex-1 flex min-h-0 overflow-hidden">
       {/* 左侧文件树 */}
-      <div className="w-56 flex-shrink-0 h-full overflow-y-auto py-2 px-2">
+      <div className="flex-shrink-0 h-full overflow-y-auto py-2 px-2" style={{ width: treeWidth }}>
         {hasTree ? (
           tree.map((node) => (
             <TreeRow
@@ -241,9 +262,15 @@ export const KnowledgeCatalogPage: FC = () => {
           </div>
         )}
       </div>
+      <div
+        className="w-px flex-shrink-0 bg-gray-200 hover:bg-blue-400 transition-colors cursor-col-resize relative group"
+        onMouseDown={startTreeResize}
+      >
+        <div className="absolute inset-y-0 -left-1.5 -right-1.5" />
+      </div>
 
       {/* 右侧编辑区 */}
-      <div className="flex-1 flex flex-col min-h-0 border-l border-gray-100 overflow-hidden">
+      <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
         <div className="h-12 px-4 flex items-center justify-end flex-shrink-0">
           {selectedPath && (
             <div className="flex items-center gap-1 flex-shrink-0">
