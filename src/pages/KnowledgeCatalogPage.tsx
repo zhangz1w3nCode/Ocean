@@ -203,7 +203,7 @@ export const KnowledgeCatalogPage: FC = () => {
     const { content } = await loadKnowledgeRawFile(path)
     const { frontmatter, body: bodyOnly } = splitKnowledgeRawFile(content ?? '')
     frontmatterRef.current = frontmatter
-    setBody(bodyOnly)
+    setBody(bodyOnly.replace(/^\n+/, ''))
   }, [])
 
   const handleChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
