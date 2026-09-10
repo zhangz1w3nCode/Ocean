@@ -3,8 +3,6 @@ import type { WorkflowInstance, InstanceArtifact, InstanceTraceEvent } from '../
 import { isElectron } from '../utils/storage'
 
 interface InstanceDetail {
-  processRaw: string
-  mermaid: string
   trace: InstanceTraceEvent[]
   artifacts: InstanceArtifact[]
   traceLog: string
