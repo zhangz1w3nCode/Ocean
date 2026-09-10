@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef, type FC } from 'react'
 import {
-  ChevronRight, ChevronDown, FolderOpen, FolderClosed, FileText,
+  FolderOpen, FolderClosed, FileText,
   Eye, PencilLine, Save, FileQuestion, Code,
 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -100,11 +100,6 @@ const TreeRow: FC<TreeRowProps> = ({
         {isFolder ? (
           <>
             {isOpen ? (
-              <ChevronDown size={13} className="flex-shrink-0 text-macos-text-tertiary" />
-            ) : (
-              <ChevronRight size={13} className="flex-shrink-0 text-macos-text-tertiary" />
-            )}
-            {isOpen ? (
               <FolderOpen size={14} className="flex-shrink-0 text-macos-text-tertiary" />
             ) : (
               <FolderClosed size={14} className="flex-shrink-0 text-macos-text-tertiary" />
@@ -112,7 +107,7 @@ const TreeRow: FC<TreeRowProps> = ({
           </>
         ) : (
           <>
-            <span className="w-[13px] flex-shrink-0" />
+            <span className="w-[14px] flex-shrink-0" />
             <FileText size={14} className="flex-shrink-0 text-macos-text-tertiary" />
           </>
         )}
