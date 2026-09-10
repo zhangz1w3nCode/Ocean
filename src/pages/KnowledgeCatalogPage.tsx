@@ -55,7 +55,7 @@ function buildTree(folders: KnowledgeFolder[], filePaths: string[]): TreeNode[] 
     const fileName = lastSlash > 0 ? fp.substring(lastSlash + 1) : fp
     const level = dir ? ensureFolder(dir.split('/')) : root
     if (!level.some((n) => n.kind === 'file' && n.path === fp)) {
-      level.push({ name: `${fileName}.md`, path: fp, kind: 'file', children: [] })
+      level.push({ name: fileName, path: fp, kind: 'file', children: [] })
     }
   }
 
