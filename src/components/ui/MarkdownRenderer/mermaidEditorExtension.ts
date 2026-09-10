@@ -25,15 +25,19 @@ class MermaidWidget extends WidgetType {
       const trimmed = this.code.trim()
       if (!trimmed || !isValidMermaidCode(trimmed)) return
 
+      const id = `mermaid-cm-${Date.now()}-${++widgetIdCounter}`
       try {
         initMermaid()
-        const id = `mermaid-cm-${Date.now()}-${++widgetIdCounter}`
         const { svg } = await mermaid.render(id, trimmed)
         if (!this.cancelled) {
           container.innerHTML = svg
         }
       } catch {
         // silent fail
+      } finally {
+        // 兜底清理：mermaid.render 会在 body 上挂 id 为 d<id> 的临时容器，成功时它自行
+        // 移除、异常路径不会，这里统一清掉，避免残留节点在页面上累积。
+        document.getElementById(`d${id}`)?.remove()
       }
     }
     render()

@@ -78,20 +78,31 @@ export const MermaidBlock: FC<MermaidBlockProps> = ({ code }) => {
         return
       }
 
+      // 本次渲染自己的 id：必须用局部变量持有，不能到 finally 里再读 idRef.current。
+      // 否则 React StrictMode 下 effect 连跑两次时，前一次的 finally 会把后一次
+      // 正在使用的临时节点删掉，mermaid.render 会抛 “Cannot read properties of null”。
+      let ownId = ''
       try {
         // 初始化mermaid配置
         initMermaid()
 
         // 生成新的ID用于每次渲染
-        idRef.current = generateId()
+        ownId = generateId()
+        idRef.current = ownId
 
         // 渲染SVG
-        const { svg: renderedSvg } = await mermaid.render(idRef.current, trimmedCode)
+        const { svg: renderedSvg } = await mermaid.render(ownId, trimmedCode)
         setSvg(renderedSvg || '')
       } catch (err) {
         // 静默失败，不显示错误
         console.warn('Mermaid render warning:', err)
         setSvg('')
+      } finally {
+        // mermaid.render 会在 document.body 上挂一个 id 为 d<渲染id> 的临时容器：
+        // 成功时它自行移除，但抛异常的路径不会，导致 “Syntax error in text” + 炸弹的
+        // SVG 残留在 body 上（在 #root 之外，表现为应用卡片下方出现一排炸弹）。
+        // 只清理本次自己的节点，不改变任何渲染判定逻辑。
+        if (ownId) document.getElementById(`d${ownId}`)?.remove()
       }
     }
 
