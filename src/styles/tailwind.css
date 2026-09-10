@@ -435,3 +435,10 @@
   padding: 16px;
   cursor: pointer;
 }
+
+/* @atomic-editor 主题给 .cm-content 写死了 padding-bottom: 40vh（“滚过文末”留白），
+ * 导致实时编辑模式滚到底后下方多出一大块空白，与「编辑」「预览」两个模式不一致。
+ * 这里按 CodeMirror 基础主题的默认值收回。 */
+.knowledge-wysiwyg .cm-content {
+  padding-bottom: 4px;
+}
