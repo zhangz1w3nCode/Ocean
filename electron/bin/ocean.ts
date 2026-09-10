@@ -422,12 +422,12 @@ flag:
           case 'choose':
             out(`ocean workflow choose — 决策分支选择
 
-用法: ocean workflow choose --instance <id> --branch <name> [--reason <string>]
+用法: ocean workflow choose --instance <id> --branch <name> --reason <string>
 
 flag:
   --instance <id>             实例 ID（必填）
   --branch <name>             分支名称（必填）
-  --reason <string>           选择原因
+  --reason <string>           选择原因（必填）
   --json                       JSON 格式输出
   --root <path>               覆盖项目根目录`)
             break
@@ -800,7 +800,10 @@ function handleWorkflow(root: string, args: ReturnType<typeof parseArgs>): void 
     case 'choose': {
       const id = args.flags.instance as string
       const branch = args.flags.branch as string
-      const reason = typeof args.flags.reason === 'string' ? args.flags.reason : undefined
+      const reason = args.flags.reason
+      if (!reason || typeof reason !== 'string' || reason.trim().length === 0) {
+        throw new UsageError('决策分支选择时 --reason <string> 为必填参数，不可为空')
+      }
       const wf = instanceWorkflow(root, id)
       args.flags.json ? printJson({ message: choose(root, wf, id, branch, reason), branch }) : printMarkdownTable(choose(root, wf, id, branch, reason))
       break
