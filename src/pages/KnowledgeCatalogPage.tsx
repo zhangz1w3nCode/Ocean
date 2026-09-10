@@ -236,9 +236,9 @@ export const KnowledgeCatalogPage: FC = () => {
   const hasTree = tree.length > 0
 
   return (
-    <div className="flex-1 flex min-h-0 gap-2 overflow-hidden">
+    <div className="flex-1 flex min-h-0 gap-1 p-4 overflow-hidden">
       {/* 左侧文件树 */}
-      <div className="flex-shrink-0 h-full overflow-y-auto py-2 px-2 rounded-lg border border-gray-100" style={{ width: treeWidth }}>
+      <div className="flex-shrink-0 h-full overflow-y-auto py-2 px-2 rounded-lg [&::-webkit-scrollbar]:hidden" style={{ width: treeWidth }}>
         {hasTree ? (
           tree.map((node) => (
             <TreeRow
@@ -258,14 +258,14 @@ export const KnowledgeCatalogPage: FC = () => {
         )}
       </div>
       <div
-        className="w-px flex-shrink-0 bg-gray-200 hover:bg-blue-400 transition-colors cursor-col-resize relative group"
+        className="w-px flex-shrink-0 bg-gray-200 hover:bg-gray-300 transition-colors cursor-col-resize relative group"
         onMouseDown={startTreeResize}
       >
         <div className="absolute inset-y-0 -left-1.5 -right-1.5" />
       </div>
 
       {/* 右侧编辑区 */}
-      <div className="flex-1 flex flex-col min-h-0 rounded-lg border border-gray-100 overflow-hidden">
+      <div className="flex-1 flex flex-col min-h-0 rounded-lg overflow-hidden">
         <div className="h-12 px-4 flex items-center justify-end flex-shrink-0">
           {selectedPath && (
             <div className="flex items-center gap-1 flex-shrink-0">
