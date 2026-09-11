@@ -38,6 +38,7 @@ export interface AppConfig {
   knowledgeGraphConfig?: KnowledgeGraphConfig  // 知识图谱配置
   assetRoot?: AssetRoot          // 资产加载来源（claude=加载 .claude/，pi=加载 .pi/）
   sidebarCollapsed?: boolean     // 侧边栏是否折叠隐藏
+  followZoom?: number            // 工作流执行进度图跟随模式的放大倍数（越界/缺失由渲染层收敛到合法区间）
 }
 
 // 导入 React Flow 类型用于 Workflow

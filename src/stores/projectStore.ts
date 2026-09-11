@@ -64,9 +64,10 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       })
 
       // 初始化侧边栏导航顺序
-      const { initSidebarNavOrder, initSidebarCollapsed } = await import('./appStore').then(m => m.useAppStore.getState())
+      const { initSidebarNavOrder, initSidebarCollapsed, initFollowZoom } = await import('./appStore').then(m => m.useAppStore.getState())
       initSidebarNavOrder(config.sidebarNavOrder as any)
       initSidebarCollapsed(config.sidebarCollapsed)
+      initFollowZoom(config.followZoom)
 
       // 如果有上次打开的项目，自动打开
       if (config.lastProjectPath) {

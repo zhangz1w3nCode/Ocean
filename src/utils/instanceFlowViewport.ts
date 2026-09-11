@@ -16,6 +16,13 @@ export type ViewportIntent =
   | { kind: 'fit'; animate: boolean }
   | { kind: 'none' }
 
+// 跟随放大档位的合法区间：下限 0.5 保证始终高于画布 minZoom(FIT_MIN_ZOOM=0.05) 与
+// FOLLOW_MIN_ZOOM(0.2)，不会把 getViewportForBounds 的 clamp(min, max) 反转为非法区间；
+// 上限 2.5 与画板 maxZoom 对齐，超出会被 ReactFlow 的 scaleExtent 反向钉住。
+export const FOLLOW_ZOOM_MIN = 0.5
+export const FOLLOW_ZOOM_MAX = 2.5
+export const FOLLOW_ZOOM_DEFAULT = 1.6
+
 export interface ViewportDecisionInput {
   /** 容器实测尺寸可用 */
   boxReady: boolean
@@ -27,6 +34,8 @@ export interface ViewportDecisionInput {
   focusNodeId: string | null
   /** 跟随目标自身是否已测得尺寸（新节点首帧可能还没测完） */
   focusNodeMeasured: boolean
+  /** 用户选定的跟随放大档位（已经过 clampFollowZoom 收敛） */
+  followZoom: number
   /** 当前容器实测尺寸；跟随签名用的尺寸键由它派生，避免两份表达同一事实 */
   currentBox: { w: number; h: number }
   /** 上次成功跟随的签名，null 表示还没跟随过 */
@@ -37,8 +46,9 @@ export interface ViewportDecisionInput {
   userInteracted: boolean
 }
 
-export function followKeyOf(nodeId: string, box: { w: number; h: number }): string {
-  return `${nodeId}|${box.w}x${box.h}`
+export function followKeyOf(nodeId: string, box: { w: number; h: number }, zoom: number): string {
+  // 档位也入签名：否则开着跟随时拖滑条要等到下一次节点切换才生效
+  return `${nodeId}|${box.w}x${box.h}|${zoom}`
 }
 
 /** 本次是否已对 viewport 做过任意一次写入（决定要不要动画，首次落位不飞入） */
@@ -51,7 +61,7 @@ export function resolveViewportIntent(input: ViewportDecisionInput): ViewportInt
 
   if (input.followMode && input.focusNodeId) {
     if (!input.focusNodeMeasured) return { kind: 'none' }
-    const key = followKeyOf(input.focusNodeId, input.currentBox)
+    const key = followKeyOf(input.focusNodeId, input.currentBox, input.followZoom)
     // 同目标同尺寸幂等：实时刷新会以极密的频率重跑 effect，不幂等就会反复重启过渡动画
     if (key === input.lastFollowKey) return { kind: 'none' }
     return { kind: 'follow', animate: hasApplied(input) }
@@ -71,4 +81,16 @@ export function resolveViewportIntent(input: ViewportDecisionInput): ViewportInt
 export function isUsableRect(rect: { width: number; height: number }): boolean {
   if (!Number.isFinite(rect.width) || !Number.isFinite(rect.height)) return false
   return rect.width > 0 && rect.height > 0
+}
+
+/**
+ * 把用户配置的跟随放大档位收敛到合法区间。
+ * 值来自磁盘 json，可能被旧版本缺失、被手改或被写成非数字，NaN / 0 / 负数 / 超界都得挡掉。
+ */
+export function clampFollowZoom(raw: unknown): number {
+  // null / undefined / 空串 = 没配过（旧版 json 或被手改成空），走默认值而不是被当成 0 收敛到下限
+  if (raw === null || raw === undefined || raw === '') return FOLLOW_ZOOM_DEFAULT
+  const n = typeof raw === 'number' ? raw : Number(raw)
+  if (!Number.isFinite(n)) return FOLLOW_ZOOM_DEFAULT
+  return Math.min(FOLLOW_ZOOM_MAX, Math.max(FOLLOW_ZOOM_MIN, n))
 }
