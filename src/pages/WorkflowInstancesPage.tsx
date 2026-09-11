@@ -2,7 +2,7 @@ import type { FC } from 'react'
 import { useState, useEffect, useCallback, useRef, memo } from 'react'
 import { motion, AnimatePresence, Reorder, useDragControls } from 'framer-motion'
 import { Search, RefreshCw, Activity, FileText, Package, ChevronRight, ChevronLeft, Clock, Hash, GitBranch, Repeat, RotateCcw, Maximize2, X, Radio, ChevronUp, ChevronDown, CircleDot, ListOrdered, Files, Terminal, Home } from 'lucide-react'
-import { Button, Dropdown, MarkdownRenderer, Modal } from '../components/ui'
+import { Button, Dropdown, MarkdownRenderer, Modal, Switch } from '../components/ui'
 import ReactDiffViewer from 'react-diff-viewer-continued'
 import { useWorkflowInstanceStore } from '../stores/workflowInstanceStore'
 import type { WorkflowInstance, InstanceTraceEvent, InstanceArtifact } from '../types'
@@ -306,6 +306,8 @@ const ArtifactList = memo(({ artifacts, selected, onSelect }: { artifacts: Insta
 const InstanceDetail: FC = () => {
   const { selectedInstance, detail, isLoadingDetail, selectInstance, clearDetail, isLiveRefresh, startLiveRefresh, stopLiveRefresh } = useWorkflowInstanceStore()
   const [isFlowFullscreen, setIsFlowFullscreen] = useState(false)
+  // 跟随模式：开关归页面管，不进 store——detail 引用被整体替换会让 ReactFlow 整树重挂、视角复位
+  const [followMode, setFollowMode] = useState(false)
   const [isContextFullscreen, setIsContextFullscreen] = useState(false)
   const [diffData, setDiffData] = useState<{
     nodeName: string; arts: InstanceArtifact[];
@@ -757,12 +759,22 @@ const InstanceDetail: FC = () => {
                 <Activity size={16} className="text-macos-text-secondary" strokeWidth={1.5} />
                 <span className="text-sm font-medium text-macos-text">执行进度</span>
               </div>
-              <button
-                onClick={(e) => { e.stopPropagation(); setIsFlowFullscreen(false) }}
-                className="p-2 rounded-lg text-macos-text-secondary hover:text-macos-text hover:bg-gray-100 transition-colors"
-              >
-                <X size={20} strokeWidth={1.5} />
-              </button>
+              <div className="flex items-center gap-3">
+                {/* 工具栏本身是窗口拖拽区，这里的控件必须自己拿回事件 */}
+                <div
+                  className="flex items-center gap-2 pointer-events-auto"
+                  onMouseDown={(e) => e.stopPropagation()}
+                >
+                  <span className="text-xs text-macos-text-tertiary">跟随模式</span>
+                  <Switch size="sm" checked={followMode} onChange={setFollowMode} />
+                </div>
+                <button
+                  onClick={(e) => { e.stopPropagation(); setIsFlowFullscreen(false) }}
+                  className="p-2 rounded-lg text-macos-text-secondary hover:text-macos-text hover:bg-gray-100 transition-colors"
+                >
+                  <X size={20} strokeWidth={1.5} />
+                </button>
+              </div>
             </div>
 
             {/* 画布 */}
@@ -775,6 +787,7 @@ const InstanceDetail: FC = () => {
                 wfStatus={detail!.wfStatus}
                 artifacts={detail!.artifacts}
                 fullHeight
+                followMode={followMode}
               />
             </div>
 

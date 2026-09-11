@@ -32,6 +32,7 @@ import {
 } from '../flow/nodes'
 import type { InstanceArtifact } from '../../types'
 import { computeGhostSuccessors } from '../../utils/instanceFlowGhost'
+import { followKeyOf, isUsableRect, resolveViewportIntent } from '../../utils/instanceFlowViewport'
 
 const nodeTypes = {
   start: StartNode, end: EndNode, process: ProcessNode,
@@ -58,6 +59,13 @@ const FIT_PADDING = 0.2
 const FIT_MIN_ZOOM = 0.05
 const FIT_MAX_ZOOM = 2.5
 const FIT_ANIMATE_MS = 250
+// 跟随模式的档位：单节点 bounds 算出的原始 zoom 会远大于 1（节点只有 160~260px 宽），
+// 因此最终放大倍数实际就是 FOLLOW_MAX_ZOOM 说了算；getViewportForBounds 的 clamp
+// 不破坏居中（x/y 用的就是 clamp 后的 zoom）。
+const FOLLOW_MIN_ZOOM = 0.2
+const FOLLOW_MAX_ZOOM = 1.6
+const FOLLOW_PADDING = 0.3
+const FOLLOW_ANIMATE_MS = 400
 
 // 产物面板宽度：默认比原来的 w-72(288px) 宽，左边缘可拖拽调宽
 const PANEL_DEFAULT_W = 420
@@ -71,11 +79,20 @@ const PANEL_EDGE_GAP = 32
 // 并把 bounds 中心对齐到视口中心（天然居中）。不用 rf.fitView() 是因为它内部会 setNodes，
 // 而我们的 user nodes 不带 measured，重新 adopt 会把已测得的尺寸清空导致 nodesInitialized 反复翻转。
 //
-// fit 只在两个时机触发：① 首次挂载并测量完成（进入详情页 / 打开放大浮窗）② 容器尺寸变化（拖边框 / 全屏）。
-// 实时刷新新增节点也触发动态等比 fit，但一旦用户手动拖动/缩放画布就停止自动调整。
-// 用 onMoveStart 捕获用户交互 → userInteracted.current=true → 后续节点增长不再复位，
-// 避免打断用户正在探索的视角。首次挂载和容器 resize 仍始终 fit。
-const FlowFitController: FC<{ box: { w: number; h: number }; fitKey: string; userInteracted: React.MutableRefObject<boolean> }> = ({ box, fitKey, userInteracted }) => {
+// 画布视口有两种互斥行为，写的是同一个 viewport，所以由这一个控制器统一决定该做哪个
+// （判定逻辑抽在 utils/instanceFlowViewport 里可单测）：
+// - fit（默认）：把全部可见节点等比缩放 + 居中。只在三个时机触发：
+//   ① 首次挂载并测量完成（进入详情页 / 打开放大浮窗）② 容器尺寸变化（拖边框 / 全屏）
+//   ③ 实时刷新新增节点——但用户手动拖动/缩放过后就停止，避免打断用户正在探索的视角。
+//   用户交互用 onMove 捕获，不能用 onMoveStart：d3-zoom 的 .start() 对程序性 setViewport
+//   也会触发，会把第一次自动落位误判成用户操作（c508be9 修的就是这个）。
+// - follow（跟随模式开关打开时）：聚焦 + 放大到当前正在执行的节点。当前节点每推进一步
+//   就重新落位一次；开关是唯一控制权，用户手动拖过也会在下一次节点推进时被拉回。
+//   跟随写入同样不污染 userInteracted，因此关掉开关后 fit 的原有语义照常成立。
+const FlowFitController: FC<{
+  box: { w: number; h: number }; fitKey: string; userInteracted: React.MutableRefObject<boolean>
+  followMode: boolean; focusNodeId: string | null
+}> = ({ box, fitKey, userInteracted, followMode, focusNodeId }) => {
   const rf = useReactFlow()
   const store = useStoreApi()
   const total = useStore(s => s.nodeLookup.size)
@@ -86,28 +103,52 @@ const FlowFitController: FC<{ box: { w: number; h: number }; fitKey: string; use
   })
   // 记录上次 fit 时的容器尺寸；null 表示还没 fit 过
   const fittedBox = useRef<{ w: number; h: number } | null>(null)
+  // 上次成功跟随的签名；关掉开关就清空，否则「关了再开且节点没变」会因签名相同而不再聚焦
+  const followedKey = useRef<string | null>(null)
 
   useEffect(() => {
-    if (box.w < 2 || box.h < 2) return
-    const isFirst = fittedBox.current === null
-    const isResize = !!fittedBox.current && (fittedBox.current.w !== box.w || fittedBox.current.h !== box.h)
-    // 节点集合变化（新增节点）时动态 fit，但用户手动操作过就不再自动调整
-    const isNodeGrowth = !!fittedBox.current && !isResize && !userInteracted.current
-    if (!isFirst && !isResize && !isNodeGrowth) return
-    if (total === 0 || measured !== total) return
+    if (!followMode) followedKey.current = null
+  }, [followMode])
+
+  useEffect(() => {
     const { nodeLookup, nodeOrigin } = store.getState()
+    const focusNode = focusNodeId ? nodeLookup.get(focusNodeId) : undefined
+    const intent = resolveViewportIntent({
+      boxReady: box.w >= 2 && box.h >= 2,
+      nodesMeasured: total > 0 && measured === total,
+      followMode,
+      focusNodeId,
+      focusNodeMeasured: !!focusNode?.measured.width && !!focusNode?.measured.height,
+      lastFollowKey: followedKey.current,
+      lastFitBox: fittedBox.current,
+      currentBox: box,
+      userInteracted: userInteracted.current,
+    })
+    if (intent.kind === 'none') return
+
+    if (intent.kind === 'follow' && focusNodeId) {
+      const bounds = getNodesBounds([focusNodeId], { nodeLookup, nodeOrigin })
+      if (!isUsableRect(bounds)) return
+      rf.setViewport(
+        getViewportForBounds(bounds, box.w, box.h, FOLLOW_MIN_ZOOM, FOLLOW_MAX_ZOOM, FOLLOW_PADDING),
+        { duration: intent.animate ? FOLLOW_ANIMATE_MS : 0 },
+      )
+      followedKey.current = followKeyOf(focusNodeId, box)
+      return
+    }
+
+    if (intent.kind !== 'fit') return
     const ids: string[] = []
     nodeLookup.forEach(nd => { if (!nd.hidden) ids.push(nd.id) })
     if (!ids.length) return
     const bounds = getNodesBounds(ids, { nodeLookup, nodeOrigin })
-    if (!Number.isFinite(bounds.width) || !Number.isFinite(bounds.height)) return
-    if (bounds.width <= 0 || bounds.height <= 0) return
+    if (!isUsableRect(bounds)) return
     rf.setViewport(
       getViewportForBounds(bounds, box.w, box.h, FIT_MIN_ZOOM, FIT_MAX_ZOOM, FIT_PADDING),
-      { duration: isFirst ? 0 : FIT_ANIMATE_MS },
+      { duration: intent.animate ? FIT_ANIMATE_MS : 0 },
     )
     fittedBox.current = { w: box.w, h: box.h }
-  }, [rf, store, box.w, box.h, fitKey, total, measured])
+  }, [rf, store, box.w, box.h, fitKey, total, measured, followMode, focusNodeId])
 
   return null
 }
@@ -120,6 +161,8 @@ interface InstanceFlowGraphProps {
   wfStatus: string
   artifacts: InstanceArtifact[]
   fullHeight?: boolean
+  /** 跟随模式：开启后每次自动聚焦 + 放大到当前正在执行的节点 */
+  followMode?: boolean
 }
 function parseTraceLog(rawLog: string) {
   const entries = rawLog.split('\n').filter(l => l.trim())
@@ -139,7 +182,7 @@ function parseTraceLog(rawLog: string) {
   return path
 }
 
-export const InstanceFlowGraph: FC<InstanceFlowGraphProps> = ({ traceLog, flowData, completedNodes, currentName, wfStatus, artifacts, fullHeight }) => {
+export const InstanceFlowGraph: FC<InstanceFlowGraphProps> = ({ traceLog, flowData, completedNodes, currentName, wfStatus, artifacts, fullHeight, followMode = false }) => {
   const [selectedNodeLabel, setSelectedNodeLabel] = useState<string | null>(null)
 
   const path = useMemo(() => parseTraceLog(traceLog), [traceLog])
@@ -285,6 +328,12 @@ export const InstanceFlowGraph: FC<InstanceFlowGraphProps> = ({ traceLog, flowDa
   const hasGraph = !!flowData?.nodes?.length && path.length > 0
   // 可见节点 id 集合变化时触发动态 fit（但用户手动操作后停止）
   const fitKey = useMemo(() => displayNodes.map(n => n.id).join('|'), [displayNodes])
+  // 跟随目标：currentName 是 label，要经 flowMap 换成节点 id。visited 恒含 currentName，
+  // 所以正常情况下该节点必定已在画布里；取不到时按无目标处理，回落到整图 fit
+  const focusNodeId = useMemo(
+    () => (currentName ? flowMap.get(currentName)?.id ?? null : null),
+    [flowMap, currentName],
+  )
   const userInteracted = useRef(false)
   const containerRef = useRef<HTMLDivElement>(null)
   const [box, setBox] = useState({ w: 0, h: 0 })
@@ -368,7 +417,7 @@ export const InstanceFlowGraph: FC<InstanceFlowGraphProps> = ({ traceLog, flowDa
         proOptions={{ hideAttribution: true }}
       >
         <Background color="#E5E5E5" gap={20} size={1} variant={BackgroundVariant.Dots} />
-        <FlowFitController box={box} fitKey={fitKey} userInteracted={userInteracted} />
+        <FlowFitController box={box} fitKey={fitKey} userInteracted={userInteracted} followMode={followMode} focusNodeId={focusNodeId} />
       </ReactFlow>
 
       {/* 节点产物面板 */}
