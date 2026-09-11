@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { saveAppConfig } from '../utils/storage'
+import { clampFollowZoom, FOLLOW_ZOOM_DEFAULT } from '../utils/instanceFlowViewport'
 import type { AppConfig } from '../types'
 
 export type PageType = 'project' | 'agents' | 'workflows' | 'nodes' | 'resources' | 'knowledges' | 'skills' | 'settings'
@@ -33,6 +34,10 @@ interface AppState {
   isSidebarCollapsed: boolean
   toggleSidebar: () => void
   initSidebarCollapsed: (collapsed?: boolean) => void
+  // 工作流执行进度图：跟随模式的放大倍数（1 倍 = 原始尺寸）
+  followZoom: number
+  setFollowZoom: (zoom: number) => Promise<void>
+  initFollowZoom: (zoom?: number) => void
   // 工作流二级导航
   workflowSubPage: WorkflowSubPage
   setWorkflowSubPage: (page: WorkflowSubPage) => void
@@ -113,6 +118,25 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   initSidebarCollapsed: (collapsed) => {
     set({ isSidebarCollapsed: !!collapsed })
+  },
+  // 跟随模式放大倍数：改动即落盘，与侧边栏折叠同一范式（读回当前 config 只覆写本字段，
+  // 并把新 config 同步回 projectStore，避免其他保存路径把它当旧值写回去）
+  followZoom: FOLLOW_ZOOM_DEFAULT,
+  setFollowZoom: async (zoom) => {
+    const clamped = clampFollowZoom(zoom)
+    set({ followZoom: clamped })
+    const { useProjectStore } = await import('./projectStore')
+    const currentConfig = useProjectStore.getState().getAppConfig()
+    if (!currentConfig) return
+    const newConfig: AppConfig = { ...currentConfig, followZoom: clamped }
+    const success = await saveAppConfig(newConfig)
+    if (!success) {
+      console.error('保存跟随模式放大倍数失败')
+    }
+    useProjectStore.setState({ appConfig: newConfig })
+  },
+  initFollowZoom: (zoom) => {
+    set({ followZoom: clampFollowZoom(zoom) })
   },
   // 工作流二级导航 - 默认展示工作流列表
   workflowSubPage: 'workflows',

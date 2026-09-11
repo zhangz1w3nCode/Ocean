@@ -5,6 +5,7 @@ import { Search, RefreshCw, Activity, FileText, Package, ChevronRight, ChevronLe
 import { Button, Dropdown, MarkdownRenderer, Modal, Switch } from '../components/ui'
 import ReactDiffViewer from 'react-diff-viewer-continued'
 import { useWorkflowInstanceStore } from '../stores/workflowInstanceStore'
+import { useAppStore } from '../stores/appStore'
 import type { WorkflowInstance, InstanceTraceEvent, InstanceArtifact } from '../types'
 import { formatStatus, formatRelativeTime } from '../utils/format'
 import { INSTANCE_STATUSES, instanceStatusOfInstance, instanceStatusOfDetail } from '../utils/instanceStatus'
@@ -308,6 +309,8 @@ const InstanceDetail: FC = () => {
   const [isFlowFullscreen, setIsFlowFullscreen] = useState(false)
   // 跟随模式：开关归页面管，不进 store——detail 引用被整体替换会让 ReactFlow 整树重挂、视角复位
   const [followMode, setFollowMode] = useState(false)
+  // 放大倍数是用户偏好，存在应用级配置里（工作流设置页可调），跨页面/重启共享
+  const followZoom = useAppStore(s => s.followZoom)
   const [isContextFullscreen, setIsContextFullscreen] = useState(false)
   const [diffData, setDiffData] = useState<{
     nodeName: string; arts: InstanceArtifact[];
@@ -788,6 +791,7 @@ const InstanceDetail: FC = () => {
                 artifacts={detail!.artifacts}
                 fullHeight
                 followMode={followMode}
+                followZoom={followZoom}
               />
             </div>
 
