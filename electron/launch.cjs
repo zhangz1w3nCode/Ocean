@@ -1109,7 +1109,17 @@ ipcMain.handle('delete-knowledge-file', (_, name) => {
 ipcMain.handle('get-knowledge-baseline', (_, name) => {
   try {
     const projectRoot = getProjectRoot()
-    const relPath = `.knowledges/${name}.md`
+    // 归一化并校验 name：仅允许 .knowledges 下的相对路径，拒绝路径穿越/绝对路径
+    const normalized = String(name == null ? '' : name).replace(/\.md$/, '')
+    if (
+      !normalized ||
+      normalized.startsWith('/') ||
+      normalized.includes('\\') ||
+      normalized.split('/').some((seg) => seg === '' || seg === '.' || seg === '..')
+    ) {
+      return { success: false, error: '非法的知识路径', content: null }
+    }
+    const relPath = `.knowledges/${normalized}.md`
     const result = child_process.spawnSync('git', ['-C', projectRoot, 'show', `HEAD:${relPath}`], {
       encoding: 'utf-8',
     })

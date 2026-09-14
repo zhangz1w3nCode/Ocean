@@ -137,7 +137,7 @@ export interface KnowledgeSearchResult {
 // 全文检索已审核通过（status=validated）的知识，返回标题/元数据/摘要/命中上下文，不返回文档原文。
 export function search(root: string, keyword: string, opts?: { top?: number; context?: number }): KnowledgeSearchResult[] {
   if (!keyword || keyword.trim() === '') return []
-  const top = opts?.top && opts.top > 0 ? opts.top : 5
+  const top = typeof opts?.top === 'number' && opts.top >= 0 ? opts.top : 5
   const context = typeof opts?.context === 'number' && opts.context >= 0 ? opts.context : 2
   const d = dir(root)
   const kw = keyword.toLowerCase()

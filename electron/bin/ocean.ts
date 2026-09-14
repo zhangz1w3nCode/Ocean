@@ -1163,7 +1163,7 @@ function handleKnowledge(root: string, args: ReturnType<typeof parseArgs>): void
         const lines: string[] = []
         for (const r of results) {
           const meta = Object.entries(r.metadata)
-            .filter(([k]) => k !== 'name')
+            .filter(([k]) => k !== 'name' && k !== 'summary')
             .map(([k, v]) => `${k}: ${v}`)
             .join('  |  ')
           lines.push(`# ${r.name}  (${r.path})`)

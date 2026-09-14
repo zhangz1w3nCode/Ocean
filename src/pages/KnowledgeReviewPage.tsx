@@ -110,6 +110,7 @@ export const KnowledgeReviewPage: FC<{ nested?: boolean }> = ({ nested = false }
 
       {/* 审核弹窗 */}
       <KnowledgeReviewModal
+        key={reviewingKnowledge?.id || 'empty'}
         isOpen={isReviewOpen}
         onClose={handleReviewClose}
         knowledge={reviewingKnowledge}

@@ -225,8 +225,11 @@ export const KnowledgeCatalogPage: FC = () => {
   const handleSave = useCallback(async () => {
     if (!selectedPath) return
     setSaving(true)
-    // 更新即视为新内容：状态回退为待审核
-    const nextFrontmatter = setFrontmatterStatus(frontmatterRef.current, 'pending')
+    // 更新即视为新内容：状态回退为待审核（INDEX.md 为系统生成的全局索引，不参与审核）
+    const isIndex = (selectedPath.split('/').pop() || '').toLowerCase() === 'index'
+    const nextFrontmatter = isIndex
+      ? frontmatterRef.current
+      : setFrontmatterStatus(frontmatterRef.current, 'pending')
     const success = await saveKnowledgeRawFile(
       selectedPath,
       joinKnowledgeRawFile(nextFrontmatter, body),

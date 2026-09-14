@@ -191,6 +191,8 @@ export const KnowledgesPage: FC<{ nested?: boolean }> = ({ nested = false }) => 
       // 已存在则覆盖更新
       success = await updateKnowledgeFile(globalIndexKnowledge.id, {
         content: generatedIndexContent || '',
+        // INDEX.md 为系统生成的全局索引，始终保持 validated
+        status: 'validated',
         updatedAt: new Date().toISOString(),
       })
     } else {
