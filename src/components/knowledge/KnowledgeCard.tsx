@@ -36,26 +36,28 @@ export const KnowledgeCard: FC<KnowledgeCardProps> = ({ knowledge, onClick, onEd
 
           {/* 操作按钮区 */}
           <div className="flex items-center gap-1">
-            {/* 悬浮时显示的编辑按钮 */}
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                onEdit?.()
-              }}
-              className="p-1.5 rounded-md hover:bg-gray-100 text-macos-text-secondary opacity-0 group-hover:opacity-100 transition-opacity"
-            >
-              <Edit3 size={14} />
-            </button>
-            {/* 删除按钮 */}
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                onDelete?.()
-              }}
-              className="p-1.5 rounded-md hover:bg-red-50 text-macos-text-secondary hover:text-macos-error opacity-0 group-hover:opacity-100 transition-opacity"
-            >
-              <Trash2 size={14} />
-            </button>
+            {onEdit && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onEdit()
+                }}
+                className="p-1.5 rounded-md hover:bg-gray-100 text-macos-text-secondary opacity-0 group-hover:opacity-100 transition-opacity"
+              >
+                <Edit3 size={14} />
+              </button>
+            )}
+            {onDelete && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onDelete()
+                }}
+                className="p-1.5 rounded-md hover:bg-red-50 text-macos-text-secondary hover:text-macos-error opacity-0 group-hover:opacity-100 transition-opacity"
+              >
+                <Trash2 size={14} />
+              </button>
+            )}
           </div>
         </div>
 
@@ -88,7 +90,7 @@ export const KnowledgeCard: FC<KnowledgeCardProps> = ({ knowledge, onClick, onEd
       {/* 内容预览区 - 浅灰色背景 */}
       <div className="flex-1 mx-4 mb-4 mt-0 p-4 rounded-lg bg-gray-50">
         <p className="text-xs text-gray-500 leading-relaxed line-clamp-3">
-          {contentPreview || knowledge.description || '暂无内容'}
+          {contentPreview || knowledge.summary || '暂无内容'}
         </p>
       </div>
     </Card>

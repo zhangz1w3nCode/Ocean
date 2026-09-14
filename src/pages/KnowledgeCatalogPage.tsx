@@ -12,7 +12,7 @@ import '@atomic-editor/editor/styles.css'
 import { useKnowledgeStore } from '../stores/knowledgeStore'
 import { useToastStore } from '../stores/toastStore'
 import {
-  loadKnowledgeRawFile, saveKnowledgeRawFile, listKnowledgeFoldersFromLocal, isElectron,
+  loadKnowledgeRawFile, saveKnowledgeRawFile, isElectron,
   splitKnowledgeRawFile, joinKnowledgeRawFile,
   type KnowledgeFolder,
 } from '../utils/storage'
@@ -68,6 +68,20 @@ function buildTree(folders: KnowledgeFolder[], filePaths: string[]): TreeNode[] 
   }
   sortRecursive(root)
   return root
+}
+
+/**
+ * 在 frontmatter 原文字面量中设置 status 字段：
+ * 已有 status 行则替换，否则在闭合 --- 之前插入；无 frontmatter 时原样返回。
+ */
+function setFrontmatterStatus(frontmatter: string, status: string): string {
+  if (!frontmatter) return frontmatter
+  if (/^status:.*$/m.test(frontmatter)) {
+    return frontmatter.replace(/^status:.*$/m, `status: ${status}`)
+  }
+  const close = frontmatter.lastIndexOf('---')
+  if (close <= 0) return frontmatter
+  return `${frontmatter.slice(0, close)}status: ${status}\n${frontmatter.slice(close)}`
 }
 
 interface TreeRowProps {
@@ -136,7 +150,6 @@ export const KnowledgeCatalogPage: FC = () => {
   const { knowledgeFiles, loadKnowledgeFiles } = useKnowledgeStore()
   const { addToast } = useToastStore()
 
-  const [folders, setFolders] = useState<KnowledgeFolder[]>([])
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [selectedPath, setSelectedPath] = useState<string | null>(null)
   const [body, setBody] = useState('')
@@ -168,24 +181,22 @@ export const KnowledgeCatalogPage: FC = () => {
   }, [])
 
   const tree = useMemo(() => {
+    // 知识目录仅展示已审核通过（validated）的知识
     const filePaths = Array.from(
-      new Set(knowledgeFiles.map((k) => k.filepath).filter((p): p is string => !!p)),
+      new Set(
+        knowledgeFiles
+          .filter((k) => k.status === 'validated')
+          .map((k) => k.filepath)
+          .filter((p): p is string => !!p),
+      ),
     )
-    return buildTree(folders, filePaths)
-  }, [folders, knowledgeFiles])
+    return buildTree([], filePaths)
+  }, [knowledgeFiles])
 
   // 目录树与文件列表都来自磁盘，切回本 tab 时重新拉取
   useEffect(() => {
     if (!isElectron()) return
-    const refresh = async () => {
-      const [list, loaded] = await Promise.all([
-        listKnowledgeFoldersFromLocal(),
-        loadKnowledgeFiles(),
-      ])
-      setFolders(list)
-      void loaded
-    }
-    refresh()
+    loadKnowledgeFiles()
   }, [loadKnowledgeFiles])
 
   const handleToggle = useCallback((path: string) => {
@@ -214,17 +225,19 @@ export const KnowledgeCatalogPage: FC = () => {
   const handleSave = useCallback(async () => {
     if (!selectedPath) return
     setSaving(true)
+    // 更新即视为新内容：状态回退为待审核
+    const nextFrontmatter = setFrontmatterStatus(frontmatterRef.current, 'pending')
     const success = await saveKnowledgeRawFile(
       selectedPath,
-      joinKnowledgeRawFile(frontmatterRef.current, body),
+      joinKnowledgeRawFile(nextFrontmatter, body),
     )
+    frontmatterRef.current = nextFrontmatter
     setSaving(false)
     if (success) {
       setDirty(false)
-      addToast('已保存', 'success')
+      addToast('已保存，状态已置为待审核', 'success')
       // 让知识库/知识图谱 tab 与本 tab 数据一致
       await loadKnowledgeFiles()
-      setFolders(await listKnowledgeFoldersFromLocal())
     } else {
       addToast('保存失败，请重试', 'error')
     }

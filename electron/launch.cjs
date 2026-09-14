@@ -1104,6 +1104,25 @@ ipcMain.handle('delete-knowledge-file', (_, name) => {
   }
 })
 
+// 读取知识文件在本地 git HEAD 中的基线内容（审核页 diff 用）
+// 返回 null 表示无基线（如文件未纳入 git / 新建未提交）
+ipcMain.handle('get-knowledge-baseline', (_, name) => {
+  try {
+    const projectRoot = getProjectRoot()
+    const relPath = `.knowledges/${name}.md`
+    const result = child_process.spawnSync('git', ['-C', projectRoot, 'show', `HEAD:${relPath}`], {
+      encoding: 'utf-8',
+    })
+    if (result.status !== 0 || typeof result.stdout !== 'string') {
+      return { success: true, content: null }
+    }
+    return { success: true, content: result.stdout }
+  } catch (error) {
+    console.error('读取知识文件 git 基线失败:', error)
+    return { success: false, error: String(error), content: null }
+  }
+})
+
 // 加载所有知识库文件列表（递归扫描子目录，返回相对路径格式的文件名）
 ipcMain.handle('load-all-knowledge-files', () => {
   try {

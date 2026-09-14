@@ -68,6 +68,7 @@ const electronAPI = {
   deleteKnowledgeFile: (name) => ipcRenderer.invoke('delete-knowledge-file', name),
   loadAllKnowledgeFiles: () => ipcRenderer.invoke('load-all-knowledge-files'),
   listKnowledgeFolders: () => ipcRenderer.invoke('list-knowledge-folders'),
+  loadKnowledgeBaseline: (name) => ipcRenderer.invoke('get-knowledge-baseline', name),
 
   // 技能文件数据持久化（目录结构，存储在 skills 目录）
   createSkillDirectory: (name, input) => ipcRenderer.invoke('create-skill-directory', name, input),

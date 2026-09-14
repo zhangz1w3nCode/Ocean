@@ -34,11 +34,12 @@ export const KnowledgeGraphView: FC = () => {
   }
 
   const handleEditConfirm = async (
-    knowledgeData: Omit<KnowledgeFile, 'id' | 'createdAt' | 'updatedAt' | 'type'>,
+    knowledgeData: Omit<KnowledgeFile, 'id' | 'createdAt' | 'updatedAt' | 'type' | 'status'>,
   ) => {
     if (!editingKnowledge) return false
     const success = await updateKnowledgeFile(editingKnowledge.id, {
       ...knowledgeData,
+      status: 'pending',
       updatedAt: new Date().toISOString(),
     })
     addToast(success ? '知识更新成功' : '知识更新失败，请重试', success ? 'success' : 'error')

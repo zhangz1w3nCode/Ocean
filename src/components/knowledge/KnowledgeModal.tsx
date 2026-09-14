@@ -17,7 +17,7 @@ type CreateMode = 'select' | 'manual' | 'agentic'
 interface KnowledgeModalProps {
   isOpen: boolean
   onClose: () => void
-  onConfirm: (knowledge: Omit<KnowledgeFile, 'id' | 'createdAt' | 'updatedAt' | 'type'>) => Promise<boolean>
+  onConfirm: (knowledge: Omit<KnowledgeFile, 'id' | 'createdAt' | 'updatedAt' | 'type' | 'status'>) => Promise<boolean>
   mode: 'create' | 'edit'
   initialData?: KnowledgeFile
   existingNames?: string[]
@@ -41,7 +41,7 @@ export const KnowledgeModal: FC<KnowledgeModalProps> = ({
   const [createMode, setCreateMode] = useState<CreateMode>('select')
 
   const [name, setName] = useState('')
-  const [description, setDescription] = useState('')
+  const [summary, setSummary] = useState('')
   const [content, setContent] = useState('')
   const [tags, setTags] = useState<string[]>([])
   const [category, setCategory] = useState('')
@@ -104,7 +104,7 @@ export const KnowledgeModal: FC<KnowledgeModalProps> = ({
   const getSnapshot = () => {
     return JSON.stringify({
       name,
-      description,
+      summary,
       content,
       tags,
       category,
@@ -126,7 +126,7 @@ export const KnowledgeModal: FC<KnowledgeModalProps> = ({
 
       if (mode === 'edit' && initialData) {
         setName(initialData.name)
-        setDescription(initialData.description || '')
+        setSummary(initialData.summary || '')
         setContent(initialData.content || '')
         setTags(initialData.tags || [])
         setCategory(initialData.category || '')
@@ -134,7 +134,7 @@ export const KnowledgeModal: FC<KnowledgeModalProps> = ({
       } else {
         // 创建模式：重置为默认值
         setName('')
-        setDescription('')
+        setSummary('')
         setContent('')
         setTags([])
         setCategory('')
@@ -329,7 +329,7 @@ export const KnowledgeModal: FC<KnowledgeModalProps> = ({
     // 提交
     const success = await onConfirm({
       name: name.trim(),
-      description: description.trim(),
+      summary: summary.trim(),
       content: content.trim(),
       tags,
       category: category.trim(),
@@ -352,7 +352,7 @@ export const KnowledgeModal: FC<KnowledgeModalProps> = ({
     }
 
     setName('')
-    setDescription('')
+    setSummary('')
     setContent('')
     setTags([])
     setCategory('')
@@ -383,7 +383,7 @@ export const KnowledgeModal: FC<KnowledgeModalProps> = ({
     setUserDescription('')
     clearAgenticSteps()
     setName('')
-    setDescription('')
+    setSummary('')
     setContent('')
     setCreateMode('select')
   }
@@ -525,16 +525,16 @@ export const KnowledgeModal: FC<KnowledgeModalProps> = ({
         )}
       </div>
 
-      {/* 知识描述 */}
+      {/* 知识摘要 */}
       <div>
         <label className="flex items-center gap-2 text-sm font-medium text-macos-text mb-1.5">
           <MessageSquare size={16} className="text-macos-text-secondary" />
-          知识描述
+          知识摘要
         </label>
         <Textarea
-          placeholder="简要描述这个知识的用途..."
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
+          placeholder="简要说明这个知识的摘要..."
+          value={summary}
+          onChange={(e) => setSummary(e.target.value)}
           rows={2}
         />
       </div>
@@ -746,7 +746,7 @@ export const KnowledgeModal: FC<KnowledgeModalProps> = ({
                     handleClose()
                   } else {
                     // 手动创建模式下，如果有内容，显示确认弹窗
-                    if (name.trim() || description.trim() || content.trim()) {
+                    if (name.trim() || summary.trim() || content.trim()) {
                       setShowBackConfirm(true)
                     } else {
                       setCreateMode('select')

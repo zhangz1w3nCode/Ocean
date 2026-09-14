@@ -7,6 +7,7 @@ import { KnowledgesPage } from '../../pages/KnowledgesPage'
 import { KnowledgeGraphView } from './KnowledgeGraphView'
 import { KnowledgeCatalogPage } from '../../pages/KnowledgeCatalogPage'
 import { KnowledgeSettingsPage } from '../../pages/KnowledgeSettingsPage'
+import { KnowledgeReviewPage } from '../../pages/KnowledgeReviewPage'
 
 export const KnowledgeLayout: FC = () => {
   const { knowledgeSubPage } = useAppStore()
@@ -42,6 +43,8 @@ export const KnowledgeLayout: FC = () => {
         return <KnowledgeGraphView />
       case 'catalog':
         return <KnowledgeCatalogPage />
+      case 'review':
+        return <KnowledgeReviewPage />
       case 'settings':
         return <KnowledgeSettingsPage />
       default:

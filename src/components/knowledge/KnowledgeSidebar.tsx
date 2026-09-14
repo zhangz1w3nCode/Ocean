@@ -1,12 +1,13 @@
 import type { FC } from 'react'
 import { motion } from 'framer-motion'
-import { BookOpen, Network, FolderTree, Settings } from 'lucide-react'
+import { BookOpen, Network, FolderTree, Settings, ShieldCheck } from 'lucide-react'
 import { useAppStore, type KnowledgeSubPage } from '../../stores/appStore'
 
 const subNavItems: { id: KnowledgeSubPage; label: string; icon: typeof BookOpen }[] = [
   { id: 'library', label: '知识库', icon: BookOpen },
   { id: 'graph', label: '知识图谱', icon: Network },
   { id: 'catalog', label: '知识目录', icon: FolderTree },
+  { id: 'review', label: '知识审核', icon: ShieldCheck },
   { id: 'settings', label: '设置', icon: Settings },
 ]
 
