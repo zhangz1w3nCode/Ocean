@@ -48,7 +48,12 @@ export interface GraphData {
  * @returns 图谱数据和知识文件列表
  */
 export function useKnowledgeGraph() {
-  const { knowledgeFiles } = useKnowledgeStore()
+  const { knowledgeFiles: allKnowledgeFiles } = useKnowledgeStore()
+  // 知识图谱仅包含已审核通过（validated）的知识；pending 不入图，引用也无法解析到 pending
+  const knowledgeFiles = useMemo(
+    () => allKnowledgeFiles.filter((k) => k.status === 'validated'),
+    [allKnowledgeFiles],
+  )
 
   // 构建知识名称到 ID 的映射（不区分大小写）
   // 支持子目录路径：如 "backend/api" -> id，同时保留简短名称映射
@@ -81,7 +86,7 @@ export function useKnowledgeGraph() {
       nodes.push({
         id: knowledge.id,
         name: knowledge.name,
-        description: knowledge.description,
+        description: knowledge.summary,
         tags: knowledge.tags,
         inDegree: 0,
         outDegree: 0,

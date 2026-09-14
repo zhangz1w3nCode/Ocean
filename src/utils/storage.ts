@@ -68,6 +68,7 @@ declare global {
       deleteKnowledgeFile: (name: string) => Promise<{ success: boolean; error?: string }>
       loadAllKnowledgeFiles: () => Promise<{ success: boolean; files?: string[]; error?: string }>
       listKnowledgeFolders: () => Promise<{ success: boolean; folders?: KnowledgeFolder[]; error?: string }>
+      loadKnowledgeBaseline: (name: string) => Promise<{ success: boolean; content?: string | null; error?: string }>
       // 技能文件相关（目录结构，存储在 skills 目录）
       createSkillDirectory: (name: string, input: any) => Promise<{ success: boolean; error?: string }>
       saveSkillFile: (name: string, content: string) => Promise<{ success: boolean; error?: string }>
@@ -1996,7 +1997,7 @@ const FLOW_STYLE_FIELDS = ['tags']
 
 // 生成知识库格式的 Markdown（以原始 frontmatter 为基础合并，只更新本次提供的字段，保留未知字段）
 export const generateKnowledgeMarkdown = (
-  metadata: { name: string; description: string; tags: string[]; category?: string },
+  metadata: { name: string; summary: string; tags: string[]; category?: string; status?: string },
   content: string,
   rawFrontmatter?: Record<string, any>
 ): string => {
@@ -2005,21 +2006,13 @@ export const generateKnowledgeMarkdown = (
   // name 为必有字段，始终更新
   frontmatter.name = metadata.name
 
-  // description：区分「用户显式编辑」与「summary 回退显示」
-  // 1) 原 frontmatter 已有 description 字段：非空则更新；为空则删除键（用户清空了描述，修复不可清空问题）
-  // 2) 原 frontmatter 无 description（可能只有 summary）：仅写入用户显式输入的非空新值，
-  //    来自 summary 回退显示且未改动的值不写入，避免污染使用 summary 约定的卡片
-  if ('description' in frontmatter) {
-    if (metadata.description) {
-      frontmatter.description = metadata.description
-    } else {
-      delete frontmatter.description
-    }
-  } else if (metadata.description) {
-    const cameFromSummaryFallback = frontmatter.summary === metadata.description
-    if (!cameFromSummaryFallback) {
-      frontmatter.description = metadata.description
-    }
+  // summary：知识摘要（原 description 字段已统一为 summary，历史 description 迁移为 summary）
+  if (metadata.summary) {
+    frontmatter.summary = metadata.summary
+    delete frontmatter.description
+  } else {
+    delete frontmatter.summary
+    delete frontmatter.description
   }
 
   // tags：非空则更新；原 frontmatter 有 tags 而本次清空则删除键（修复无法移除全部标签问题）
@@ -2027,6 +2020,13 @@ export const generateKnowledgeMarkdown = (
     frontmatter.tags = metadata.tags
   } else if ('tags' in frontmatter) {
     delete frontmatter.tags
+  }
+
+  // status：调用方显式指定时以其为准；否则保留原值；原无 status 时默认 pending
+  if (metadata.status) {
+    frontmatter.status = metadata.status
+  } else if (!('status' in frontmatter)) {
+    frontmatter.status = 'pending'
   }
 
   // category 不写入 frontmatter：分类以文件所在子目录为事实来源
@@ -2079,9 +2079,10 @@ export const saveKnowledgeFilesToLocal = async (knowledges: any[]): Promise<bool
     for (const knowledge of knowledges) {
       const metadata = {
         name: knowledge.name,
-        description: knowledge.description || '',
+        summary: knowledge.summary || '',
         tags: knowledge.tags || [],
         category: knowledge.category || '',
+        status: knowledge.status || 'pending',
       }
       const mdContent = generateKnowledgeMarkdown(metadata, knowledge.content || '', knowledge.rawFrontmatter)
 
@@ -2124,9 +2125,10 @@ export const saveSingleKnowledgeFileToLocal = async (knowledge: any): Promise<bo
   try {
     const metadata = {
       name: knowledge.name,
-      description: knowledge.description || '',
+      summary: knowledge.summary || '',
       tags: knowledge.tags || [],
       category: knowledge.category || '',
+      status: knowledge.status || 'pending',
     }
     const mdContent = generateKnowledgeMarkdown(metadata, knowledge.content || '', knowledge.rawFrontmatter)
     const savePath = knowledge.category
@@ -2186,9 +2188,11 @@ export const loadKnowledgeFilesFromLocal = async (): Promise<any[]> => {
             name: metadata.name || knowledgePath.substring(lastSlashIndex + 1),
             type: 'knowledge',
             // description 回退 summary（akb 知识库卡片使用 summary 字段约定）
-            description: metadata.description || metadata.summary || '',
+            summary: metadata.summary || metadata.description || '',
             content: body,
             tags: Array.isArray(metadata.tags) ? metadata.tags : [],
+            // 审核状态：frontmatter 无 status 时视为 pending（存量兼容）
+            status: metadata.status === 'validated' ? 'validated' : 'pending',
             category: category,
             filepath: knowledgePath,
             rawFrontmatter: metadata,
@@ -2369,6 +2373,22 @@ export const listKnowledgeFoldersFromLocal = async (): Promise<KnowledgeFolder[]
   } catch (error) {
     console.error('获取知识库目录树失败:', error)
     return []
+  }
+}
+
+// 读取知识文件的 git HEAD 基线内容（用于审核页 diff）。
+// 返回该文件在本地 git 仓库 HEAD 中的原文（含 frontmatter）；
+// 若文件未纳入 git 或不存在基线（如新建未提交），返回 null。
+export const loadKnowledgeBaseline = async (
+  filepath: string,
+): Promise<string | null> => {
+  if (!isElectron()) return null
+  try {
+    const result = await window.electronAPI!.loadKnowledgeBaseline(filepath)
+    return result.success ? (result.content ?? null) : null
+  } catch (error) {
+    console.error('读取知识文件 git 基线失败:', error)
+    return null
   }
 }
 

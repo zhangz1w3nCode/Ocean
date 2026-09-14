@@ -571,12 +571,15 @@ flag:
   create <path>                创建知识
   update <path>                更新知识
   delete <path>                删除知识
+  search <keyword>             检索已审核知识（仅 status=validated，不返回原文）
 
 常用 flag:
-  --description <text>         知识描述
+  --summary <text>              知识摘要
   --tags <tag1,tag2>           标签（逗号分隔）
   --content "文本"             短内容直接传
   --content-file <path>         长内容指向文件
+  --top N                       search 返回条数（默认 5）
+  --context N                   search 命中上下文行数（默认 2）
   stdin                        管道输入（三选一）`)
       break
     case 'resource':
@@ -1123,20 +1126,20 @@ function handleKnowledge(root: string, args: ReturnType<typeof parseArgs>): void
     case 'create': {
       const relPath = args.positional[0]
       const content = readContent(args.flags)
-      const description = typeof args.flags.description === 'string' ? args.flags.description : undefined
+      const summary = typeof args.flags.summary === 'string' ? args.flags.summary : undefined
       const tagsStr = typeof args.flags.tags === 'string' ? args.flags.tags : undefined
       const tags = tagsStr ? tagsStr.split(',').map(t => t.trim()) : undefined
-      knowledgeCrud.create(root, relPath, content, { description, tags })
+      knowledgeCrud.create(root, relPath, content, { summary, tags })
       args.flags.json ? printJson({ action: 'created', path: relPath }) : printAction('created', { path: relPath })
       break
     }
     case 'update': {
       const relPath = args.positional[0]
       const content = readContent(args.flags)
-      const description = typeof args.flags.description === 'string' ? args.flags.description : undefined
+      const summary = typeof args.flags.summary === 'string' ? args.flags.summary : undefined
       const tagsStr = typeof args.flags.tags === 'string' ? args.flags.tags : undefined
       const tags = tagsStr !== undefined ? tagsStr.split(',').map(t => t.trim()) : undefined
-      knowledgeCrud.update(root, relPath, content, { description, tags })
+      knowledgeCrud.update(root, relPath, content, { summary, tags })
       args.flags.json ? printJson({ action: 'updated', path: relPath }) : printAction('updated', { path: relPath })
       break
     }
@@ -1144,6 +1147,38 @@ function handleKnowledge(root: string, args: ReturnType<typeof parseArgs>): void
       const relPath = args.positional[0]
       knowledgeCrud.del(root, relPath)
       args.flags.json ? printJson({ action: 'deleted', path: relPath }) : printAction('deleted', { path: relPath })
+      break
+    }
+    case 'search': {
+      const keyword = args.positional[0]
+      if (!keyword) throw new UsageError('用法: ocean knowledge search <keyword> [--top N] [--context N]')
+      const top = getLimit(args.flags, 'top', 5)
+      const context = getLimit(args.flags, 'context', 2)
+      const results = knowledgeCrud.search(root, keyword, { top, context })
+      if (args.flags.json) {
+        printJson(results)
+      } else if (results.length === 0) {
+        rawOut('未找到匹配的已审核知识（仅检索 status=validated）')
+      } else {
+        const lines: string[] = []
+        for (const r of results) {
+          const meta = Object.entries(r.metadata)
+            .filter(([k]) => k !== 'name' && k !== 'summary')
+            .map(([k, v]) => `${k}: ${v}`)
+            .join('  |  ')
+          lines.push(`# ${r.name}  (${r.path})`)
+          if (meta) lines.push(meta)
+          if (r.summary) lines.push(`summary: ${r.summary}`)
+          for (const m of r.matches) {
+            for (const b of m.before) lines.push(`    ${b}`)
+            lines.push(`  > (L${m.line}) ${m.text}`)
+            for (const a of m.after) lines.push(`    ${a}`)
+            lines.push('')
+          }
+          lines.push('')
+        }
+        rawOut(lines.join('\n'))
+      }
       break
     }
     default:

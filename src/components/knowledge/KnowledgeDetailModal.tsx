@@ -92,15 +92,15 @@ export const KnowledgeDetailModal: FC<KnowledgeDetailModalProps> = ({
 
       {/* 内容区域 - 固定高度，超出滚动 */}
       <div className="flex-1 min-h-0 overflow-y-auto pr-2 space-y-4">
-        {/* 知识描述 */}
-        {knowledge.description && (
+        {/* 知识摘要 */}
+        {knowledge.summary && (
           <div>
             <label className="flex items-center gap-2 text-sm font-medium text-macos-text mb-1.5">
               <MessageSquare size={16} />
-              知识描述
+              知识摘要
             </label>
             <div className="bg-gray-50 rounded-lg p-4">
-              <p className="text-sm text-macos-text-secondary">{knowledge.description}</p>
+              <p className="text-sm text-macos-text-secondary">{knowledge.summary}</p>
             </div>
           </div>
         )}

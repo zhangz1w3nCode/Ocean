@@ -63,7 +63,10 @@ Thumbs.db
 .claude/
 .experiences/
 .timelines/
-.knowledges/
+# .knowledges 纳入 git 版本管理（知识审核 diff 依赖本地 git 基线）
+# 排除索引等二进制文件
+.knowledges/**/*.sqlite
+.knowledges/.trash-box/
 .resources/
 .nodes/
 .workflows/

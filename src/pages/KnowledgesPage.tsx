@@ -39,8 +39,10 @@ export const KnowledgesPage: FC<{ nested?: boolean }> = ({ nested = false }) => 
 
   // 动态生成索引内容（当 INDEX.md 不存在时使用）
   const generatedIndexContent = useMemo(() => {
-    // 使用排除 INDEX 后的知识文件列表来生成树形目录
-    const nonIndexFiles = knowledgeFiles.filter((k) => k.name.toLowerCase() !== 'index')
+    // 使用排除 INDEX 且已审核通过（validated）的知识文件列表来生成树形目录
+    const nonIndexFiles = knowledgeFiles
+      .filter((k) => k.name.toLowerCase() !== 'index')
+      .filter((k) => k.status === 'validated')
     if (nonIndexFiles.length === 0) return null
     return generateIndexContent(nonIndexFiles)
   }, [knowledgeFiles])
@@ -49,11 +51,12 @@ export const KnowledgesPage: FC<{ nested?: boolean }> = ({ nested = false }) => 
   const filteredKnowledges = useMemo(() => {
     return knowledgeFiles
       .filter((k) => k.name.toLowerCase() !== 'index') // 排除全局索引
+      .filter((k) => k.status === 'validated') // 知识库仅展示已审核通过的知识
       .filter((knowledge) => {
         const query = searchQuery.toLowerCase()
         const matchesSearch =
           knowledge.name.toLowerCase().includes(query) ||
-          knowledge.description?.toLowerCase().includes(query) ||
+          knowledge.summary?.toLowerCase().includes(query) ||
           knowledge.content?.toLowerCase().includes(query) ||
           knowledge.category?.toLowerCase().includes(query) ||
           knowledge.tags?.some(tag => tag.toLowerCase().includes(query))
@@ -128,7 +131,7 @@ export const KnowledgesPage: FC<{ nested?: boolean }> = ({ nested = false }) => 
   }
 
   // 确认创建/编辑
-  const handleModalConfirm = async (knowledgeData: Omit<KnowledgeFile, 'id' | 'createdAt' | 'updatedAt' | 'type'>) => {
+  const handleModalConfirm = async (knowledgeData: Omit<KnowledgeFile, 'id' | 'createdAt' | 'updatedAt' | 'type' | 'status'>) => {
     const now = new Date().toISOString()
 
     if (modalMode === 'create') {
@@ -139,6 +142,8 @@ export const KnowledgesPage: FC<{ nested?: boolean }> = ({ nested = false }) => 
         type: 'knowledge',
         createdAt: now,
         updatedAt: now,
+        // 新建知识默认待审核
+        status: 'pending',
       }
       return await addKnowledgeFile(newKnowledge)
     } else if (modalMode === 'edit' && editingKnowledge) {
@@ -146,6 +151,8 @@ export const KnowledgesPage: FC<{ nested?: boolean }> = ({ nested = false }) => 
       return await updateKnowledgeFile(editingKnowledge.id, {
         ...knowledgeData,
         updatedAt: now,
+        // 更新知识后回退为待审核
+        status: 'pending',
       })
     }
     return false
@@ -184,6 +191,8 @@ export const KnowledgesPage: FC<{ nested?: boolean }> = ({ nested = false }) => 
       // 已存在则覆盖更新
       success = await updateKnowledgeFile(globalIndexKnowledge.id, {
         content: generatedIndexContent || '',
+        // INDEX.md 为系统生成的全局索引，始终保持 validated
+        status: 'validated',
         updatedAt: new Date().toISOString(),
       })
     } else {
@@ -193,9 +202,10 @@ export const KnowledgesPage: FC<{ nested?: boolean }> = ({ nested = false }) => 
         id: `knowledge-${Date.now()}`,
         name: 'INDEX',
         type: 'knowledge',
-        description: '知识库全局索引',
+        summary: '知识库全局索引',
         content: generatedIndexContent || '',
         tags: ['index'],
+        status: 'validated',
         createdAt: now,
         updatedAt: now,
       }
@@ -213,7 +223,9 @@ export const KnowledgesPage: FC<{ nested?: boolean }> = ({ nested = false }) => 
   const handleRefreshGlobalIndex = async (): Promise<string | null> => {
     await loadKnowledgeFiles() // 从磁盘重新读取知识库文件
     const latestFiles = useKnowledgeStore.getState().knowledgeFiles
-    const nonIndexFiles = latestFiles.filter((k) => k.name.toLowerCase() !== 'index')
+    const nonIndexFiles = latestFiles
+      .filter((k) => k.name.toLowerCase() !== 'index')
+      .filter((k) => k.status === 'validated')
     if (nonIndexFiles.length === 0) {
       addToast('刷新成功', 'success')
       return null

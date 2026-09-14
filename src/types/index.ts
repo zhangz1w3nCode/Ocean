@@ -165,14 +165,18 @@ export interface AgentFile {
 // 知识库文件类型
 export type KnowledgeFileType = 'knowledge'
 
+// 知识审核状态：新建/更新默认 pending，审核通过后 validated
+export type KnowledgeStatus = 'pending' | 'validated'
+
 // 知识库文件定义
 export interface KnowledgeFile {
   id: string
   name: string // 从 frontmatter 的 name 字段读取
   type: KnowledgeFileType // 固定为 'knowledge'
-  description: string // 从 frontmatter 的 description 字段读取
+  summary: string // 从 frontmatter 的 summary 字段读取（历史 description 字段兼容读取）
   content: string // frontmatter 后的内容
   tags: string[] // 标签数组
+  status: KnowledgeStatus // 审核状态（frontmatter 的 status 字段，缺失时视为 pending）
   category?: string // 分类路径（如 "backend" 或 "backend/v2"），对应子目录结构
   filepath?: string // 完整文件相对路径（如 "backend/api"），用于文件系统操作
   rawFrontmatter?: Record<string, any> // 解析出的完整 frontmatter 快照，保存时用于合并保留未知字段

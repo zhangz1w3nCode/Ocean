@@ -172,7 +172,7 @@ export function useReferenceItems(options: UseReferenceItemsOptions = {}): Refer
         isLibrary: true,
       })
     }
-    knowledgeFiles.forEach((knowledge) => {
+    knowledgeFiles.filter((k) => k.status === 'validated').forEach((knowledge) => {
       const knowledgePath = knowledge.filepath || (knowledge.category ? `${knowledge.category}/${knowledge.name}` : knowledge.name)
       const path = `.knowledges/${knowledgePath}.md`
       if (path !== excludePath) {
@@ -181,7 +181,7 @@ export function useReferenceItems(options: UseReferenceItemsOptions = {}): Refer
           name: knowledge.name,
           category: 'knowledges',
           path,
-          description: knowledge.description,
+          description: knowledge.summary,
         })
       }
     })
