@@ -1104,25 +1104,291 @@ ipcMain.handle('delete-knowledge-file', (_, name) => {
   }
 })
 
-// 读取知识文件在本地 git HEAD 中的基线内容（审核页 diff 用）
-// 返回 null 表示无基线（如文件未纳入 git / 新建未提交）
+// ===== 知识库独立 git 仓库支持（.knowledges 作为独立仓库，与父项目仓库解耦） =====
+
+// 归一化知识相对路径：去掉 .md 后缀，拒绝绝对路径/反斜杠/空段/./..
+const normalizeKnowledgeRel = (name) => {
+  const normalized = String(name == null ? '' : name).replace(/\.md$/, '')
+  if (
+    !normalized ||
+    normalized.startsWith('/') ||
+    normalized.includes('\\') ||
+    normalized.split('/').some((seg) => seg === '' || seg === '.' || seg === '..')
+  ) {
+    return null
+  }
+  return normalized
+}
+
+// 在 .knowledges 独立仓库内执行 git 命令
+const runGitInKnowledges = (args, opts) => {
+  const knowledgesDir = getKnowledgesDir()
+  return child_process.spawnSync('git', ['-C', knowledgesDir, ...args], {
+    encoding: 'utf-8',
+    ...(opts || {}),
+  })
+}
+
+// .knowledges 自身是否为 git 仓库根（而非父仓库的子目录）
+// 解析真实路径（消除 macOS /tmp -> /private/tmp 之类的符号链接差异）
+const realPath = (p) => {
+  try {
+    return fs.realpathSync(p)
+  } catch {
+    return path.resolve(p)
+  }
+}
+
+const isKnowledgesGitManaged = () => {
+  try {
+    const knowledgesDir = getKnowledgesDir()
+    if (!fs.existsSync(path.join(knowledgesDir, '.git'))) return false
+    const result = runGitInKnowledges(['rev-parse', '--show-toplevel'])
+    if (result.status !== 0 || typeof result.stdout !== 'string') return false
+    return realPath(result.stdout.trim()) === realPath(knowledgesDir)
+  } catch (error) {
+    return false
+  }
+}
+
+// 提交身份：优先读取 git 配置，缺失时回退到内置身份
+const knowledgeGitIdentityArgs = () => {
+  const args = []
+  try {
+    const email = child_process.spawnSync('git', ['config', 'user.email'], { encoding: 'utf-8' })
+    if (!email.stdout || !String(email.stdout).trim()) {
+      args.push('-c', 'user.email=ocean@local')
+    }
+    const name = child_process.spawnSync('git', ['config', 'user.name'], { encoding: 'utf-8' })
+    if (!name.stdout || !String(name.stdout).trim()) {
+      args.push('-c', 'user.name=Ocean')
+    }
+  } catch (error) {
+    args.push('-c', 'user.email=ocean@local', '-c', 'user.name=Ocean')
+  }
+  return args
+}
+
+// 本地时间戳：YYYYMMDDHHmmss
+const knowledgeTimestamp = () => {
+  const d = new Date()
+  const p = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`
+}
+
+const defaultKnowledgeCommitMessage = () =>
+  `chore(knowledge): ${knowledgeTimestamp()} knowledge card is updated`
+
+// 是否已产生提交（HEAD 可解析）
+const knowledgeHasCommits = () => {
+  const result = runGitInKnowledges(['rev-parse', '--verify', '--quiet', 'HEAD'])
+  return result.status === 0
+}
+
+// 查询知识库 git 托管状态
+ipcMain.handle('knowledge-git-status', () => {
+  try {
+    const managed = isKnowledgesGitManaged()
+    if (!managed) {
+      return { success: true, managed: false, branch: null, hasCommits: false }
+    }
+    const branchResult = runGitInKnowledges(['symbolic-ref', '--short', '-q', 'HEAD'])
+    const branch = branchResult.status === 0 && branchResult.stdout ? branchResult.stdout.trim() : null
+    return { success: true, managed: true, branch, hasCommits: knowledgeHasCommits() }
+  } catch (error) {
+    console.error('查询知识库 git 托管状态失败:', error)
+    return { success: false, error: String(error), managed: false }
+  }
+})
+
+// 开启 git 托管：git init（main 分支）+ 现有知识初始基线提交
+ipcMain.handle('knowledge-git-init', () => {
+  try {
+    const knowledgesDir = getKnowledgesDir()
+    if (isKnowledgesGitManaged()) {
+      return { success: true, alreadyManaged: true, branch: 'main', hasCommits: knowledgeHasCommits() }
+    }
+    let init = child_process.spawnSync('git', ['-C', knowledgesDir, 'init', '-b', 'main'], { encoding: 'utf-8' })
+    if (init.status !== 0) {
+      init = child_process.spawnSync('git', ['-C', knowledgesDir, 'init'], { encoding: 'utf-8' })
+      if (init.status !== 0) {
+        return { success: false, error: init.stderr ? String(init.stderr) : 'git init 失败' }
+      }
+      child_process.spawnSync('git', ['-C', knowledgesDir, 'symbolic-ref', 'HEAD', 'refs/heads/main'], { encoding: 'utf-8' })
+    }
+    // 排除索引等二进制产物
+    const ignorePath = path.join(knowledgesDir, '.gitignore')
+    if (!fs.existsSync(ignorePath)) {
+      fs.writeFileSync(ignorePath, '*.sqlite\n.trash-box/\n', 'utf-8')
+    }
+    const add = runGitInKnowledges(['add', '-A'])
+    if (add.status !== 0) {
+      return { success: false, error: add.stderr ? String(add.stderr) : 'git add 失败' }
+    }
+    const identity = knowledgeGitIdentityArgs()
+    const commit = runGitInKnowledges([...identity, 'commit', '-m', 'chore(knowledge): initialize knowledge base as baseline'])
+    if (commit.status !== 0) {
+      const out = `${commit.stdout || ''}${commit.stderr || ''}`
+      if (/nothing to commit|no changes added/i.test(out)) {
+        return { success: true, branch: 'main', hasCommits: false }
+      }
+      return { success: false, error: out || 'git commit 失败' }
+    }
+    return { success: true, branch: 'main', hasCommits: true }
+  } catch (error) {
+    console.error('开启知识库 git 托管失败:', error)
+    return { success: false, error: String(error) }
+  }
+})
+
+// 知识文件提交历史（用于历史版本列表）
+ipcMain.handle('knowledge-git-log', (_, name) => {
+  try {
+    const normalized = normalizeKnowledgeRel(name)
+    if (!normalized) return { success: false, error: '非法的知识路径', commits: [] }
+    if (!isKnowledgesGitManaged()) return { success: true, commits: [] }
+    const relPath = `${normalized}.md`
+    const result = runGitInKnowledges(['log', '--format=%H%x1f%an%x1f%aI%x1f%s', '--', relPath])
+    if (result.status !== 0 || typeof result.stdout !== 'string') {
+      return { success: true, commits: [] }
+    }
+    const commits = result.stdout
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => {
+        const [hash, author, date, subject] = line.split('\x1f')
+        return { hash, author, date, subject }
+      })
+    return { success: true, commits }
+  } catch (error) {
+    console.error('读取知识文件 git 历史失败:', error)
+    return { success: false, error: String(error), commits: [] }
+  }
+})
+
+// 读取知识文件在指定历史版本中的原文
+ipcMain.handle('knowledge-git-show', (_, name, rev) => {
+  try {
+    const normalized = normalizeKnowledgeRel(name)
+    if (!normalized) return { success: false, error: '非法的知识路径', content: null }
+    const sha = String(rev == null ? '' : rev)
+    if (!/^[0-9a-fA-F]{4,40}$/.test(sha)) {
+      return { success: false, error: '非法的版本号', content: null }
+    }
+    if (!isKnowledgesGitManaged()) return { success: true, content: null }
+    const relPath = `${normalized}.md`
+    const result = runGitInKnowledges(['show', `${sha}:${relPath}`])
+    if (result.status !== 0 || typeof result.stdout !== 'string') {
+      return { success: true, content: null }
+    }
+    return { success: true, content: result.stdout }
+  } catch (error) {
+    console.error('读取知识文件 git 版本内容失败:', error)
+    return { success: false, error: String(error), content: null }
+  }
+})
+
+// 提交知识文件到 .knowledges 的 main 分支（审核通过）
+ipcMain.handle('knowledge-git-commit', (_, name, message) => {
+  try {
+    const normalized = normalizeKnowledgeRel(name)
+    if (!normalized) return { success: false, error: '非法的知识路径' }
+    if (!isKnowledgesGitManaged()) return { success: false, error: '知识库尚未开启 git 托管' }
+    const relPath = `${normalized}.md`
+    const filePath = path.join(getKnowledgesDir(), relPath)
+    if (!fs.existsSync(filePath)) return { success: false, error: '知识文件不存在' }
+    const rawMessage = String(message == null ? '' : message).replace(/\r\n/g, '\n').trim()
+    const msg = rawMessage || defaultKnowledgeCommitMessage()
+    const add = runGitInKnowledges(['add', '--', relPath])
+    if (add.status !== 0) {
+      return { success: false, error: add.stderr ? String(add.stderr) : 'git add 失败' }
+    }
+    const identity = knowledgeGitIdentityArgs()
+    const commit = runGitInKnowledges([...identity, 'commit', '-m', msg, '--', relPath])
+    if (commit.status !== 0) {
+      const out = `${commit.stdout || ''}${commit.stderr || ''}`
+      if (/nothing to commit|no changes added|nothing added to commit/i.test(out)) {
+        return { success: true, noChanges: true, message: msg }
+      }
+      return { success: false, error: out || 'git commit 失败' }
+    }
+    const rev = runGitInKnowledges(['rev-parse', 'HEAD'])
+    return { success: true, hash: rev.status === 0 && rev.stdout ? rev.stdout.trim() : null, message: msg }
+  } catch (error) {
+    console.error('提交知识文件到 git 失败:', error)
+    return { success: false, error: String(error) }
+  }
+})
+
+// 回滚知识文件到最近一次提交（审核不通过）；无基线时删除文件
+ipcMain.handle('knowledge-git-rollback', (_, name) => {
+  try {
+    const normalized = normalizeKnowledgeRel(name)
+    if (!normalized) return { success: false, error: '非法的知识路径' }
+    if (!isKnowledgesGitManaged()) return { success: false, error: '知识库尚未开启 git 托管' }
+    const relPath = `${normalized}.md`
+    const filePath = path.join(getKnowledgesDir(), relPath)
+    const hasBaseline = knowledgeHasCommits() &&
+      runGitInKnowledges(['cat-file', '-e', `HEAD:${relPath}`]).status === 0
+    if (hasBaseline) {
+      const checkout = runGitInKnowledges(['checkout', 'HEAD', '--', relPath])
+      if (checkout.status !== 0) {
+        return { success: false, error: checkout.stderr ? String(checkout.stderr) : 'git checkout 失败' }
+      }
+      return { success: true, action: 'restored' }
+    }
+    runGitInKnowledges(['rm', '--cached', '--ignore-unmatch', '--', relPath])
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath)
+    }
+    return { success: true, action: 'deleted' }
+  } catch (error) {
+    console.error('回滚知识文件失败:', error)
+    return { success: false, error: String(error) }
+  }
+})
+
+// 知识库 git 配置（LLM 提交信息开关与提示词）
+ipcMain.handle('load-knowledge-git-config', () => {
+  try {
+    const configPath = path.join(getProjectRoot(), '.ocean', 'knowledge-git.json')
+    if (!fs.existsSync(configPath)) {
+      return { success: true, config: null }
+    }
+    const content = fs.readFileSync(configPath, 'utf-8')
+    return { success: true, config: JSON.parse(content) }
+  } catch (error) {
+    console.error('读取知识库 git 配置失败:', error)
+    return { success: false, error: String(error), config: null }
+  }
+})
+
+ipcMain.handle('save-knowledge-git-config', (_, config) => {
+  try {
+    const dir = path.join(getProjectRoot(), '.ocean')
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+    const configPath = path.join(dir, 'knowledge-git.json')
+    fs.writeFileSync(configPath, JSON.stringify(config || {}, null, 2), 'utf-8')
+    return { success: true }
+  } catch (error) {
+    console.error('保存知识库 git 配置失败:', error)
+    return { success: false, error: String(error) }
+  }
+})
+
+// 读取知识文件在 .knowledges 独立 git 仓库 HEAD 中的基线内容（审核页 diff 用）
+// 返回 null 表示无基线（如知识库未托管 / 文件为新建未提交）
 ipcMain.handle('get-knowledge-baseline', (_, name) => {
   try {
-    const projectRoot = getProjectRoot()
-    // 归一化并校验 name：仅允许 .knowledges 下的相对路径，拒绝路径穿越/绝对路径
-    const normalized = String(name == null ? '' : name).replace(/\.md$/, '')
-    if (
-      !normalized ||
-      normalized.startsWith('/') ||
-      normalized.includes('\\') ||
-      normalized.split('/').some((seg) => seg === '' || seg === '.' || seg === '..')
-    ) {
+    const normalized = normalizeKnowledgeRel(name)
+    if (!normalized) {
       return { success: false, error: '非法的知识路径', content: null }
     }
-    const relPath = `.knowledges/${normalized}.md`
-    const result = child_process.spawnSync('git', ['-C', projectRoot, 'show', `HEAD:${relPath}`], {
-      encoding: 'utf-8',
-    })
+    if (!isKnowledgesGitManaged()) {
+      return { success: true, content: null }
+    }
+    const relPath = `${normalized}.md`
+    const result = runGitInKnowledges(['show', `HEAD:${relPath}`])
     if (result.status !== 0 || typeof result.stdout !== 'string') {
       return { success: true, content: null }
     }

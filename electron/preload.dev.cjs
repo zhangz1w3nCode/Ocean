@@ -69,6 +69,14 @@ const electronAPI = {
   loadAllKnowledgeFiles: () => ipcRenderer.invoke('load-all-knowledge-files'),
   listKnowledgeFolders: () => ipcRenderer.invoke('list-knowledge-folders'),
   loadKnowledgeBaseline: (name) => ipcRenderer.invoke('get-knowledge-baseline', name),
+  knowledgeGitStatus: () => ipcRenderer.invoke('knowledge-git-status'),
+  knowledgeGitInit: () => ipcRenderer.invoke('knowledge-git-init'),
+  knowledgeGitLog: (name) => ipcRenderer.invoke('knowledge-git-log', name),
+  knowledgeGitShow: (name, rev) => ipcRenderer.invoke('knowledge-git-show', name, rev),
+  knowledgeGitCommit: (name, message) => ipcRenderer.invoke('knowledge-git-commit', name, message),
+  knowledgeGitRollback: (name) => ipcRenderer.invoke('knowledge-git-rollback', name),
+  loadKnowledgeGitConfig: () => ipcRenderer.invoke('load-knowledge-git-config'),
+  saveKnowledgeGitConfig: (config) => ipcRenderer.invoke('save-knowledge-git-config', config),
 
   // 技能文件数据持久化（目录结构，存储在 skills 目录）
   createSkillDirectory: (name, input) => ipcRenderer.invoke('create-skill-directory', name, input),

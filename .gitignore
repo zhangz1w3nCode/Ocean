@@ -63,10 +63,9 @@ Thumbs.db
 .claude/
 .experiences/
 .timelines/
-# .knowledges 纳入 git 版本管理（知识审核 diff 依赖本地 git 基线）
-# 排除索引等二进制文件
-.knowledges/**/*.sqlite
-.knowledges/.trash-box/
+# .knowledges 作为独立 git 仓库托管（知识审核 diff/历史/提交均基于其自身 .git）
+# 父项目仓库不再跟踪知识库内容，避免形成嵌套仓库
+.knowledges/
 .resources/
 .nodes/
 .workflows/

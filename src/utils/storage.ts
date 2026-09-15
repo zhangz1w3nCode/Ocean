@@ -69,6 +69,14 @@ declare global {
       loadAllKnowledgeFiles: () => Promise<{ success: boolean; files?: string[]; error?: string }>
       listKnowledgeFolders: () => Promise<{ success: boolean; folders?: KnowledgeFolder[]; error?: string }>
       loadKnowledgeBaseline: (name: string) => Promise<{ success: boolean; content?: string | null; error?: string }>
+      knowledgeGitStatus: () => Promise<{ success: boolean; managed?: boolean; branch?: string | null; hasCommits?: boolean; error?: string }>
+      knowledgeGitInit: () => Promise<{ success: boolean; alreadyManaged?: boolean; branch?: string; hasCommits?: boolean; error?: string }>
+      knowledgeGitLog: (name: string) => Promise<{ success: boolean; commits?: KnowledgeGitCommit[]; error?: string }>
+      knowledgeGitShow: (name: string, rev: string) => Promise<{ success: boolean; content?: string | null; error?: string }>
+      knowledgeGitCommit: (name: string, message?: string) => Promise<{ success: boolean; hash?: string | null; message?: string; noChanges?: boolean; error?: string }>
+      knowledgeGitRollback: (name: string) => Promise<{ success: boolean; action?: 'restored' | 'deleted'; error?: string }>
+      loadKnowledgeGitConfig: () => Promise<{ success: boolean; config?: KnowledgeGitConfig | null; error?: string }>
+      saveKnowledgeGitConfig: (config: KnowledgeGitConfig) => Promise<{ success: boolean; error?: string }>
       // 技能文件相关（目录结构，存储在 skills 目录）
       createSkillDirectory: (name: string, input: any) => Promise<{ success: boolean; error?: string }>
       saveSkillFile: (name: string, content: string) => Promise<{ success: boolean; error?: string }>
@@ -2392,6 +2400,140 @@ export const loadKnowledgeBaseline = async (
   }
 }
 
+// ===== 知识库独立 git 仓库操作（.knowledges 自身仓库） =====
+
+export interface KnowledgeGitCommit {
+  hash: string
+  author: string
+  date: string
+  subject: string
+}
+
+export interface KnowledgeGitStatus {
+  managed: boolean
+  branch: string | null
+  hasCommits: boolean
+}
+
+// 查询 .knowledges 是否已开启 git 托管
+export const loadKnowledgeGitStatus = async (): Promise<KnowledgeGitStatus> => {
+  if (!isElectron()) return { managed: false, branch: null, hasCommits: false }
+  try {
+    const result = await window.electronAPI!.knowledgeGitStatus()
+    return {
+      managed: !!result.managed,
+      branch: result.branch ?? null,
+      hasCommits: !!result.hasCommits,
+    }
+  } catch (error) {
+    console.error('查询知识库 git 托管状态失败:', error)
+    return { managed: false, branch: null, hasCommits: false }
+  }
+}
+
+// 开启 .knowledges git 托管（init + 现有知识初始基线提交）
+export const initKnowledgeGit = async (): Promise<{ success: boolean; error?: string }> => {
+  if (!isElectron()) return { success: false, error: '需要在桌面端应用环境运行' }
+  try {
+    const result = await window.electronAPI!.knowledgeGitInit()
+    return { success: !!result.success, error: result.error }
+  } catch (error) {
+    console.error('开启知识库 git 托管失败:', error)
+    return { success: false, error: String(error) }
+  }
+}
+
+// 读取知识卡片提交历史
+export const loadKnowledgeGitLog = async (filepath: string): Promise<KnowledgeGitCommit[]> => {
+  if (!isElectron()) return []
+  try {
+    const result = await window.electronAPI!.knowledgeGitLog(filepath)
+    return result.success && result.commits ? result.commits : []
+  } catch (error) {
+    console.error('读取知识文件 git 历史失败:', error)
+    return []
+  }
+}
+
+// 读取知识文件在指定版本的原文
+export const loadKnowledgeGitShow = async (filepath: string, rev: string): Promise<string | null> => {
+  if (!isElectron()) return null
+  try {
+    const result = await window.electronAPI!.knowledgeGitShow(filepath, rev)
+    return result.success ? (result.content ?? null) : null
+  } catch (error) {
+    console.error('读取知识文件 git 版本内容失败:', error)
+    return null
+  }
+}
+
+// 提交知识文件到 .knowledges 的 main 分支
+export const commitKnowledgeGit = async (
+  filepath: string,
+  message: string,
+): Promise<{ success: boolean; hash?: string | null; message?: string; noChanges?: boolean; error?: string }> => {
+  if (!isElectron()) return { success: false, error: '需要在桌面端应用环境运行' }
+  try {
+    const result = await window.electronAPI!.knowledgeGitCommit(filepath, message)
+    return {
+      success: !!result.success,
+      hash: result.hash,
+      message: result.message,
+      noChanges: result.noChanges,
+      error: result.error,
+    }
+  } catch (error) {
+    console.error('提交知识文件到 git 失败:', error)
+    return { success: false, error: String(error) }
+  }
+}
+
+// 回滚知识文件（有基线→恢复上次提交；无基线→删除文件）
+export const rollbackKnowledgeGit = async (
+  filepath: string,
+): Promise<{ success: boolean; action?: 'restored' | 'deleted'; error?: string }> => {
+  if (!isElectron()) return { success: false, error: '需要在桌面端应用环境运行' }
+  try {
+    const result = await window.electronAPI!.knowledgeGitRollback(filepath)
+    return { success: !!result.success, action: result.action, error: result.error }
+  } catch (error) {
+    console.error('回滚知识文件失败:', error)
+    return { success: false, error: String(error) }
+  }
+}
+
+// 读取知识库 git 配置（LLM 提交信息开关与提示词）
+export const loadKnowledgeGitConfig = async (): Promise<KnowledgeGitConfig> => {
+  if (!isElectron()) return getDefaultKnowledgeGitConfig()
+  try {
+    const result = await window.electronAPI!.loadKnowledgeGitConfig()
+    if (result.success && result.config) {
+      return {
+        llmCommitMessageEnabled: !!result.config.llmCommitMessageEnabled,
+        llmCommitMessagePrompt: result.config.llmCommitMessagePrompt || DEFAULT_KNOWLEDGE_GIT_COMMIT_MESSAGE_PROMPT,
+        llmProviderId: result.config.llmProviderId || '',
+        llmModel: result.config.llmModel || '',
+      }
+    }
+    return getDefaultKnowledgeGitConfig()
+  } catch (error) {
+    console.error('读取知识库 git 配置失败:', error)
+    return getDefaultKnowledgeGitConfig()
+  }
+}
+
+// 保存知识库 git 配置
+export const saveKnowledgeGitConfig = async (config: KnowledgeGitConfig): Promise<boolean> => {
+  if (!isElectron()) return false
+  try {
+    const result = await window.electronAPI!.saveKnowledgeGitConfig(config)
+    return !!result.success
+  } catch (error) {
+    console.error('保存知识库 git 配置失败:', error)
+    return false
+  }
+}
+
 // ===== 应用配置存储方法 =====
 
 const APP_CONFIG_KEY = 'flow-editor-app-config'
@@ -3350,6 +3492,24 @@ export const getDefaultLLMProvider = async (): Promise<LLMProvider | null> => {
   return providers.find(p => p.isEnabled) || null
 }
 
+/**
+ * 按配置选择 LLM 提供商：优先用指定 id，其次用已启用的默认提供商。
+ * 返回 provider 与最终使用的模型 id。
+ */
+export const resolveKnowledgeGitProvider = async (
+  providerId?: string,
+  model?: string,
+): Promise<{ provider: LLMProvider; model: string } | null> => {
+  const providers = await loadLLMProvidersFromFile()
+  if (providers.length === 0) return null
+  // 仅按本功能保存的 providerId 定位；未指定时回退列表第一个。
+  // 与提供商的 isEnabled 无关（本功能独立调用 LLM，不改动全局默认配置）。
+  const provider = (providerId && providers.find((p) => p.id === providerId)) || providers[0]
+  if (!provider) return null
+  const finalModel = model || provider.defaultModel || ''
+  return { provider, model: finalModel }
+}
+
 // ===== Agentic 配置存储方法 =====
 
 // 默认 Agentic 工具配置
@@ -3780,6 +3940,46 @@ export const deleteSkillResource = async (
 }
 
 // ===== 知识模块模板存储方法 =====
+
+// 知识库 git 提交信息配置（LLM 开关与提示词持久化在项目 .ocean/knowledge-git.json）
+export interface KnowledgeGitConfig {
+  /** 是否启用 LLM 生成提交信息 */
+  llmCommitMessageEnabled: boolean
+  /** 给 LLM 的提示词模板（占位符 {{diff}} 注入知识卡片变更 diff） */
+  llmCommitMessagePrompt: string
+  /** 生成提交信息使用的 LLM 提供商 id（为空则用设置中已启用的默认提供商） */
+  llmProviderId?: string
+  /** 生成提交信息使用的模型（为空则用提供商的默认模型） */
+  llmModel?: string
+}
+
+// 默认的知识变更提交信息提示词模板
+const DEFAULT_KNOWLEDGE_GIT_COMMIT_MESSAGE_PROMPT = `## 角色
+你是一个严格遵守 Angular 提交规范的 Git 提交信息生成助手。
+
+## 任务
+阅读下面这张知识卡片的变更内容，判断这次变更的性质，输出一条符合 Angular 规范的 Git 提交信息，作为该知识卡片的变更原因/备注。
+
+## 输出要求
+- 只输出一行提交信息，不要输出解释、不要使用 Markdown 代码块
+- 格式：<type>(knowledge): <简短描述>
+- type 从 fix / feat / docs / refactor / chore 中选择最贴切的一个
+- 描述用简洁的中文或英文概括这次知识内容的具体变化
+- 变更内容如下：
+
+{{diff}}`
+
+export const getDefaultKnowledgeGitCommitMessagePrompt = (): string => {
+  return DEFAULT_KNOWLEDGE_GIT_COMMIT_MESSAGE_PROMPT
+}
+
+// 默认 git 提交信息配置
+export const getDefaultKnowledgeGitConfig = (): KnowledgeGitConfig => ({
+  llmCommitMessageEnabled: false,
+  llmCommitMessagePrompt: DEFAULT_KNOWLEDGE_GIT_COMMIT_MESSAGE_PROMPT,
+  llmProviderId: '',
+  llmModel: '',
+})
 
 // 默认的知识 Agentic 创建提示词模板
 const DEFAULT_KNOWLEDGE_AGENTIC_CREATE_PROMPT_TEMPLATE = `## 角色
