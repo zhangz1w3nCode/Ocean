@@ -3,7 +3,7 @@ import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ChevronDown } from 'lucide-react'
 
-interface DropdownOption {
+export interface DropdownOption {
   value: string
   label: string
 }
@@ -48,7 +48,7 @@ export const Dropdown: FC<DropdownProps> = ({ value, options, onChange, placehol
           borderColor: isOpen ? '#9ca3af' : '#d2d2d7',
           boxShadow: isOpen ? '0 4px 12px rgba(0,0,0,0.08)' : 'none',
         }}
-        className={`flex items-center gap-2 px-3 py-2 text-sm cursor-pointer focus:outline-none min-w-0 ${buttonClassName}`}
+        className={`flex w-full items-center justify-between gap-2 px-3 py-2 text-sm cursor-pointer focus:outline-none min-w-0 ${buttonClassName}`}
       >
         <span
           className="truncate"

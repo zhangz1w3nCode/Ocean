@@ -1,5 +1,5 @@
 import type { FC } from 'react'
-import { BookOpen, MessageSquare, FileText, Tag, FolderOpen } from 'lucide-react'
+import { BookOpen, MessageSquare, FileText, Tag, FolderOpen, History } from 'lucide-react'
 import { Modal, Button, MarkdownRenderer } from '../ui'
 import type { KnowledgeFile } from '../../types'
 
@@ -7,6 +7,7 @@ interface KnowledgeDetailModalProps {
   isOpen: boolean
   onClose: () => void
   onEdit: () => void
+  onHistory?: () => void
   knowledge: KnowledgeFile | null
 }
 
@@ -20,6 +21,7 @@ export const KnowledgeDetailModal: FC<KnowledgeDetailModalProps> = ({
   isOpen,
   onClose,
   onEdit,
+  onHistory,
   knowledge,
 }) => {
   if (!knowledge) return null
@@ -46,14 +48,27 @@ export const KnowledgeDetailModal: FC<KnowledgeDetailModalProps> = ({
           <Button variant="ghost" size="sm" onClick={onClose}>
             关闭
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onEdit}
-            className="bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 hover:border-gray-400 rounded-lg"
-          >
-            编辑
-          </Button>
+          <div className="flex items-center gap-2">
+            {onHistory && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onHistory}
+                className="bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 hover:border-gray-400 rounded-lg"
+              >
+                <History size={14} className="mr-1" />
+                历史版本
+              </Button>
+            )}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onEdit}
+              className="bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 hover:border-gray-400 rounded-lg"
+            >
+              编辑
+            </Button>
+          </div>
         </div>
       }
     >

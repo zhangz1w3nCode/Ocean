@@ -1,7 +1,7 @@
 import type { FC } from 'react'
 import { Plus, Search, BookOpen, FileSearch, FolderOpen } from 'lucide-react'
 import { Button, ConfirmModal } from '../components/ui'
-import { KnowledgeCard, KnowledgeModal, KnowledgeDetailModal, GlobalIndexModal } from '../components/knowledge'
+import { KnowledgeCard, KnowledgeModal, KnowledgeDetailModal, GlobalIndexModal, KnowledgeHistoryModal } from '../components/knowledge'
 import { useKnowledgeStore } from '../stores/knowledgeStore'
 import { useToastStore } from '../stores/toastStore'
 import { useState, useEffect, useMemo } from 'react'
@@ -29,6 +29,10 @@ export const KnowledgesPage: FC<{ nested?: boolean }> = ({ nested = false }) => 
 
   // 全局索引弹窗状态
   const [isGlobalIndexOpen, setIsGlobalIndexOpen] = useState(false)
+
+  // 历史版本弹窗状态
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false)
+  const [historyKnowledge, setHistoryKnowledge] = useState<KnowledgeFile | null>(null)
 
   // 获取全局索引文件（INDEX.md）
   const globalIndexKnowledge = useMemo(() => {
@@ -105,6 +109,23 @@ export const KnowledgesPage: FC<{ nested?: boolean }> = ({ nested = false }) => 
   const handleDetailClose = () => {
     setIsDetailOpen(false)
     setViewingKnowledge(null)
+  }
+
+  // 关闭历史版本弹窗
+  const handleHistoryClose = () => {
+    setIsHistoryOpen(false)
+    setHistoryKnowledge(null)
+  }
+
+  // 从详情弹窗进入历史版本
+  const handleHistoryFromDetail = () => {
+    if (viewingKnowledge) {
+      const target = viewingKnowledge
+      setIsDetailOpen(false)
+      setViewingKnowledge(null)
+      setHistoryKnowledge(target)
+      setIsHistoryOpen(true)
+    }
   }
 
   // 从详情弹窗进入编辑
@@ -350,7 +371,15 @@ export const KnowledgesPage: FC<{ nested?: boolean }> = ({ nested = false }) => 
         isOpen={isDetailOpen}
         onClose={handleDetailClose}
         onEdit={handleEditFromDetail}
+        onHistory={handleHistoryFromDetail}
         knowledge={viewingKnowledge}
+      />
+
+      {/* 历史版本弹窗 */}
+      <KnowledgeHistoryModal
+        isOpen={isHistoryOpen}
+        onClose={handleHistoryClose}
+        knowledge={historyKnowledge}
       />
 
       {/* 全局索引弹窗 */}

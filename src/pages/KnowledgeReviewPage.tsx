@@ -4,7 +4,18 @@ import { Search, ShieldCheck } from 'lucide-react'
 import { KnowledgeCard, KnowledgeReviewModal } from '../components/knowledge'
 import { useKnowledgeStore } from '../stores/knowledgeStore'
 import { useToastStore } from '../stores/toastStore'
+import { ConfirmModal } from '../components/ui'
 import type { KnowledgeFile } from '../types'
+import {
+  loadKnowledgeBaseline,
+  loadKnowledgeRawFile,
+  commitKnowledgeGit,
+  rollbackKnowledgeGit,
+  loadKnowledgeGitConfig,
+  loadKnowledgeGitStatus,
+} from '../utils/storage'
+import { generateKnowledgeCommitMessage } from '../utils/knowledgeGit'
+import { resolveKnowledgeGitProvider } from '../utils/storage'
 
 export const KnowledgeReviewPage: FC<{ nested?: boolean }> = ({ nested = false }) => {
   const { knowledgeFiles, loadKnowledgeFiles, updateKnowledgeFile } = useKnowledgeStore()
@@ -13,6 +24,7 @@ export const KnowledgeReviewPage: FC<{ nested?: boolean }> = ({ nested = false }
 
   const [isReviewOpen, setIsReviewOpen] = useState(false)
   const [reviewingKnowledge, setReviewingKnowledge] = useState<KnowledgeFile | null>(null)
+  const [rejectConfirmOpen, setRejectConfirmOpen] = useState(false)
 
   useEffect(() => {
     loadKnowledgeFiles()
@@ -45,17 +57,84 @@ export const KnowledgeReviewPage: FC<{ nested?: boolean }> = ({ nested = false }
     setReviewingKnowledge(null)
   }
 
+  const knowledgePathOf = (k: KnowledgeFile) =>
+    k.filepath || (k.category ? `${k.category}/${k.name}` : k.name)
+
   const handleApprove = async () => {
     if (!reviewingKnowledge) return
+    const filepath = knowledgePathOf(reviewingKnowledge)
+
+    // 1) 状态置为 validated 并写盘
     const success = await updateKnowledgeFile(reviewingKnowledge.id, {
       status: 'validated',
       updatedAt: new Date().toISOString(),
     })
-    if (success) {
-      addToast('审核通过，知识已发布', 'success')
+    if (!success) {
+      addToast('审核失败，请重试', 'error')
+      return
+    }
+
+    // 2) 提交到 .knowledges 独立仓库的 main 分支
+    const status = await loadKnowledgeGitStatus()
+    if (!status.managed) {
+      addToast('审核通过', 'success')
+      handleReviewClose()
+      return
+    }
+
+    // 提交信息：LLM 开启且可用时用 LLM 生成，否则用默认信息
+    let message = ''
+    try {
+      const gitConfig = await loadKnowledgeGitConfig()
+      if (gitConfig.llmCommitMessageEnabled) {
+        const resolved = await resolveKnowledgeGitProvider(gitConfig.llmProviderId, gitConfig.llmModel)
+        if (resolved) {
+          const [baselineRaw, currentRaw] = await Promise.all([
+            loadKnowledgeBaseline(filepath),
+            loadKnowledgeRawFile(filepath),
+          ])
+          const generated = await generateKnowledgeCommitMessage(
+            resolved.provider,
+            resolved.model,
+            gitConfig.llmCommitMessagePrompt,
+            baselineRaw,
+            currentRaw.content ?? '',
+          )
+          if (generated) message = generated
+        } else {
+          addToast('未找到可用的 LLM，改用默认提交信息', 'warning')
+        }
+      }
+    } catch (error) {
+      console.error('生成提交信息失败，改用默认信息:', error)
+    }
+
+    const commitResult = await commitKnowledgeGit(filepath, message)
+    if (commitResult.success) {
+      addToast('审核通过', 'success')
       handleReviewClose()
     } else {
-      addToast('审核失败，请重试', 'error')
+      addToast(`审核通过，但提交失败：${commitResult.error || '未知错误'}`, 'error')
+      handleReviewClose()
+    }
+  }
+
+  // 不审批：二次确认后回滚当前卡片的更新
+  const handleRejectClick = () => {
+    setRejectConfirmOpen(true)
+  }
+
+  const handleConfirmReject = async () => {
+    setRejectConfirmOpen(false)
+    if (!reviewingKnowledge) return
+    const filepath = knowledgePathOf(reviewingKnowledge)
+    const result = await rollbackKnowledgeGit(filepath)
+    if (result.success) {
+      addToast(result.action === 'deleted' ? '已撤销新增，文件已删除' : '已撤销更新，内容已回滚', 'success')
+      await loadKnowledgeFiles()
+      handleReviewClose()
+    } else {
+      addToast(`撤销失败：${result.error || '未知错误'}`, 'error')
     }
   }
 
@@ -103,7 +182,6 @@ export const KnowledgeReviewPage: FC<{ nested?: boolean }> = ({ nested = false }
             <div className="w-20 h-20 rounded-full bg-gray-100 flex items-center justify-center">
               <ShieldCheck size={32} className="text-macos-text-tertiary" />
             </div>
-            <p className="mt-4 text-sm text-macos-text-tertiary">暂无待审核的知识</p>
           </div>
         )}
       </div>
@@ -115,6 +193,18 @@ export const KnowledgeReviewPage: FC<{ nested?: boolean }> = ({ nested = false }
         onClose={handleReviewClose}
         knowledge={reviewingKnowledge}
         onApprove={handleApprove}
+        onReject={handleRejectClick}
+      />
+
+      {/* 不审批确认弹窗 */}
+      <ConfirmModal
+        isOpen={rejectConfirmOpen}
+        title="确认不审批"
+        message="将撤销这张知识卡片的本次更新：已存在的知识回滚到上一个版本；全新的知识将被删除。此操作不可恢复。"
+        confirmText="确认撤销"
+        cancelText="取消"
+        onConfirm={handleConfirmReject}
+        onCancel={() => setRejectConfirmOpen(false)}
       />
     </>
   )

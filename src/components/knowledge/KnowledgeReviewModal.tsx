@@ -1,7 +1,7 @@
 import type { FC } from 'react'
 import { useEffect, useState } from 'react'
 import ReactDiffViewer from 'react-diff-viewer-continued'
-import { BookOpen, FolderOpen, ShieldCheck } from 'lucide-react'
+import { BookOpen, FolderOpen, ShieldCheck, Undo2, Loader2 } from 'lucide-react'
 import { Modal, Button } from '../ui'
 import type { KnowledgeFile } from '../../types'
 import { loadKnowledgeBaseline, loadKnowledgeRawFile } from '../../utils/storage'
@@ -11,6 +11,7 @@ interface KnowledgeReviewModalProps {
   onClose: () => void
   knowledge: KnowledgeFile | null
   onApprove: () => Promise<void> | void
+  onReject: () => Promise<void> | void
 }
 
 // 剥离 YAML 头，仅比较正文（diff 更聚焦内容变更）
@@ -24,10 +25,12 @@ export const KnowledgeReviewModal: FC<KnowledgeReviewModalProps> = ({
   onClose,
   knowledge,
   onApprove,
+  onReject,
 }) => {
   const [baseline, setBaseline] = useState<string | null | undefined>(undefined)
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [approving, setApproving] = useState(false)
+  const [rejecting, setRejecting] = useState(false)
   const [currentBody, setCurrentBody] = useState('')
 
   useEffect(() => {
@@ -75,23 +78,51 @@ export const KnowledgeReviewModal: FC<KnowledgeReviewModalProps> = ({
           <Button variant="ghost" size="sm" onClick={onClose}>
             关闭
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={approving}
-            onClick={async () => {
-              setApproving(true)
-              try {
-                await onApprove()
-              } finally {
-                setApproving(false)
-              }
-            }}
-            className="bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 hover:border-gray-400 rounded-lg"
-          >
-            <ShieldCheck size={14} className="mr-1" />
-            审核通过
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={approving || rejecting}
+              onClick={async () => {
+                setRejecting(true)
+                try {
+                  await onReject()
+                } finally {
+                  setRejecting(false)
+                }
+              }}
+              className="bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 hover:border-gray-400 rounded-lg"
+            >
+              <Undo2 size={14} className="mr-1" />
+              取消审核
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={approving || rejecting}
+              onClick={async () => {
+                setApproving(true)
+                try {
+                  await onApprove()
+                } finally {
+                  setApproving(false)
+                }
+              }}
+              className="bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 hover:border-gray-400 rounded-lg"
+            >
+              {approving ? (
+                <>
+                  <Loader2 size={14} className="mr-1 animate-spin" />
+                  处理中…
+                </>
+              ) : (
+                <>
+                  <ShieldCheck size={14} className="mr-1" />
+                  审核通过
+                </>
+              )}
+            </Button>
+          </div>
         </div>
       }
     >
@@ -122,12 +153,7 @@ export const KnowledgeReviewModal: FC<KnowledgeReviewModalProps> = ({
       {/* diff 区域 */}
       <div className="flex flex-col">
         <div className="flex items-center justify-between mb-2">
-          <span className="text-sm font-medium text-macos-text">变更对比（git 基线 → 最新内容）</span>
-          {hasBaseline ? (
-            <span className="text-xs text-macos-text-tertiary">左侧为本地 git 基线，右侧为最新内容</span>
-          ) : (
-            <span className="text-xs text-amber-600">该知识在 git 中无基线（新建或未提交），下方为全量内容</span>
-          )}
+          <span className="text-sm font-medium text-macos-text">变更对比</span>
         </div>
         <div className="h-[420px] overflow-auto rounded-lg border border-gray-100">
           {loading ? (
