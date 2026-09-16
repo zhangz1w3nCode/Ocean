@@ -69,7 +69,7 @@ declare global {
       loadAllKnowledgeFiles: () => Promise<{ success: boolean; files?: string[]; error?: string }>
       listKnowledgeFolders: () => Promise<{ success: boolean; folders?: KnowledgeFolder[]; error?: string }>
       loadKnowledgeBaseline: (name: string) => Promise<{ success: boolean; content?: string | null; error?: string }>
-      knowledgeGitStatus: () => Promise<{ success: boolean; managed?: boolean; branch?: string | null; hasCommits?: boolean; error?: string }>
+      knowledgeGitStatus: () => Promise<{ success: boolean; managed?: boolean; branch?: string | null; hasCommits?: boolean; branchError?: string; error?: string }>
       knowledgeGitInit: () => Promise<{ success: boolean; alreadyManaged?: boolean; branch?: string; hasCommits?: boolean; error?: string }>
       knowledgeGitLog: (name: string) => Promise<{ success: boolean; commits?: KnowledgeGitCommit[]; error?: string }>
       knowledgeGitShow: (name: string, rev: string) => Promise<{ success: boolean; content?: string | null; error?: string }>
@@ -2413,6 +2413,8 @@ export interface KnowledgeGitStatus {
   managed: boolean
   branch: string | null
   hasCommits: boolean
+  // 固定分支无法自动切换时不为空（如外部改动与目标分支冲突）
+  branchError?: string
 }
 
 // 查询 .knowledges 是否已开启 git 托管
@@ -2424,6 +2426,7 @@ export const loadKnowledgeGitStatus = async (): Promise<KnowledgeGitStatus> => {
       managed: !!result.managed,
       branch: result.branch ?? null,
       hasCommits: !!result.hasCommits,
+      branchError: result.branchError,
     }
   } catch (error) {
     console.error('查询知识库 git 托管状态失败:', error)

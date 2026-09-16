@@ -26,6 +26,7 @@ export const KnowledgeSettingsPage: FC = () => {
   const [checking, setChecking] = useState(true)
   const [managed, setManaged] = useState(false)
   const [branch, setBranch] = useState<string | null>(null)
+  const [branchError, setBranchError] = useState<string | null>(null)
   const [hasCommits, setHasCommits] = useState(false)
   const [initializing, setInitializing] = useState(false)
 
@@ -40,12 +41,16 @@ export const KnowledgeSettingsPage: FC = () => {
       setManaged(status.managed)
       setBranch(status.branch)
       setHasCommits(status.hasCommits)
-      if (showToast) {
+      setBranchError(status.branchError || null)
+      if (status.branchError) {
+        addToast(status.branchError, 'warning')
+      } else if (showToast) {
         addToast(status.managed ? '知识库已开启 git 托管' : '知识库未开启 git 托管', status.managed ? 'success' : 'info')
       }
     } catch {
       setManaged(false)
       setBranch(null)
+      setBranchError(null)
       setHasCommits(false)
       if (showToast) addToast('检测失败', 'error')
     } finally {
@@ -158,7 +163,7 @@ export const KnowledgeSettingsPage: FC = () => {
           </div>
 
           {/* 状态显示 */}
-          <div className="flex items-center gap-2 text-xs">
+          <div className="flex flex-wrap items-center gap-2 text-xs">
             {checking ? (
               <>
                 <Loader2 size={14} className="animate-spin text-macos-text-tertiary" />
@@ -167,13 +172,13 @@ export const KnowledgeSettingsPage: FC = () => {
             ) : managed ? (
               <>
                 <CheckCircle2 size={14} className="text-green-500" />
-                <span className="text-macos-text">已开启托管</span>
+                <span className="text-macos-text whitespace-nowrap">已开启托管</span>
                 {branch && (
-                  <span className="px-2 py-0.5 bg-green-50 rounded font-mono text-green-600 text-xs">
+                  <span className="px-2 py-0.5 bg-green-50 rounded font-mono text-green-600 text-xs whitespace-nowrap">
                     {branch}
                   </span>
                 )}
-                <span className="px-2 py-0.5 bg-gray-50 rounded font-mono text-macos-text-tertiary">
+                <span className="px-2 py-0.5 bg-gray-50 rounded font-mono text-macos-text-tertiary whitespace-nowrap">
                   .knowledges/.git
                 </span>
                 {!hasCommits && (
@@ -187,6 +192,13 @@ export const KnowledgeSettingsPage: FC = () => {
               </>
             )}
           </div>
+
+          {branchError && (
+            <div className="mt-2 flex items-start gap-1.5 text-xs text-red-500">
+              <AlertCircle size={14} className="mt-0.5 shrink-0" />
+              <span>{branchError}</span>
+            </div>
+          )}
 
           {/* 操作按钮 */}
           <div className="mt-3 flex items-center gap-2">

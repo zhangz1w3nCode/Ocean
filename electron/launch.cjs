@@ -1105,6 +1105,8 @@ ipcMain.handle('delete-knowledge-file', (_, name) => {
 })
 
 // ===== 知识库独立 git 仓库支持（.knowledges 作为独立仓库，与父项目仓库解耦） =====
+// 知识审核全链路固定使用该本地分支，不随 .knowledges 外部 checkout 漂移
+const KNOWLEDGE_GIT_BRANCH = 'ocean-knowledge'
 
 // 归一化知识相对路径：去掉 .md 后缀，拒绝绝对路径/反斜杠/空段/./..
 const normalizeKnowledgeRel = (name) => {
@@ -1179,42 +1181,79 @@ const knowledgeTimestamp = () => {
 const defaultKnowledgeCommitMessage = () =>
   `chore(knowledge): ${knowledgeTimestamp()} knowledge card is updated`
 
-// 是否已产生提交（HEAD 可解析）
+// 固定分支上是否已产生提交（可作为 diff 基线与回滚目标）
 const knowledgeHasCommits = () => {
-  const result = runGitInKnowledges(['rev-parse', '--verify', '--quiet', 'HEAD'])
+  const result = runGitInKnowledges(['rev-parse', '--verify', '--quiet', `refs/heads/${KNOWLEDGE_GIT_BRANCH}`])
   return result.status === 0
 }
 
-// 查询知识库 git 托管状态
+// 固定分支是否已存在
+const knowledgeBranchExists = () =>
+  runGitInKnowledges(['show-ref', '--verify', '--quiet', `refs/heads/${KNOWLEDGE_GIT_BRANCH}`]).status === 0
+
+// 保证工作区 HEAD 落在固定分支：分支不存在则从当前 HEAD 切出（完整保留历史），已存在则切回
+// 失败时必须交调用方中止，禁止降级为按 HEAD 操作
+const ensureKnowledgeBranch = () => {
+  try {
+    const current = runGitInKnowledges(['symbolic-ref', '--short', '-q', 'HEAD'])
+    if (current.status === 0 && typeof current.stdout === 'string' && current.stdout.trim() === KNOWLEDGE_GIT_BRANCH) {
+      return { ok: true, changed: false }
+    }
+    const checkout = knowledgeBranchExists()
+      ? runGitInKnowledges(['checkout', KNOWLEDGE_GIT_BRANCH])
+      : runGitInKnowledges(['checkout', '-b', KNOWLEDGE_GIT_BRANCH])
+    if (checkout.status !== 0) {
+      const out = `${checkout.stderr || ''}${checkout.stdout || ''}`.trim()
+      return { ok: false, error: out || `切换到 ${KNOWLEDGE_GIT_BRANCH} 分支失败` }
+    }
+    return { ok: true, changed: true }
+  } catch (error) {
+    return { ok: false, error: String(error) }
+  }
+}
+
+// 查询知识库 git 托管状态（已托管时顺带把分支拉回固定分支）
 ipcMain.handle('knowledge-git-status', () => {
   try {
     const managed = isKnowledgesGitManaged()
     if (!managed) {
       return { success: true, managed: false, branch: null, hasCommits: false }
     }
-    const branchResult = runGitInKnowledges(['symbolic-ref', '--short', '-q', 'HEAD'])
-    const branch = branchResult.status === 0 && branchResult.stdout ? branchResult.stdout.trim() : null
-    return { success: true, managed: true, branch, hasCommits: knowledgeHasCommits() }
+    const ensured = ensureKnowledgeBranch()
+    if (!ensured.ok) {
+      const branchResult = runGitInKnowledges(['symbolic-ref', '--short', '-q', 'HEAD'])
+      const branch = branchResult.status === 0 && branchResult.stdout ? branchResult.stdout.trim() : null
+      return {
+        success: true,
+        managed: true,
+        branch,
+        hasCommits: knowledgeHasCommits(),
+        branchError: `知识库当前在 ${branch || '未知'} 分支，无法自动切换到 ${KNOWLEDGE_GIT_BRANCH}：${ensured.error}`,
+      }
+    }
+    return { success: true, managed: true, branch: KNOWLEDGE_GIT_BRANCH, hasCommits: knowledgeHasCommits() }
   } catch (error) {
     console.error('查询知识库 git 托管状态失败:', error)
     return { success: false, error: String(error), managed: false }
   }
 })
 
-// 开启 git 托管：git init（main 分支）+ 现有知识初始基线提交
+// 开启 git 托管：git init（固定分支 ocean-knowledge）+ 现有知识初始基线提交
 ipcMain.handle('knowledge-git-init', () => {
   try {
     const knowledgesDir = getKnowledgesDir()
     if (isKnowledgesGitManaged()) {
-      return { success: true, alreadyManaged: true, branch: 'main', hasCommits: knowledgeHasCommits() }
+      const ensured = ensureKnowledgeBranch()
+      if (!ensured.ok) return { success: false, error: ensured.error }
+      return { success: true, alreadyManaged: true, branch: KNOWLEDGE_GIT_BRANCH, hasCommits: knowledgeHasCommits() }
     }
-    let init = child_process.spawnSync('git', ['-C', knowledgesDir, 'init', '-b', 'main'], { encoding: 'utf-8' })
+    let init = child_process.spawnSync('git', ['-C', knowledgesDir, 'init', '-b', KNOWLEDGE_GIT_BRANCH], { encoding: 'utf-8' })
     if (init.status !== 0) {
       init = child_process.spawnSync('git', ['-C', knowledgesDir, 'init'], { encoding: 'utf-8' })
       if (init.status !== 0) {
         return { success: false, error: init.stderr ? String(init.stderr) : 'git init 失败' }
       }
-      child_process.spawnSync('git', ['-C', knowledgesDir, 'symbolic-ref', 'HEAD', 'refs/heads/main'], { encoding: 'utf-8' })
+      child_process.spawnSync('git', ['-C', knowledgesDir, 'symbolic-ref', 'HEAD', `refs/heads/${KNOWLEDGE_GIT_BRANCH}`], { encoding: 'utf-8' })
     }
     // 排除索引等二进制产物
     const ignorePath = path.join(knowledgesDir, '.gitignore')
@@ -1230,25 +1269,25 @@ ipcMain.handle('knowledge-git-init', () => {
     if (commit.status !== 0) {
       const out = `${commit.stdout || ''}${commit.stderr || ''}`
       if (/nothing to commit|no changes added/i.test(out)) {
-        return { success: true, branch: 'main', hasCommits: false }
+        return { success: true, branch: KNOWLEDGE_GIT_BRANCH, hasCommits: false }
       }
       return { success: false, error: out || 'git commit 失败' }
     }
-    return { success: true, branch: 'main', hasCommits: true }
+    return { success: true, branch: KNOWLEDGE_GIT_BRANCH, hasCommits: true }
   } catch (error) {
     console.error('开启知识库 git 托管失败:', error)
     return { success: false, error: String(error) }
   }
 })
 
-// 知识文件提交历史（用于历史版本列表）
+// 知识文件提交历史（仅取固定分支，用于历史版本列表）
 ipcMain.handle('knowledge-git-log', (_, name) => {
   try {
     const normalized = normalizeKnowledgeRel(name)
     if (!normalized) return { success: false, error: '非法的知识路径', commits: [] }
     if (!isKnowledgesGitManaged()) return { success: true, commits: [] }
     const relPath = `${normalized}.md`
-    const result = runGitInKnowledges(['log', '--format=%H%x1f%an%x1f%aI%x1f%s', '--', relPath])
+    const result = runGitInKnowledges(['log', '--format=%H%x1f%an%x1f%aI%x1f%s', KNOWLEDGE_GIT_BRANCH, '--', relPath])
     if (result.status !== 0 || typeof result.stdout !== 'string') {
       return { success: true, commits: [] }
     }
@@ -1288,12 +1327,14 @@ ipcMain.handle('knowledge-git-show', (_, name, rev) => {
   }
 })
 
-// 提交知识文件到 .knowledges 的 main 分支（审核通过）
+// 提交知识文件到 .knowledges 的固定分支 ocean-knowledge（审核通过）
 ipcMain.handle('knowledge-git-commit', (_, name, message) => {
   try {
     const normalized = normalizeKnowledgeRel(name)
     if (!normalized) return { success: false, error: '非法的知识路径' }
     if (!isKnowledgesGitManaged()) return { success: false, error: '知识库尚未开启 git 托管' }
+    const ensured = ensureKnowledgeBranch()
+    if (!ensured.ok) return { success: false, error: ensured.error }
     const relPath = `${normalized}.md`
     const filePath = path.join(getKnowledgesDir(), relPath)
     if (!fs.existsSync(filePath)) return { success: false, error: '知识文件不存在' }
@@ -1312,7 +1353,7 @@ ipcMain.handle('knowledge-git-commit', (_, name, message) => {
       }
       return { success: false, error: out || 'git commit 失败' }
     }
-    const rev = runGitInKnowledges(['rev-parse', 'HEAD'])
+    const rev = runGitInKnowledges(['rev-parse', KNOWLEDGE_GIT_BRANCH])
     return { success: true, hash: rev.status === 0 && rev.stdout ? rev.stdout.trim() : null, message: msg }
   } catch (error) {
     console.error('提交知识文件到 git 失败:', error)
@@ -1320,18 +1361,20 @@ ipcMain.handle('knowledge-git-commit', (_, name, message) => {
   }
 })
 
-// 回滚知识文件到最近一次提交（审核不通过）；无基线时删除文件
+// 回滚知识文件到固定分支的最近一次提交（审核不通过）；无基线时删除文件
 ipcMain.handle('knowledge-git-rollback', (_, name) => {
   try {
     const normalized = normalizeKnowledgeRel(name)
     if (!normalized) return { success: false, error: '非法的知识路径' }
     if (!isKnowledgesGitManaged()) return { success: false, error: '知识库尚未开启 git 托管' }
+    const ensured = ensureKnowledgeBranch()
+    if (!ensured.ok) return { success: false, error: ensured.error }
     const relPath = `${normalized}.md`
     const filePath = path.join(getKnowledgesDir(), relPath)
     const hasBaseline = knowledgeHasCommits() &&
-      runGitInKnowledges(['cat-file', '-e', `HEAD:${relPath}`]).status === 0
+      runGitInKnowledges(['cat-file', '-e', `${KNOWLEDGE_GIT_BRANCH}:${relPath}`]).status === 0
     if (hasBaseline) {
-      const checkout = runGitInKnowledges(['checkout', 'HEAD', '--', relPath])
+      const checkout = runGitInKnowledges(['checkout', KNOWLEDGE_GIT_BRANCH, '--', relPath])
       if (checkout.status !== 0) {
         return { success: false, error: checkout.stderr ? String(checkout.stderr) : 'git checkout 失败' }
       }
@@ -1376,7 +1419,7 @@ ipcMain.handle('save-knowledge-git-config', (_, config) => {
   }
 })
 
-// 读取知识文件在 .knowledges 独立 git 仓库 HEAD 中的基线内容（审核页 diff 用）
+// 读取知识文件在 .knowledges 固定分支最新提交中的基线内容（审核页 diff 用）
 // 返回 null 表示无基线（如知识库未托管 / 文件为新建未提交）
 ipcMain.handle('get-knowledge-baseline', (_, name) => {
   try {
@@ -1388,7 +1431,7 @@ ipcMain.handle('get-knowledge-baseline', (_, name) => {
       return { success: true, content: null }
     }
     const relPath = `${normalized}.md`
-    const result = runGitInKnowledges(['show', `HEAD:${relPath}`])
+    const result = runGitInKnowledges(['show', `${KNOWLEDGE_GIT_BRANCH}:${relPath}`])
     if (result.status !== 0 || typeof result.stdout !== 'string') {
       return { success: true, content: null }
     }
