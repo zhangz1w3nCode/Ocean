@@ -157,7 +157,7 @@ export const KnowledgeCatalogPage: FC = () => {
   const frontmatterRef = useRef('')
   const [dirty, setDirty] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [viewMode, setViewMode] = useState<'edit' | 'preview' | 'wysiwyg'>('edit')
+  const [viewMode, setViewMode] = useState<'edit' | 'preview' | 'wysiwyg'>('wysiwyg')
   const [treeWidth, setTreeWidth] = useState(224)
 
   const startTreeResize = useCallback((e: React.MouseEvent) => {
@@ -209,12 +209,14 @@ export const KnowledgeCatalogPage: FC = () => {
   }, [])
 
   const handleSelectFile = useCallback(async (path: string) => {
-    setSelectedPath(path)
-    setDirty(false)
+    // 先把内容读到位再切选中项：实时编辑器只在挂载那一刻读 markdownSource，
+    // 先 setSelectedPath 会让编辑器拿到上一个文件（首次则是空）的内容
     const { content } = await loadKnowledgeRawFile(path)
     const { frontmatter, body: bodyOnly } = splitKnowledgeRawFile(content ?? '')
     frontmatterRef.current = frontmatter
     setBody(bodyOnly.replace(/^\n+/, ''))
+    setSelectedPath(path)
+    setDirty(false)
   }, [])
 
   const handleChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -321,6 +323,7 @@ export const KnowledgeCatalogPage: FC = () => {
           ) : viewMode === 'wysiwyg' ? (
             <div className="h-full knowledge-wysiwyg" data-theme="light">
               <AtomicCodeMirrorEditor
+                key={selectedPath}
                 markdownSource={body}
                 documentId={selectedPath}
                 onMarkdownChange={(md) => { setBody(md); setDirty(true) }}
