@@ -74,7 +74,7 @@ export const KnowledgeReviewPage: FC<{ nested?: boolean }> = ({ nested = false }
       return
     }
 
-    // 2) 提交到 .knowledges 独立仓库的 main 分支
+    // 2) 提交到 .knowledges 独立仓库的固定分支 ocean-knowledge
     const status = await loadKnowledgeGitStatus()
     if (!status.managed) {
       addToast('审核通过', 'success')
