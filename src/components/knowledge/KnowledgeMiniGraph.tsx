@@ -225,7 +225,9 @@ export const KnowledgeMiniGraph: FC<KnowledgeMiniGraphProps> = ({
             chargeForce.strength(config.chargeStrength)
           }
           graphRef.current.d3ReheatSimulation()
-          graphRef.current.zoomToFit(400, 80)
+          // 这里不再 zoomToFit：单节点（无引用关系）时包围盒尺寸为零，会算出退化缩放
+          // 把节点和标签撑到巨大；视口适配统一交给 fitToView（尺寸变化时）
+          // 与 onEngineStop（布局收敛后），两者都带单节点保护
         }
       }, 100)
     }
@@ -304,8 +306,28 @@ export const KnowledgeMiniGraph: FC<KnowledgeMiniGraphProps> = ({
   )
 
   const fitToView = useCallback(() => {
-    graphRef.current?.zoomToFit(200, fitPadding)
-  }, [fitPadding])
+    const fg = graphRef.current
+    if (!fg) return
+    if (graphData.nodes.length < 2) {
+      // 单节点（无引用关系）没有可拟合的包围盒，直接 zoomToFit 会因尺寸为零算出
+      // 退化缩放把节点撑到巨大；也不能简单 return，否则 zoom 恒为 1、节点尺寸定死，
+      // 拖分割线时不跟着变大变小。改为按容器面积开方给一个比例缩放。
+      // 下限取 1：paintNode/paintLink 在 globalScale < 1 时会除以 globalScale 做视觉
+      // 守恒补偿，zoom 落在 1 以下屏幕尺寸反而不再随缩放变化，故不取小于 1 的值。
+      // 不能用 min(宽,高)：框宽拖过框高之后短板会变成高度，而高度不随拖拽变化，
+      // k 就此定住，表现为「拖一段就不大了」。取 sqrt(宽*高)：宽变大时 k 持续
+      // 上升但不会失控。除数决定初始大小：取 120 使单节点在默认栏宽下就有
+      // 足够存在感（不再是一个小点），上限 6 防止拖得极宽时撑出画面。
+      const k = Math.max(1, Math.min(6, Math.sqrt(graphSize.width * graphSize.height) / 120))
+      fg.zoom(k, 200)
+      // 按节点实际坐标居中：单节点由 forceX/forceY 拉到原点附近，
+      // 但用户拖动过之后若仍写死 (0,0) 会把节点弹回去
+      const only = graphData.nodes[0]
+      fg.centerAt(only?.x ?? 0, only?.y ?? 0, 200)
+      return
+    }
+    fg.zoomToFit(200, fitPadding)
+  }, [fitPadding, graphData.nodes.length, graphSize.width, graphSize.height])
 
   // 容器尺寸变化（拖拽调宽、侧栏入场）与数据变化后重新适配视口：
   // ForceGraph2D 只换 canvas 宽高、不改缩放与中心，不重新 fit 就会停在旧比例。

@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState, type FC } from 'react'
-import { Network, FileQuestion } from 'lucide-react'
+import { useMemo, useState, type FC } from 'react'
+import { Network } from 'lucide-react'
 import type { GraphData, GraphLink, GraphNode } from '../../hooks/useKnowledgeGraph'
 import type { KnowledgeFile } from '../../types'
 import { KnowledgeMiniGraph } from './KnowledgeMiniGraph'
@@ -34,12 +34,7 @@ export const RelatedKnowledgePanel: FC<RelatedKnowledgePanelProps> = ({
   selectedPath,
   onSelectKnowledge,
 }) => {
-  const [hoverArmed, setHoverArmed] = useState(false)
-  useEffect(() => {
-    // 侧栏入场动画期间容器尺寸会变化，延后一拍再挂图谱，避免量到中间态尺寸
-    const t = setTimeout(() => setHoverArmed(true), 220)
-    return () => clearTimeout(t)
-  }, [])
+
 
   const activeKnowledge = useMemo(
     () =>
@@ -117,21 +112,14 @@ export const RelatedKnowledgePanel: FC<RelatedKnowledgePanelProps> = ({
     centerSizeBy: 'none' | 'inDegree' | 'outDegree',
   ) => (
     <div className="flex-1 min-h-0 rounded-lg border border-gray-200 overflow-hidden">
-      {graph.links.length === 0 ? (
-        <div className="h-full flex items-center justify-center">
-          <FileQuestion size={28} className="text-macos-text-tertiary" />
-        </div>
-      ) : (
-        hoverArmed && (
-          <KnowledgeMiniGraph
-            graphData={graph}
-            knowledgeFiles={knowledgeFiles}
-            onNodeClick={handleNodeClick}
-            focusNodeId={centerId}
-            centerSizeBy={centerSizeBy}
-          />
-        )
-      )}
+      {/* 无引用关系时不再留白：仍渲染当前知识这一个节点，只是没有边 */}
+      <KnowledgeMiniGraph
+        graphData={graph}
+        knowledgeFiles={knowledgeFiles}
+        onNodeClick={handleNodeClick}
+        focusNodeId={centerId}
+        centerSizeBy={centerSizeBy}
+      />
     </div>
   )
 
