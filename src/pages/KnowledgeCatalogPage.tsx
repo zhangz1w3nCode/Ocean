@@ -87,6 +87,12 @@ function setFrontmatterStatus(frontmatter: string, status: string): string {
   return `${frontmatter.slice(0, close)}status: ${status}\n${frontmatter.slice(close)}`
 }
 
+/** 「相关知识」栏宽度：默认与拖拽范围，以及拖得足够窄时自动收起的阈值 */
+const RELATED_DEFAULT_WIDTH = 380
+const RELATED_MIN_WIDTH = 300
+const RELATED_MAX_WIDTH = 760
+const RELATED_CLOSE_WIDTH = 140
+
 interface TreeRowProps {
   node: TreeNode
   depth: number
@@ -166,8 +172,8 @@ export const KnowledgeCatalogPage: FC = () => {
   const [viewMode, setViewMode] = useState<'edit' | 'preview' | 'wysiwyg'>('wysiwyg')
   // 「相关知识」图谱面板默认关闭
   const [showRelatedGraph, setShowRelatedGraph] = useState(false)
-  // 「相关知识」栏宽度，可由左边缘拖拽调整
-  const [relatedWidth, setRelatedWidth] = useState(380)
+  // 「相关知识」栏宽度，可由左边缘拖拽调整；向右拖过窄则收起并复位为该默认宽度
+  const [relatedWidth, setRelatedWidth] = useState(RELATED_DEFAULT_WIDTH)
   const [treeWidth, setTreeWidth] = useState(224)
 
   const startTreeResize = useCallback((e: React.MouseEvent) => {
@@ -190,26 +196,37 @@ export const KnowledgeCatalogPage: FC = () => {
     document.addEventListener('mouseup', onUp)
   }, [])
 
-  // 「相关知识」栏左边缘拖拽：右边缘固定，所以向左拖变宽
+  // 「相关知识」栏左边缘拖拽：右边缘固定，向左拖变宽；向右拖过窄则收起侧栏
   const startRelatedResize = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
     const panel = (e.currentTarget as HTMLElement).parentElement
     if (!panel) return
     const right = panel.getBoundingClientRect().right
+    let lastWidth = relatedWidth
     document.body.style.cursor = 'col-resize'
     document.body.style.userSelect = 'none'
     const onMove = (ev: MouseEvent) => {
-      setRelatedWidth(Math.max(300, Math.min(760, right - ev.clientX)))
+      // 允许拖到 0，配合列上的 overflow-hidden 形成「拖拽收起」手势
+      lastWidth = Math.max(0, Math.min(RELATED_MAX_WIDTH, right - ev.clientX))
+      setRelatedWidth(lastWidth)
     }
     const onUp = () => {
       document.body.style.cursor = ''
       document.body.style.userSelect = ''
       document.removeEventListener('mousemove', onMove)
       document.removeEventListener('mouseup', onUp)
+      if (lastWidth < RELATED_CLOSE_WIDTH) {
+        setShowRelatedGraph(false)
+        // 复位宽度，下次点「相关知识」仍是正常宽度
+        setRelatedWidth(RELATED_DEFAULT_WIDTH)
+      } else {
+        setRelatedWidth(Math.max(RELATED_MIN_WIDTH, Math.min(RELATED_MAX_WIDTH, lastWidth)))
+      }
     }
     document.addEventListener('mousemove', onMove)
     document.addEventListener('mouseup', onUp)
-  }, [])
+  }, [relatedWidth])
+
   const tree = useMemo(() => {
     // 知识目录仅展示已审核通过（validated）的知识
     const filePaths = Array.from(
@@ -417,7 +434,7 @@ export const KnowledgeCatalogPage: FC = () => {
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 24 }}
             transition={{ duration: 0.2, ease: 'easeInOut' }}
-            className="flex-shrink-0 h-full flex items-stretch"
+            className="flex-shrink-0 h-full flex items-stretch overflow-hidden"
             style={{ width: relatedWidth }}
           >
             {/* 与左侧内容区的分隔线，同时作为拖拽调宽的把手（与文件树分隔条同一写法） */}
@@ -428,7 +445,7 @@ export const KnowledgeCatalogPage: FC = () => {
             >
               <div className="absolute inset-y-0 -left-1.5 -right-1.5" />
             </div>
-            <div className="flex-1 min-w-0 h-full">
+            <div className="flex-1 min-w-[280px] h-full">
               <RelatedKnowledgePanel
                 graphData={graphData}
                 knowledgeFiles={graphKnowledges}

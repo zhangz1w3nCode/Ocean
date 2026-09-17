@@ -297,14 +297,22 @@ export const KnowledgeMiniGraph: FC<KnowledgeMiniGraphProps> = ({
   }, [graphData.links])
 
 
-  // 打开时重新计算布局
+  // 首次布局与容器尺寸变化（拖拽调宽、侧栏入场）后都重新适配视口：
+  // ForceGraph2D 只会换 canvas 尺寸、不改变缩放与中心，不重新 fit 的话
+  // 图会停在旧比例，看起来就是「拖大了但画面没跟着变大」。
+  // 边距按小框短边缩放，沿用整页 80px 会在小图里吃掉太多空间。
   useEffect(() => {
-    if (active && graphRef.current) {
-      setTimeout(() => {
-        graphRef.current?.zoomToFit(400, 80)
-      }, 500)
-    }
-  }, [active, graphData])
+    if (!graphRef.current) return
+    const padding = Math.max(
+      16,
+      Math.min(80, Math.round(Math.min(graphSize.width, graphSize.height) * 0.12)),
+    )
+    // 拖拽过程中 ResizeObserver 会连续触发，收敛一拍再 fit，避免动画互相打断
+    const t = setTimeout(() => {
+      graphRef.current?.zoomToFit(200, padding)
+    }, 120)
+    return () => clearTimeout(t)
+  }, [active, graphData, graphSize.width, graphSize.height])
 
   // 重置配置
   const resetConfig = useCallback(() => {
