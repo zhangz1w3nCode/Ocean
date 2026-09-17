@@ -24,12 +24,27 @@ interface KnowledgeMiniGraphProps {
   /** 与 graphData 同源的知识列表，用于把节点 id 还原为可跳转的知识 */
   knowledgeFiles: KnowledgeFile[]
   onNodeClick?: (knowledge: KnowledgeFile) => void
+  /**
+   * 局部拓扑模式：中心节点 id。传入后节点颜色不再由出入度判定，
+   * 而是中心恒为活跃节点（蓝）、其余恒为汇节点（灰）。
+   * 不传则保持与整页图谱一致的度数驱动规则。
+   */
+  focusNodeId?: string
+  /**
+   * 局部拓扑模式下中心节点的放大依据：
+   * inDegree 按局部入度放大（被指向越多越大）；outDegree 按局部出度放大
+   * （指向越多越大）；none 不随度数变化。
+   * 仅作用于中心节点，其余节点恒为基础大小。
+   */
+  centerSizeBy?: 'none' | 'inDegree' | 'outDegree'
 }
 
 export const KnowledgeMiniGraph: FC<KnowledgeMiniGraphProps> = ({
   graphData,
   knowledgeFiles,
   onNodeClick,
+  focusNodeId,
+  centerSizeBy = 'none',
 }) => {
   // 局部小图常驻渲染，无开合语义；保留 embedded 常量以沿用原组件的内嵌分支行为
   const embedded = true
@@ -297,6 +312,33 @@ export const KnowledgeMiniGraph: FC<KnowledgeMiniGraphProps> = ({
     saveConfig(DEFAULT_KNOWLEDGE_GRAPH_CONFIG)
   }, [saveConfig])
 
+  // === 局部拓扑规则（仅供「相关知识」栏使用，与整页图谱的度数驱动规则解耦） ===
+
+  // 颜色：传了 focusNodeId 就按「中心蓝、其余灰」判，不再看出入度；
+  // 未传则保持与整页图谱一致的孤岛/汇/活跃三分类。
+  const resolveBaseColor = (node: GraphNode) => {
+    if (focusNodeId) {
+      return node.id === focusNodeId ? COLORS.activeNode : COLORS.sinkNode
+    }
+    const hasOut = node.outDegree > 0
+    const hasIn = node.inDegree > 0
+    if (!hasOut && !hasIn) return COLORS.isolatedNode
+    if (!hasOut && hasIn) return COLORS.sinkNode
+    return COLORS.activeNode
+  }
+
+  // 大小：局部模式下只有中心可能放大，且只看本局部子图自身的度（按 centerSizeBy 取向）；
+  // 未传 focusNodeId 时逐字沿用整页图谱的 1+sqrt(outDegree)*0.3 公式。
+  const nodeSizeMultiplier = (node: GraphNode) => {
+    if (focusNodeId) {
+      if (node.id !== focusNodeId) return 1
+      const degree =
+        centerSizeBy === 'inDegree' ? node.inDegree : centerSizeBy === 'outDegree' ? node.outDegree : 0
+      return Math.min(1 + Math.sqrt(degree) * 0.3, 3)
+    }
+    return Math.min(1 + Math.sqrt(node.outDegree) * 0.3, 3)
+  }
+
   // 绘制节点
   const paintNode = useCallback((node: GraphNode, ctx: CanvasRenderingContext2D, globalScale: number) => {
     if (!isFinite(node.x!) || !isFinite(node.y!)) return
@@ -306,15 +348,12 @@ export const KnowledgeMiniGraph: FC<KnowledgeMiniGraphProps> = ({
     // 高亮：悬浮节点 或 没有活跃节点时的所有节点
     const isHighlighted = !activeNode || isHovered
 
-    // 计算基于出度的节点大小放大系数
-    // 公式：sizeMultiplier = 1 + Math.sqrt(outDegree) * 0.3
-    // 出度越大，节点越大，但增长趋于平缓（平方根函数）
-    // 最大放大倍数为3倍，避免差异过大
-    const outDegreeSizeMultiplier = Math.min(1 + Math.sqrt(node.outDegree) * 0.3, 3)
+    // 节点放大系数：局部模式走 nodeSizeMultiplier，否则等价于整页图谱的出度公式
+    const sizeMultiplier = nodeSizeMultiplier(node)
 
     // 节点视觉大小：只在缩小时保持一致，放大时正常变大
     // globalScale < 1 时（缩小），绘制更大补偿；globalScale >= 1 时（放大），使用原始大小
-    const baseNodeSize = (isHovered ? config.nodeSize + 0.5 : config.nodeSize) * outDegreeSizeMultiplier
+    const baseNodeSize = (isHovered ? config.nodeSize + 0.5 : config.nodeSize) * sizeMultiplier
     const visualSize = globalScale < 1 ? baseNodeSize / globalScale : baseNodeSize
 
     // 标签大小同样只在缩小时保持一致
@@ -324,11 +363,7 @@ export const KnowledgeMiniGraph: FC<KnowledgeMiniGraphProps> = ({
     // 计算标签透明度（基于缩放级别的平滑渐变）
     const labelOpacity = Math.max(0, Math.min(1, (globalScale - 0.3) / 0.4))
 
-    // 根据出入度判断节点类型
-    const hasOutDegree = node.outDegree > 0
-    const hasInDegree = node.inDegree > 0
-    const isIsolated = !hasOutDegree && !hasInDegree  // 孤岛节点（无入度无出度）
-    const isSinkNode = !hasOutDegree && hasInDegree   // 汇节点（只有入度，没有出度）
+    // 节点类型与颜色由 resolveBaseColor 统一判定（局部模式中为中心蓝/其余灰）
 
     ctx.save()
 
@@ -353,16 +388,7 @@ export const KnowledgeMiniGraph: FC<KnowledgeMiniGraphProps> = ({
       // 相关节点（与悬浮节点相连）：保持默认颜色，不高亮
       let baseColor: { r: number; g: number; b: number }
 
-      if (isIsolated) {
-        // 孤岛节点（无入度无出度）：深灰色
-        baseColor = COLORS.isolatedNode
-      } else if (isSinkNode) {
-        // 汇节点（只有入度，没有出度）：灰色
-        baseColor = COLORS.sinkNode
-      } else {
-        // 活跃节点（有出度）：深蓝色
-        baseColor = COLORS.activeNode
-      }
+      baseColor = resolveBaseColor(node)
 
       const colorStr = `rgb(${baseColor.r}, ${baseColor.g}, ${baseColor.b})`
       ctx.shadowColor = `rgba(${baseColor.r}, ${baseColor.g}, ${baseColor.b}, 0.3)`
@@ -377,16 +403,7 @@ export const KnowledgeMiniGraph: FC<KnowledgeMiniGraphProps> = ({
       // 非活跃状态的所有节点：保持默认颜色，不使用插值
       let baseColor: { r: number; g: number; b: number }
 
-      if (isIsolated) {
-        // 孤岛节点（无入度无出度）：深灰色
-        baseColor = COLORS.isolatedNode
-      } else if (isSinkNode) {
-        // 汇节点（只有入度，没有出度）：灰色
-        baseColor = COLORS.sinkNode
-      } else {
-        // 活跃节点（有出度）：深蓝色
-        baseColor = COLORS.activeNode
-      }
+      baseColor = resolveBaseColor(node)
 
       // 直接使用默认颜色，不插值到高亮色
       const colorStr = `rgb(${baseColor.r}, ${baseColor.g}, ${baseColor.b})`
@@ -467,8 +484,13 @@ export const KnowledgeMiniGraph: FC<KnowledgeMiniGraphProps> = ({
 
     // 计算源节点和目标节点的视觉半径：只在缩小时补偿
     // 根据入度动态调整节点大小
-    const sourceSizeMultiplier = Math.min(1 + Math.sqrt(source.inDegree) * 0.3, 3)
-    const targetSizeMultiplier = Math.min(1 + Math.sqrt(target.inDegree) * 0.3, 3)
+    // 端点半径与实际画出的节点半径保持一致，否则箭头会伸进节点里
+    const sourceSizeMultiplier = focusNodeId
+      ? nodeSizeMultiplier(source)
+      : Math.min(1 + Math.sqrt(source.inDegree) * 0.3, 3)
+    const targetSizeMultiplier = focusNodeId
+      ? nodeSizeMultiplier(target)
+      : Math.min(1 + Math.sqrt(target.inDegree) * 0.3, 3)
 
     const baseSourceRadius = (isSourceHovered ? config.nodeSize + 0.5 : config.nodeSize) * sourceSizeMultiplier
     const baseTargetRadius = (isTargetHovered ? config.nodeSize + 0.5 : config.nodeSize) * targetSizeMultiplier
@@ -732,9 +754,8 @@ export const KnowledgeMiniGraph: FC<KnowledgeMiniGraphProps> = ({
         for (const node of nodes) {
           if (!isFinite(node.x!) || !isFinite(node.y!)) continue
 
-          // 计算节点的视觉半径（与 paintNode 一致）
-          const outDegreeSizeMultiplier = Math.min(1 + Math.sqrt(node.outDegree) * 0.3, 3)
-          const visualRadius = nodeSize * outDegreeSizeMultiplier
+          // 计算节点的视觉半径（与 paintNode 一致，走同一套局部/全图规则）
+          const visualRadius = nodeSize * nodeSizeMultiplier(node)
 
           // 计算鼠标到节点中心的距离
           const dx = graphX - node.x!
@@ -825,7 +846,8 @@ export const KnowledgeMiniGraph: FC<KnowledgeMiniGraphProps> = ({
             >
 
               {/* 图谱区域 */}
-              <div ref={graphBoxRef} className="flex-1 relative bg-gradient-to-br from-gray-50 to-gray-100 overflow-hidden">
+              {/* 图谱区域：背景用纯白，与知识目录页整体一致（整页图谱的渐变底不受影响） */}
+              <div ref={graphBoxRef} className="flex-1 relative bg-white overflow-hidden">
                 {hasGraph ? (
                   <ForceGraph2D
                     ref={graphRef}

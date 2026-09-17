@@ -417,22 +417,23 @@ export const KnowledgeCatalogPage: FC = () => {
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 24 }}
             transition={{ duration: 0.2, ease: 'easeInOut' }}
-            className="flex-shrink-0 h-full"
+            className="flex-shrink-0 h-full flex items-stretch"
             style={{ width: relatedWidth }}
           >
-            <div className="relative h-full">
+            {/* 与左侧内容区的分隔线，同时作为拖拽调宽的把手（与文件树分隔条同一写法） */}
+            <div
+              onMouseDown={startRelatedResize}
+              title="拖动调整宽度"
+              className="w-px flex-shrink-0 bg-gray-200 hover:bg-gray-300 transition-colors cursor-col-resize relative group"
+            >
+              <div className="absolute inset-y-0 -left-1.5 -right-1.5" />
+            </div>
+            <div className="flex-1 min-w-0 h-full">
               <RelatedKnowledgePanel
                 graphData={graphData}
                 knowledgeFiles={graphKnowledges}
                 selectedPath={selectedPath}
-                onClose={() => setShowRelatedGraph(false)}
                 onSelectKnowledge={handleSelectFile}
-              />
-              {/* 透明拖拽热区压在左边框上，不额外加可见分隔线 */}
-              <div
-                onMouseDown={startRelatedResize}
-                title="拖动调整宽度"
-                className="absolute inset-y-0 -left-1 w-2 cursor-col-resize z-10"
               />
             </div>
           </motion.div>

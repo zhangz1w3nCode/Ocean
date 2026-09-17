@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FC } from 'react'
-import { X, Network } from 'lucide-react'
+import { Network, FileQuestion } from 'lucide-react'
 import type { GraphData, GraphLink, GraphNode } from '../../hooks/useKnowledgeGraph'
 import type { KnowledgeFile } from '../../types'
 import { KnowledgeMiniGraph } from './KnowledgeMiniGraph'
@@ -14,7 +14,6 @@ interface RelatedKnowledgePanelProps {
   /** 仅 validated 的知识列表，与 graphData 出自同一次 memo */
   knowledgeFiles: KnowledgeFile[]
   selectedPath: string | null
-  onClose: () => void
   onSelectKnowledge: (path: string) => void
 }
 
@@ -33,7 +32,6 @@ export const RelatedKnowledgePanel: FC<RelatedKnowledgePanelProps> = ({
   graphData,
   knowledgeFiles,
   selectedPath,
-  onClose,
   onSelectKnowledge,
 }) => {
   const [hoverArmed, setHoverArmed] = useState(false)
@@ -112,41 +110,33 @@ export const RelatedKnowledgePanel: FC<RelatedKnowledgePanelProps> = ({
     if (path && path !== selectedPath) onSelectKnowledge(path)
   }
 
-  const renderBox = (title: string, graph: GraphData, emptyText: string) => (
-    <div className="flex-1 min-h-0 flex flex-col rounded-lg border border-gray-200 bg-white overflow-hidden">
-      <div className="flex items-center px-3 py-2 bg-gray-50 border-b border-gray-100 flex-shrink-0">
-        <span className="text-xs font-medium text-gray-600">{title}</span>
-      </div>
+  // 两张图各占一半高度，只加一圈细边框用于区分，不带标题栏与灰底
+  const renderGraph = (
+    graph: GraphData,
+    centerId: string,
+    centerSizeBy: 'none' | 'inDegree' | 'outDegree',
+  ) => (
+    <div className="flex-1 min-h-0 rounded-lg border border-gray-200 overflow-hidden">
       {graph.links.length === 0 ? (
-        <div className="flex-1 min-h-0 flex items-center justify-center">
-          <p className="text-xs text-macos-text-tertiary">{emptyText}</p>
+        <div className="h-full flex items-center justify-center">
+          <FileQuestion size={28} className="text-macos-text-tertiary" />
         </div>
       ) : (
-        <div className="flex-1 min-h-0">
-          {hoverArmed && (
-            <KnowledgeMiniGraph
-              graphData={graph}
-              knowledgeFiles={knowledgeFiles}
-              onNodeClick={handleNodeClick}
-            />
-          )}
-        </div>
+        hoverArmed && (
+          <KnowledgeMiniGraph
+            graphData={graph}
+            knowledgeFiles={knowledgeFiles}
+            onNodeClick={handleNodeClick}
+            focusNodeId={centerId}
+            centerSizeBy={centerSizeBy}
+          />
+        )
       )}
     </div>
   )
 
   return (
-    <div className="h-full flex flex-col min-h-0 bg-white rounded-lg border border-gray-200">
-      <div className="flex items-center justify-end gap-2 px-3 h-10 flex-shrink-0 border-b border-gray-100">
-        <button
-          onClick={onClose}
-          title="关闭"
-          className="p-1 rounded-lg hover:bg-gray-100 transition-colors flex-shrink-0"
-        >
-          <X size={14} className="text-gray-400" />
-        </button>
-      </div>
-
+    <div className="h-full flex flex-col min-h-0">
       {!activeKnowledge ? (
         <div className="flex-1 flex items-center justify-center px-4 text-center">
           <p className="text-xs leading-5 text-macos-text-tertiary">
@@ -157,9 +147,9 @@ export const RelatedKnowledgePanel: FC<RelatedKnowledgePanelProps> = ({
           </p>
         </div>
       ) : (
-        <div className="flex-1 min-h-0 flex flex-col gap-2 p-2">
-          {renderBox('引用知识拓扑', outGraph, '没有指向其他知识')}
-          {renderBox('被引用知识拓扑', inGraph, '没有被其他知识引用')}
+        <div className="flex-1 min-h-0 flex flex-col gap-3 pl-4 pr-0 py-3">
+          {renderGraph(outGraph, activeKnowledge.id, 'outDegree')}
+          {renderGraph(inGraph, activeKnowledge.id, 'inDegree')}
         </div>
       )}
     </div>
