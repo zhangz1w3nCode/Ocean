@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback, useRef, type FC } from 'reac
 import {
   FolderOpen, FolderClosed, FileText,
   Eye, PencilLine, Save, FileQuestion, Code,
+  Network,
 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { MarkdownEditor, MarkdownRenderer } from '../components/ui'
@@ -10,6 +11,8 @@ import { AtomicCodeMirrorEditor, wikiLinks } from '@atomic-editor/editor'
 import { languages as codeLanguages } from '@codemirror/language-data'
 import '@atomic-editor/editor/styles.css'
 import { useKnowledgeStore } from '../stores/knowledgeStore'
+import { useKnowledgeGraph } from '../hooks/useKnowledgeGraph'
+import { RelatedKnowledgePanel } from '../components/knowledge/RelatedKnowledgePanel'
 import { useToastStore } from '../stores/toastStore'
 import {
   loadKnowledgeRawFile, saveKnowledgeRawFile, isElectron,
@@ -148,6 +151,9 @@ const TreeRow: FC<TreeRowProps> = ({
  */
 export const KnowledgeCatalogPage: FC = () => {
   const { knowledgeFiles, loadKnowledgeFiles } = useKnowledgeStore()
+  // 图谱数据及其自带的 validated 知识列表：与 graphData 出自同一次 memo，
+  // 节点 id 天然一致，用于反查邻居知识的 filepath 做跳转
+  const { graphData, knowledgeFiles: graphKnowledges } = useKnowledgeGraph()
   const { addToast } = useToastStore()
 
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
@@ -158,6 +164,10 @@ export const KnowledgeCatalogPage: FC = () => {
   const [dirty, setDirty] = useState(false)
   const [saving, setSaving] = useState(false)
   const [viewMode, setViewMode] = useState<'edit' | 'preview' | 'wysiwyg'>('wysiwyg')
+  // 「相关知识」图谱面板默认关闭
+  const [showRelatedGraph, setShowRelatedGraph] = useState(false)
+  // 「相关知识」栏宽度，可由左边缘拖拽调整
+  const [relatedWidth, setRelatedWidth] = useState(380)
   const [treeWidth, setTreeWidth] = useState(224)
 
   const startTreeResize = useCallback((e: React.MouseEvent) => {
@@ -180,6 +190,26 @@ export const KnowledgeCatalogPage: FC = () => {
     document.addEventListener('mouseup', onUp)
   }, [])
 
+  // 「相关知识」栏左边缘拖拽：右边缘固定，所以向左拖变宽
+  const startRelatedResize = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    const panel = (e.currentTarget as HTMLElement).parentElement
+    if (!panel) return
+    const right = panel.getBoundingClientRect().right
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+    const onMove = (ev: MouseEvent) => {
+      setRelatedWidth(Math.max(300, Math.min(760, right - ev.clientX)))
+    }
+    const onUp = () => {
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+    }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+  }, [])
   const tree = useMemo(() => {
     // 知识目录仅展示已审核通过（validated）的知识
     const filePaths = Array.from(
@@ -303,6 +333,18 @@ export const KnowledgeCatalogPage: FC = () => {
                 </button>
               ))}
               <button
+                onClick={() => setShowRelatedGraph((prev) => !prev)}
+                title={showRelatedGraph ? '收起相关知识' : '展开相关知识'}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 text-sm rounded-lg transition-colors ${
+                  showRelatedGraph
+                    ? 'bg-[#E5E7EB] border border-gray-300 text-gray-700'
+                    : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
+                }`}
+              >
+                <Network size={15} />
+                <span>相关知识</span>
+              </button>
+              <button
                 onClick={handleSave}
                 disabled={!dirty || saving}
                 className="flex items-center gap-1.5 px-2.5 py-1.5 text-sm rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed bg-[#E5E7EB] border border-gray-300 text-gray-700 hover:bg-gray-200"
@@ -363,7 +405,39 @@ export const KnowledgeCatalogPage: FC = () => {
             </AnimatePresence>
           )}
         </div>
+
       </div>
+
+      {/* 「相关知识」侧滑栏：与左侧文件树同级，从整页右侧滑出成独立一栏 */}
+      <AnimatePresence initial={false}>
+        {showRelatedGraph && selectedPath && (
+          <motion.div
+            key="related-knowledge-panel"
+            initial={{ opacity: 0, x: 24 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 24 }}
+            transition={{ duration: 0.2, ease: 'easeInOut' }}
+            className="flex-shrink-0 h-full"
+            style={{ width: relatedWidth }}
+          >
+            <div className="relative h-full">
+              <RelatedKnowledgePanel
+                graphData={graphData}
+                knowledgeFiles={graphKnowledges}
+                selectedPath={selectedPath}
+                onClose={() => setShowRelatedGraph(false)}
+                onSelectKnowledge={handleSelectFile}
+              />
+              {/* 透明拖拽热区压在左边框上，不额外加可见分隔线 */}
+              <div
+                onMouseDown={startRelatedResize}
+                title="拖动调整宽度"
+                className="absolute inset-y-0 -left-1 w-2 cursor-col-resize z-10"
+              />
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }
