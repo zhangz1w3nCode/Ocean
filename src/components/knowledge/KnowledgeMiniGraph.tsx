@@ -297,22 +297,26 @@ export const KnowledgeMiniGraph: FC<KnowledgeMiniGraphProps> = ({
   }, [graphData.links])
 
 
-  // 首次布局与容器尺寸变化（拖拽调宽、侧栏入场）后都重新适配视口：
-  // ForceGraph2D 只会换 canvas 尺寸、不改变缩放与中心，不重新 fit 的话
-  // 图会停在旧比例，看起来就是「拖大了但画面没跟着变大」。
-  // 边距按小框短边缩放，沿用整页 80px 会在小图里吃掉太多空间。
+  // 边距按小框短边缩放，沿用整页的固定 80px 会在小图里吃掉太多空间
+  const fitPadding = useMemo(
+    () => Math.max(16, Math.min(80, Math.round(Math.min(graphSize.width, graphSize.height) * 0.12))),
+    [graphSize.width, graphSize.height],
+  )
+
+  const fitToView = useCallback(() => {
+    graphRef.current?.zoomToFit(200, fitPadding)
+  }, [fitPadding])
+
+  // 容器尺寸变化（拖拽调宽、侧栏入场）与数据变化后重新适配视口：
+  // ForceGraph2D 只换 canvas 宽高、不改缩放与中心，不重新 fit 就会停在旧比例。
+  // 拖拽中 ResizeObserver 会连续触发，故收敛一拍再 fit，避免动画互相打断。
+  // 注：此处的定时 fit 只能保证“尺寸变了会重适配”，不能保证布局已收敛；
+  // 布局收敛后的再 fit 由 ForceGraph2D 的 onEngineStop 负责。
   useEffect(() => {
     if (!graphRef.current) return
-    const padding = Math.max(
-      16,
-      Math.min(80, Math.round(Math.min(graphSize.width, graphSize.height) * 0.12)),
-    )
-    // 拖拽过程中 ResizeObserver 会连续触发，收敛一拍再 fit，避免动画互相打断
-    const t = setTimeout(() => {
-      graphRef.current?.zoomToFit(200, padding)
-    }, 120)
+    const t = setTimeout(fitToView, 120)
     return () => clearTimeout(t)
-  }, [active, graphData, graphSize.width, graphSize.height])
+  }, [active, graphData, graphSize.width, graphSize.height, fitToView])
 
   // 重置配置
   const resetConfig = useCallback(() => {
@@ -891,6 +895,7 @@ export const KnowledgeMiniGraph: FC<KnowledgeMiniGraphProps> = ({
                     enableZoomInteraction={true}
                     enablePanInteraction={true}
                     enableNodeDrag={true}
+                    onEngineStop={fitToView}
                   />
                 ) : (
                   <div className="h-full flex items-center justify-center">
