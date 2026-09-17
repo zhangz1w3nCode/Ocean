@@ -32,7 +32,7 @@ import {
 } from '../flow/nodes'
 import type { InstanceArtifact } from '../../types'
 import { computeGhostSuccessors } from '../../utils/instanceFlowGhost'
-import { followKeyOf, isUsableRect, resolveViewportIntent } from '../../utils/instanceFlowViewport'
+import { clampFollowZoom, FOLLOW_ZOOM_DEFAULT, followKeyOf, isUsableRect, resolveViewportIntent } from '../../utils/instanceFlowViewport'
 
 const nodeTypes = {
   start: StartNode, end: EndNode, process: ProcessNode,
@@ -59,11 +59,11 @@ const FIT_PADDING = 0.2
 const FIT_MIN_ZOOM = 0.05
 const FIT_MAX_ZOOM = 2.5
 const FIT_ANIMATE_MS = 250
-// 跟随模式的档位：单节点 bounds 算出的原始 zoom 会远大于 1（节点只有 160~260px 宽），
-// 因此最终放大倍数实际就是 FOLLOW_MAX_ZOOM 说了算；getViewportForBounds 的 clamp
-// 不破坏居中（x/y 用的就是 clamp 后的 zoom）。
+// 跟随模式的放大档位由用户在「工作流设置」里选（见 appStore.followZoom），这里只留不可调的几何参数：
+// 单节点 bounds 算出的原始 zoom 会远大于 1（节点只有 160~260px 宽），所以最终放大倍数
+// 实际就是传入的 followZoom 说了算；getViewportForBounds 的 clamp 不破坏居中
+// （x/y 用的就是 clamp 后的 zoom）。
 const FOLLOW_MIN_ZOOM = 0.2
-const FOLLOW_MAX_ZOOM = 1.6
 const FOLLOW_PADDING = 0.3
 const FOLLOW_ANIMATE_MS = 400
 
@@ -91,8 +91,8 @@ const PANEL_EDGE_GAP = 32
 //   跟随写入同样不污染 userInteracted，因此关掉开关后 fit 的原有语义照常成立。
 const FlowFitController: FC<{
   box: { w: number; h: number }; fitKey: string; userInteracted: React.MutableRefObject<boolean>
-  followMode: boolean; focusNodeId: string | null
-}> = ({ box, fitKey, userInteracted, followMode, focusNodeId }) => {
+  followMode: boolean; focusNodeId: string | null; followZoom: number
+}> = ({ box, fitKey, userInteracted, followMode, focusNodeId, followZoom }) => {
   const rf = useReactFlow()
   const store = useStoreApi()
   const total = useStore(s => s.nodeLookup.size)
@@ -119,6 +119,7 @@ const FlowFitController: FC<{
       followMode,
       focusNodeId,
       focusNodeMeasured: !!focusNode?.measured.width && !!focusNode?.measured.height,
+      followZoom,
       lastFollowKey: followedKey.current,
       lastFitBox: fittedBox.current,
       currentBox: box,
@@ -130,10 +131,10 @@ const FlowFitController: FC<{
       const bounds = getNodesBounds([focusNodeId], { nodeLookup, nodeOrigin })
       if (!isUsableRect(bounds)) return
       rf.setViewport(
-        getViewportForBounds(bounds, box.w, box.h, FOLLOW_MIN_ZOOM, FOLLOW_MAX_ZOOM, FOLLOW_PADDING),
+        getViewportForBounds(bounds, box.w, box.h, FOLLOW_MIN_ZOOM, followZoom, FOLLOW_PADDING),
         { duration: intent.animate ? FOLLOW_ANIMATE_MS : 0 },
       )
-      followedKey.current = followKeyOf(focusNodeId, box)
+      followedKey.current = followKeyOf(focusNodeId, box, followZoom)
       return
     }
 
@@ -148,7 +149,7 @@ const FlowFitController: FC<{
       { duration: intent.animate ? FIT_ANIMATE_MS : 0 },
     )
     fittedBox.current = { w: box.w, h: box.h }
-  }, [rf, store, box.w, box.h, fitKey, total, measured, followMode, focusNodeId])
+  }, [rf, store, box.w, box.h, fitKey, total, measured, followMode, focusNodeId, followZoom])
 
   return null
 }
@@ -163,6 +164,8 @@ interface InstanceFlowGraphProps {
   fullHeight?: boolean
   /** 跟随模式：开启后每次自动聚焦 + 放大到当前正在执行的节点 */
   followMode?: boolean
+  /** 跟随模式的放大倍数，由工作流设置页配置；越界或非数字会被收敛到合法区间 */
+  followZoom?: number
 }
 function parseTraceLog(rawLog: string) {
   const entries = rawLog.split('\n').filter(l => l.trim())
@@ -182,7 +185,9 @@ function parseTraceLog(rawLog: string) {
   return path
 }
 
-export const InstanceFlowGraph: FC<InstanceFlowGraphProps> = ({ traceLog, flowData, completedNodes, currentName, wfStatus, artifacts, fullHeight, followMode = false }) => {
+export const InstanceFlowGraph: FC<InstanceFlowGraphProps> = ({ traceLog, flowData, completedNodes, currentName, wfStatus, artifacts, fullHeight, followMode = false, followZoom = FOLLOW_ZOOM_DEFAULT }) => {
+  // 档位可能被手改进磁盘 json 或来自旧版本，进控制器前先收敛一次
+  const followZoomCap = useMemo(() => clampFollowZoom(followZoom), [followZoom])
   const [selectedNodeLabel, setSelectedNodeLabel] = useState<string | null>(null)
 
   const path = useMemo(() => parseTraceLog(traceLog), [traceLog])
@@ -417,7 +422,7 @@ export const InstanceFlowGraph: FC<InstanceFlowGraphProps> = ({ traceLog, flowDa
         proOptions={{ hideAttribution: true }}
       >
         <Background color="#E5E5E5" gap={20} size={1} variant={BackgroundVariant.Dots} />
-        <FlowFitController box={box} fitKey={fitKey} userInteracted={userInteracted} followMode={followMode} focusNodeId={focusNodeId} />
+        <FlowFitController box={box} fitKey={fitKey} userInteracted={userInteracted} followMode={followMode} focusNodeId={focusNodeId} followZoom={followZoomCap} />
       </ReactFlow>
 
       {/* 节点产物面板 */}

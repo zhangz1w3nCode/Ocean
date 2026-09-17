@@ -1,7 +1,11 @@
 import type { FC } from 'react'
 import { Settings } from 'lucide-react'
+import { useAppStore } from '../stores/appStore'
+import { FOLLOW_ZOOM_DEFAULT, FOLLOW_ZOOM_MAX, FOLLOW_ZOOM_MIN } from '../utils/instanceFlowViewport'
 
 export const WorkflowSettingsPage: FC = () => {
+  const followZoom = useAppStore(s => s.followZoom)
+  const setFollowZoom = useAppStore(s => s.setFollowZoom)
   return (
     <>
       <div className="h-16 px-6 flex items-center justify-end" />
@@ -14,6 +18,31 @@ export const WorkflowSettingsPage: FC = () => {
           </div>
 
           <div className="flex flex-col gap-4">
+            {/* 跟随模式缩放比例 */}
+            <div className="p-4 rounded-lg border border-gray-100">
+              <div className="flex items-center justify-between mb-1">
+                <div className="text-sm font-medium text-macos-text">跟随模式缩放比例</div>
+                <span className="text-sm font-medium text-macos-text-secondary">{followZoom.toFixed(1)}x</span>
+              </div>
+              <div className="text-xs text-macos-text-tertiary mb-2">
+                实例详情的执行进度图开启「跟随模式」后，聚焦当前正在执行节点时的放大倍数；1.0x 即节点原始尺寸
+              </div>
+              <input
+                type="range"
+                min={FOLLOW_ZOOM_MIN}
+                max={FOLLOW_ZOOM_MAX}
+                step={0.1}
+                value={followZoom}
+                onChange={(e) => { void setFollowZoom(Number(e.target.value)) }}
+                className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-gray-600"
+              />
+              <div className="flex items-center justify-between mt-1 text-[10px] text-macos-text-tertiary">
+                <span>{FOLLOW_ZOOM_MIN}x</span>
+                <span>默认 {FOLLOW_ZOOM_DEFAULT}x</span>
+                <span>{FOLLOW_ZOOM_MAX}x</span>
+              </div>
+            </div>
+
             {/* 工作流存储路径 */}
             <div className="p-4 rounded-lg border border-gray-100">
               <div className="text-sm font-medium text-macos-text mb-1">工作流存储路径</div>

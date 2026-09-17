@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  clampFollowZoom,
+  FOLLOW_ZOOM_DEFAULT,
+  FOLLOW_ZOOM_MAX,
+  FOLLOW_ZOOM_MIN,
   followKeyOf,
   isUsableRect,
   resolveViewportIntent,
@@ -16,6 +20,7 @@ function input(over: Partial<ViewportDecisionInput> = {}): ViewportDecisionInput
     followMode: false,
     focusNodeId: 'n-current',
     focusNodeMeasured: true,
+    followZoom: FOLLOW_ZOOM_DEFAULT,
     lastFollowKey: null,
     lastFitBox: null,
     currentBox: BOX,
@@ -77,7 +82,7 @@ describe('resolveViewportIntent — 开启跟随模式', () => {
   })
 
   it('同一目标重复触发是幂等的，不再重启动画', () => {
-    const lastFollowKey = followKeyOf('n-current', BOX)
+    const lastFollowKey = followKeyOf('n-current', BOX, FOLLOW_ZOOM_DEFAULT)
     expect(resolveViewportIntent(input({ followMode: true, lastFitBox: BOX, lastFollowKey })))
       .toEqual({ kind: 'none' })
   })
@@ -87,7 +92,7 @@ describe('resolveViewportIntent — 开启跟随模式', () => {
       followMode: true,
       focusNodeId: 'n-next',
       lastFitBox: BOX,
-      lastFollowKey: followKeyOf('n-current', BOX),
+      lastFollowKey: followKeyOf('n-current', BOX, FOLLOW_ZOOM_DEFAULT),
     }))).toEqual({ kind: 'follow', animate: true })
   })
 
@@ -96,8 +101,26 @@ describe('resolveViewportIntent — 开启跟随模式', () => {
       followMode: true,
       currentBox: { w: 900, h: 600 },
       lastFitBox: BOX,
-      lastFollowKey: followKeyOf('n-current', BOX),
+      lastFollowKey: followKeyOf('n-current', BOX, FOLLOW_ZOOM_DEFAULT),
     }))).toEqual({ kind: 'follow', animate: true })
+  })
+
+  it('用户改了放大档位后对同一节点重新聚焦（档位变化必须立即生效）', () => {
+    expect(resolveViewportIntent(input({
+      followMode: true,
+      followZoom: 2.4,
+      lastFitBox: BOX,
+      lastFollowKey: followKeyOf('n-current', BOX, FOLLOW_ZOOM_DEFAULT),
+    }))).toEqual({ kind: 'follow', animate: true })
+  })
+
+  it('同一档位重复触发仍幂等（不因浮窗重渲染反复重启动画）', () => {
+    expect(resolveViewportIntent(input({
+      followMode: true,
+      followZoom: 2.4,
+      lastFitBox: BOX,
+      lastFollowKey: followKeyOf('n-current', BOX, 2.4),
+    }))).toEqual({ kind: 'none' })
   })
 
   it('跟随态下用户手动拖过仍继续跟随（开关是唯一控制权）', () => {
@@ -114,15 +137,16 @@ describe('resolveViewportIntent — 开启跟随模式', () => {
     expect(resolveViewportIntent(input({
       followMode: false,
       lastFitBox: BOX,
-      lastFollowKey: followKeyOf('n-current', BOX),
+      lastFollowKey: followKeyOf('n-current', BOX, FOLLOW_ZOOM_DEFAULT),
     }))).toEqual({ kind: 'fit', animate: true })
   })
 })
 
-describe('followKeyOf / isUsableRect', () => {
-  it('签名把节点与容器尺寸一起编码，二者任一变化都会得到不同 key', () => {
-    expect(followKeyOf('a', BOX)).not.toBe(followKeyOf('b', BOX))
-    expect(followKeyOf('a', BOX)).not.toBe(followKeyOf('a', { w: 900, h: 600 }))
+describe('followKeyOf / isUsableRect / clampFollowZoom', () => {
+  it('签名把节点、容器尺寸、放大档位一起编码，三者任一变化都会得到不同 key', () => {
+    expect(followKeyOf('a', BOX, 1.6)).not.toBe(followKeyOf('b', BOX, 1.6))
+    expect(followKeyOf('a', BOX, 1.6)).not.toBe(followKeyOf('a', { w: 900, h: 600 }, 1.6))
+    expect(followKeyOf('a', BOX, 1.6)).not.toBe(followKeyOf('a', BOX, 1.7))
   })
 
   it('挡掉 NaN / 零尺寸 / 负尺寸的矩形', () => {
@@ -131,5 +155,28 @@ describe('followKeyOf / isUsableRect', () => {
     expect(isUsableRect({ width: 200, height: Infinity })).toBe(false)
     expect(isUsableRect({ width: 0, height: 80 })).toBe(false)
     expect(isUsableRect({ width: 200, height: -1 })).toBe(false)
+  })
+
+  it('档位越界/非法值被收敛，合法值原样通过', () => {
+    expect(clampFollowZoom(1.6)).toBe(1.6)
+    expect(clampFollowZoom(1.2)).toBe(1.2)
+    expect(clampFollowZoom(0.1)).toBe(FOLLOW_ZOOM_MIN)
+    expect(clampFollowZoom(0)).toBe(FOLLOW_ZOOM_MIN)
+    expect(clampFollowZoom(-5)).toBe(FOLLOW_ZOOM_MIN)
+    expect(clampFollowZoom(99)).toBe(FOLLOW_ZOOM_MAX)
+    expect(clampFollowZoom(undefined)).toBe(FOLLOW_ZOOM_DEFAULT)
+    expect(clampFollowZoom(null)).toBe(FOLLOW_ZOOM_DEFAULT)
+    expect(clampFollowZoom(NaN)).toBe(FOLLOW_ZOOM_DEFAULT)
+    expect(clampFollowZoom('abc')).toBe(FOLLOW_ZOOM_DEFAULT)
+  })
+
+  it('数字字符串可被接受（磁盘 json 里可能被写成字符串）', () => {
+    expect(clampFollowZoom('2.2')).toBe(2.2)
+  })
+
+  it('收敛后的档位始终不低于 FOLLOW_MIN_ZOOM，不会把 clamp 区间反转', () => {
+    // 画布 minZoom=0.05、跟随下限 FOLLOW_MIN_ZOOM=0.2；若用户档位低于它，
+    // getViewportForBounds 的 clamp(zoom, 0.2, max<0.2) 会退化成固定下限
+    expect(clampFollowZoom(0.01)).toBeGreaterThanOrEqual(0.2)
   })
 })
