@@ -142,6 +142,15 @@ const electronAPI = {
   loadSkillTemplateFile: (templateType) =>
     ipcRenderer.invoke('load-skill-template-file', templateType),
 
+  // 项目级通用设置 API（<项目>/.ocean/setting/general.json）
+  loadGeneralSettings: () => ipcRenderer.invoke('load-general-settings'),
+  saveGeneralSettings: (settings) => ipcRenderer.invoke('save-general-settings', settings),
+
+  // 网页端宿主 API（仅桌面端主进程提供；网页端经 HTTP 访问会被拒绝）
+  webServerStatus: () => ipcRenderer.invoke('web-server-status'),
+  webServerStart: (projectPath) => ipcRenderer.invoke('web-server-start', projectPath),
+  webServerStop: () => ipcRenderer.invoke('web-server-stop'),
+
   // 知识模块模板文件 API
   saveKnowledgeTemplateFile: (templateType, content) =>
     ipcRenderer.invoke('save-knowledge-template-file', templateType, content),

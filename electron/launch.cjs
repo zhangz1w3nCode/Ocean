@@ -5,6 +5,8 @@ const fs = require('fs')
 const crypto = require('crypto')
 const child_process = require('child_process')
 const os = require('os')
+// 网页端宿主：自己注册 web-server-* IPC handler；在网页端子进程内自动禁用
+require('./server/webServerHost.cjs')
 
 let mainWindow = null
 let currentProjectPath = null  // 当前项目路径
@@ -68,6 +70,8 @@ const getProjectRoot = () => {
 // 设置项目路径
 const setProjectPath = (projectPath) => {
   currentProjectPath = projectPath
+  // 网页端按目标项目的通用设置自动启停/跟随
+  try { require('./server/webServerHost.cjs').syncProject(projectPath) } catch {}
   // 同步更新 CLI 默认 root 配置，wrapper 脚本会读取
   try {
     const cliRootDir = path.join(os.homedir(), '.ocean')
@@ -1555,6 +1559,45 @@ ipcMain.handle('save-app-config', (_, config) => {
     return { success: true }
   } catch (error) {
     console.error('保存应用配置失败:', error)
+    return { success: false, error: String(error) }
+  }
+})
+
+// ===== 通用设置（项目级，存储在 <项目>/.ocean/setting/general.json）=====
+
+// 加载通用设置（文件不存在时返回空对象，不创建文件）
+ipcMain.handle('load-general-settings', () => {
+  try {
+    if (!currentProjectPath) {
+      return { success: false, error: '未设置项目路径', settings: null }
+    }
+    const filePath = path.join(currentProjectPath, '.ocean', 'setting', 'general.json')
+    if (!fs.existsSync(filePath)) {
+      return { success: true, settings: {} }
+    }
+    const settings = JSON.parse(fs.readFileSync(filePath, 'utf-8'))
+    return { success: true, settings }
+  } catch (error) {
+    console.error('加载通用设置失败:', error)
+    return { success: false, error: String(error), settings: null }
+  }
+})
+
+// 保存通用设置（目录/文件不存在则创建）
+ipcMain.handle('save-general-settings', (_, settings) => {
+  try {
+    if (!currentProjectPath) {
+      return { success: false, error: '未设置项目路径' }
+    }
+    const settingDir = path.join(currentProjectPath, '.ocean', 'setting')
+    if (!fs.existsSync(settingDir)) {
+      fs.mkdirSync(settingDir, { recursive: true })
+    }
+    const filePath = path.join(settingDir, 'general.json')
+    fs.writeFileSync(filePath, JSON.stringify(settings, null, 2), 'utf-8')
+    return { success: true }
+  } catch (error) {
+    console.error('保存通用设置失败:', error)
     return { success: false, error: String(error) }
   }
 })

@@ -153,6 +153,13 @@ declare global {
       // 技能模块模板文件 API
       saveSkillTemplateFile: (templateType: 'llm-create' | 'agentic-create' | 'llm-optimize', content: string) => Promise<{ success: boolean; error?: string }>
       loadSkillTemplateFile: (templateType: 'llm-create' | 'agentic-create' | 'llm-optimize') => Promise<{ success: boolean; content: string | null; error?: string }>
+      // 项目级通用设置（<项目>/.ocean/setting/general.json）
+      loadGeneralSettings?: () => Promise<{ success: boolean; settings?: Record<string, unknown> | null; error?: string }>
+      saveGeneralSettings?: (settings: Record<string, unknown>) => Promise<{ success: boolean; error?: string }>
+      // 网页端宿主 API（仅桌面端提供；网页端浏览器内为 undefined）
+      webServerStatus?: () => Promise<{ running: boolean; port: number | null; pid: number | null; project: string | null }>
+      webServerStart?: (projectPath: string) => Promise<{ success: boolean; alreadyRunning?: boolean; port?: number; pid?: number; error?: string }>
+      webServerStop?: () => Promise<{ success: boolean; wasRunning?: boolean }>
       // 知识模块模板文件 API
       saveKnowledgeTemplateFile: (templateType: 'agentic-create', content: string) => Promise<{ success: boolean; error?: string }>
       loadKnowledgeTemplateFile: (templateType: 'agentic-create') => Promise<{ success: boolean; content: string | null; error?: string }>
