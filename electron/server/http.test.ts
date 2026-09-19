@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createRequire } from 'node:module'
+import net from 'node:net'
 
 const tmp = mkdtempSync(join(tmpdir(), 'ocean-http-'))
 process.env.OCEAN_USER_DATA = join(tmp, 'user-data')
@@ -103,6 +104,25 @@ describe('HTTP API 层', () => {
       payload: { status: 'running' },
     })
     ac.abort()
+  })
+
+  it('P1-1 回归：畸形 percent-encoding 返回 400 且服务存活（裸 socket 原始请求）', async () => {
+    const rawGet = (rawPath: string) =>
+      new Promise<string | null>((resolve) => {
+        const sock = net.connect(server.address().port, '127.0.0.1', () => {
+          sock.write(`GET ${rawPath} HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n`)
+        })
+        let data = ''
+        sock.on('data', (d) => { data += d })
+        sock.on('end', () => resolve(data.split('\r\n')[0]))
+        sock.on('error', () => resolve(null))
+      })
+    // 连发多个畸形路径 + 一个合法请求，进程必须全部存活
+    expect(await rawGet('/%zz')).toContain(' 400 ')
+    expect(await rawGet('/%')).toContain(' 400 ')
+    expect(await rawGet('/a%2')).toContain(' 400 ')
+    const ok = await fetch(`${base}/`)
+    expect(ok.status).toBe(200)
   })
 
   it('server.requestTimeout 被关闭（run-agent-loop 可能远超默认 300s）', () => {

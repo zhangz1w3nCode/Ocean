@@ -89,7 +89,14 @@ function createServer({ handlers, pushEmitter, distDir }) {
       sendJson(res, 404, { error: `dist 未构建：${distDir}，请先执行 pnpm web:build` })
       return
     }
-    let rel = decodeURIComponent(pathname)
+    let rel
+    try {
+      rel = decodeURIComponent(pathname)
+    } catch {
+      res.writeHead(400)
+      res.end()
+      return
+    }
     if (rel === '/') rel = '/index.html'
     const filePath = path.normalize(path.join(distDir, rel))
     if (!filePath.startsWith(path.normalize(distDir) + path.sep) && filePath !== path.normalize(distDir)) {
@@ -112,7 +119,7 @@ function createServer({ handlers, pushEmitter, distDir }) {
     })
   }
 
-  const server = http.createServer(async (req, res) => {
+  async function handleRequest(req, res) {
     // 个人本机使用；dev 模式下 vite(5273) 跨域访问 API(8787) 依赖这三个头
     res.setHeader('Access-Control-Allow-Origin', '*')
     res.setHeader('Access-Control-Allow-Headers', 'content-type')
@@ -158,6 +165,19 @@ function createServer({ handlers, pushEmitter, distDir }) {
 
     res.writeHead(405)
     res.end()
+  }
+
+  const server = http.createServer((req, res) => {
+    // 兜底：任何同步/异步异常都不允许打崩进程（畸形请求曾致 URIError 崩溃）
+    handleRequest(req, res).catch((e) => {
+      console.error('[http] 请求处理异常:', req.method, req.url, String((e && e.message) || e))
+      if (!res.headersSent) {
+        res.writeHead(500, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ success: false, error: 'internal error' }))
+      } else {
+        try { res.end() } catch { res.destroy() }
+      }
+    })
   })
 
   // Node>=18 默认 requestTimeout=300s，run-agent-loop 会被掐断
