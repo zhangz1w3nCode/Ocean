@@ -45,7 +45,7 @@ description: Ocean CLI 工具。通过 ocean 命令完成完整的自循环：�
 | 命令 | 子命令 | 作用 |
 |------|--------|------|
 | \`ocean node\` | list/read/create/update/delete | 节点 CRUD |
-| \`ocean knowledge\` | list/read/create/update/delete | 知识 CRUD（支持子目录） |
+| \`ocean knowledge\` | list/read/create/update/delete/search、domain list/create/search/update | 知识 CRUD 与检索（支持子目录；create 有强制约束，见关键约定） |
 | \`ocean resource\` | list/read/create/update/delete | 资源 CRUD |
 | \`ocean agent\` | list/read/create/update/delete | 智能体 CRUD |
 | \`ocean skill\` | list/read/create/update/delete | 技能 CRUD |
@@ -87,7 +87,10 @@ description: Ocean CLI 工具。通过 ocean 命令完成完整的自循环：�
 ## 关键约定
 
 - 全局 flag: \`--root <path>\` 覆盖项目根
-- 内容输入三选一: \`--content "短内容"\` / \`--content-file <path>\` / stdin
+- 内容输入三选一: \`--content "短内容"\` / \`--content-file <path>\` / stdin（例外：ocean knowledge create/update 不适用）
+- ocean knowledge create: \`--summary\` 与 \`--tags\` 必填不可为空；正文仅能用 \`--content "$(cat 文件)"\` 传入；正文开头不得包含 YAML frontmatter
+- ocean knowledge update: \`--content\`/\`--summary\`/\`--tags\` 三项均可选（缺省保留原值），至少一项有效；正文仅 \`--content "$(cat 文件)"\` 且开头不得含 YAML frontmatter；update 后 status 回退 pending
+- ocean knowledge domain: domain 即知识所在文件夹（相对 .knowledges），create/update 知识时自动写入 YAML 头 domain 字段；\`domain list\` 树形表格展示全部 domain 层级（名称列含树形前缀，不含知识卡片，JSON 为完整路径数组）、\`domain list <name>\` 仅列其直接子 domain（表格显示名称本身，JSON 为完整路径数组，不递归）、\`domain create <name>\` 建文件夹、\`domain search <keyword>\` 匹配名称、\`domain update <old> <new>\` 重命名并同步下属知识 domain 字段
 - \`ocean workflow doctor\` 检查 10 项完整性（非空/起始/结束/出边/入边/孤立/分支/可达/边引用/文件引用）
 - asset/skill 目录随 assetRoot（.pi 或 .claude）自动变化，agent 不需手动判断
 `
