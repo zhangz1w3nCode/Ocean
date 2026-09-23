@@ -212,13 +212,16 @@ export function updateDomain(root: string, oldName: string, newName: string): vo
 
 function refreshDomainFields(baseDir: string, targetDir: string): void {
   for (const item of fs.readdirSync(targetDir)) {
+    if (EXCLUDED_DIRS.has(item) || item.startsWith('.')) continue
     const fullPath = path.join(targetDir, item)
     const stat = fs.statSync(fullPath)
     if (stat.isDirectory()) {
       refreshDomainFields(baseDir, fullPath)
     } else if (item.endsWith('.md')) {
-      const fileDomain = path.dirname(path.relative(baseDir, fullPath))
       const raw = fs.readFileSync(fullPath, 'utf-8')
+      // 仅改写带合法 frontmatter 的知识文件，非知识 .md 保持原样
+      if (!/^---\n[\s\S]*?\n---\n?/.test(raw)) continue
+      const fileDomain = path.dirname(path.relative(baseDir, fullPath))
       const { fields, body } = parseFrontmatter(raw)
       fields.domain = fileDomain
       fs.writeFileSync(fullPath, buildFrontmatter(fields, body), 'utf-8')
