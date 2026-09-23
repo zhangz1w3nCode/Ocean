@@ -265,7 +265,7 @@ export interface CLIAgent {
 }
 
 // 设置分类
-export type SettingsCategory = 'llm' | 'agentic' | 'skill' | 'knowledge' | 'asset' | 'general'
+export type SettingsCategory = 'llm' | 'agentic' | 'jev' | 'skill' | 'knowledge' | 'asset' | 'general'
 
 // 设置项接口
 export interface SettingsItem {
@@ -300,6 +300,20 @@ export interface AgenticConfig {
   maxIterations: number      // 最大迭代次数
   timeout: number            // 超时时间（秒）
   updatedAt: string          // 更新时间
+}
+
+// Jev（TypeSafe AI System One）产物校验配置
+export interface JevValidationConfig {
+  enabled: boolean           // 是否启用 workflow next 产物符合性校验
+  threshold: number          // 判定阈值（0-1），P(按要求执行) 低于该值则阻断推进
+  timeoutMs?: number         // 单次请求超时（毫秒，默认 5000）
+}
+
+export interface JevConfig {
+  baseUrl: string            // TypeSafe API 地址（默认 https://api.typesafe.ai）
+  apiKey: string             // TypeSafe API Key
+  validation: JevValidationConfig
+  updatedAt?: string         // 更新时间
 }
 
 // ========== Agent Loop 类型定义 ==========

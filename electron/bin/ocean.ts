@@ -694,7 +694,7 @@ domain 说明:
 // Main
 // ---------------------------------------------------------------------------
 
-function main(): void {
+async function main(): Promise<void> {
   const args = parseArgs(process.argv)
 
   // version 优先（eager，无需子命令）
@@ -725,7 +725,7 @@ function main(): void {
     switch (args.namespace) {
       // === workflow execution + design ===
       case 'workflow':
-        handleWorkflow(root, args)
+        await handleWorkflow(root, args)
         break
 
       // === asset management ===
@@ -766,7 +766,7 @@ function main(): void {
 // workflow: execution commands + design commands
 // ---------------------------------------------------------------------------
 
-function handleWorkflow(root: string, args: ReturnType<typeof parseArgs>): void {
+async function handleWorkflow(root: string, args: ReturnType<typeof parseArgs>): Promise<void> {
   const cmd = args.subcommand
 
   switch (cmd) {
@@ -809,7 +809,7 @@ function handleWorkflow(root: string, args: ReturnType<typeof parseArgs>): void 
       const id = args.flags.instance as string
       const json = args.flags.json === true
       const wf = instanceWorkflow(root, id)
-      printMarkdownTable(next(root, wf, id, json))
+      printMarkdownTable(await next(root, wf, id, json))
       break
     }
 
@@ -1519,4 +1519,7 @@ function handleConfig(root: string, args: ReturnType<typeof parseArgs>): void {
   }
 }
 
-main()
+main().catch((e: any) => {
+  process.stderr.write((e?.message ?? String(e)) + '\n')
+  process.exit(1)
+})

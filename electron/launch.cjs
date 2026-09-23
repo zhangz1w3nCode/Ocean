@@ -2264,6 +2264,107 @@ ipcMain.handle('load-agentic-config', async () => {
   }
 })
 
+// ===== Jev 配置文件 IPC =====
+
+/**
+ * 获取 Jev 配置文件路径
+ */
+const getJevConfigPath = () => {
+  try {
+    const projectRoot = getProjectRoot()
+    if (!projectRoot) {
+      throw new Error('项目路径未设置')
+    }
+    const oceanDir = path.join(projectRoot, '.ocean')
+    if (!fs.existsSync(oceanDir)) {
+      fs.mkdirSync(oceanDir, { recursive: true })
+    }
+    return path.join(oceanDir, 'jev-config.json')
+  } catch (error) {
+    console.error('获取 Jev 配置路径失败:', error)
+    throw error
+  }
+}
+
+/**
+ * 保存 Jev 配置到文件
+ */
+ipcMain.handle('save-jev-config', async (_, config) => {
+  try {
+    const configPath = getJevConfigPath()
+    fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf-8')
+    console.log('✅ Jev 配置已保存到:', configPath)
+    return { success: true }
+  } catch (error) {
+    console.error('❌ 保存 Jev 配置失败:', error)
+    return { success: false, error: error.message || String(error) }
+  }
+})
+
+/**
+ * 加载 Jev 配置文件
+ */
+ipcMain.handle('load-jev-config', async () => {
+  try {
+    const configPath = getJevConfigPath()
+    if (!fs.existsSync(configPath)) {
+      console.log('Jev 配置文件不存在,返回空配置')
+      return { success: true, config: null }
+    }
+    const content = fs.readFileSync(configPath, 'utf-8')
+    const config = JSON.parse(content)
+    console.log('✅ Jev 配置已加载')
+    return { success: true, config }
+  } catch (error) {
+    console.error('❌ 加载 Jev 配置失败:', error)
+    return { success: false, error: error.message || String(error), config: null }
+  }
+})
+
+/**
+ * 测试 Jev 连接（发最小 Noul 请求验证地址与鉴权）
+ */
+ipcMain.handle('test-jev-connection', async (_, config) => {
+  try {
+    const baseUrl = String(config?.baseUrl || '').trim().replace(/\/+$/, '') || 'https://api.typesafe.ai'
+    const apiKey = String(config?.apiKey || '').trim()
+    if (!apiKey) {
+      return { success: false, error: 'API Key 不能为空' }
+    }
+    const started = Date.now()
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 5000)
+    let res
+    try {
+      res = await fetch(`${baseUrl}/v1/systemone`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: JSON.stringify({
+          state: 'connection test',
+          questions: { ok: { type: 'noul', instructions: 'Is this a connection test?' } },
+          model: 'jev-latest',
+        }),
+        signal: controller.signal,
+      })
+    } finally {
+      clearTimeout(timer)
+    }
+    const elapsedMs = Date.now() - started
+    if (res.ok) {
+      return { success: true, elapsedMs }
+    }
+    const statusText = res.status === 401 || res.status === 403 ? '鉴权失败，请检查 API Key' : `HTTP ${res.status}`
+    return { success: false, error: statusText, elapsedMs }
+  } catch (error) {
+    const msg = error?.name === 'AbortError' ? '请求超时（5s）' : (error?.message || String(error))
+    return { success: false, error: msg }
+  }
+})
+
 // ========== Agentic 工具执行 ==========
 
 // 自研工具加载
