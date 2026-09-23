@@ -8,7 +8,7 @@ export type PageType = 'project' | 'agents' | 'workflows' | 'nodes' | 'resources
 export type WorkflowSubPage = 'nodes' | 'workflows' | 'instances' | 'settings'
 
 // 知识区域二级导航子页面
-export type KnowledgeSubPage = 'library' | 'graph' | 'catalog' | 'review' | 'settings'
+export type KnowledgeSubPage = 'source' | 'library' | 'graph' | 'catalog' | 'review' | 'settings'
 
 // 默认导航顺序
 const DEFAULT_NAV_ORDER: PageType[] = ['agents', 'skills', 'knowledges', 'workflows', 'resources', 'settings']

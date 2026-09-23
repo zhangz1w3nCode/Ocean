@@ -1104,6 +1104,146 @@ ipcMain.handle('delete-knowledge-file', (_, name) => {
   }
 })
 
+// ===== 知识源（.knowledges/.raw 原始素材）文件相关 IPC =====
+
+const KNOWLEDGE_RAW_DIR = '.raw'
+const KNOWLEDGE_RAW_EXTENSIONS = ['.md', '.txt']
+
+const getKnowledgeRawDir = () => path.join(getKnowledgesDir(), KNOWLEDGE_RAW_DIR)
+
+// 净化上传文件名：只取基名，拒绝反斜杠/点开头/无扩展名/非白名单扩展名
+const normalizeKnowledgeRawName = (name) => {
+  const raw = String(name == null ? '' : name)
+  if (raw.includes('\\')) return null
+  const base = path.basename(raw).replace(/[\u0000-\u001f\u007f]/g, '').trim()
+  if (!base || base.startsWith('.')) return null
+  const ext = path.extname(base).toLowerCase()
+  if (!KNOWLEDGE_RAW_EXTENSIONS.includes(ext)) return null
+  const stem = base.slice(0, base.length - ext.length).trim()
+  if (!stem) return null
+  return `${stem.length > 120 ? stem.slice(0, 120) : stem}${ext}`
+}
+
+// 同名不覆盖：追加 " (1)"、" (2)"…直到空闲
+const resolveKnowledgeRawConflict = (dir, fileName) => {
+  const ext = path.extname(fileName)
+  const stem = fileName.slice(0, fileName.length - ext.length)
+  let candidate = fileName
+  for (let i = 1; fs.existsSync(path.join(dir, candidate)); i++) {
+    candidate = `${stem} (${i})${ext}`
+  }
+  return candidate
+}
+
+// 列出已导入的知识源文件（仅白名单扩展名，按修改时间倒序）
+// 卡片预览用：只读文件头部少量字节，避免为预览拉全文（全文预览走 load-knowledge-raw-file）
+const KNOWLEDGE_RAW_HEAD_BYTES = 512
+const readRawHead = (filePath, fileSize) => {
+  try {
+    const fd = fs.openSync(filePath, 'r')
+    try {
+      const length = Math.min(fileSize, KNOWLEDGE_RAW_HEAD_BYTES)
+      const buffer = Buffer.alloc(length)
+      fs.readSync(fd, buffer, 0, length, 0)
+      // 多字节字符可能被截断在中间，去掉尾部替换符
+      return buffer.toString('utf-8').replace(/\uFFFD+$/, '')
+    } finally {
+      fs.closeSync(fd)
+    }
+  } catch {
+    return ''
+  }
+}
+
+ipcMain.handle('list-knowledge-raw-files', () => {
+  try {
+    const dir = getKnowledgeRawDir()
+    if (!fs.existsSync(dir)) return { success: true, files: [] }
+    const files = []
+    for (const item of fs.readdirSync(dir)) {
+      if (!KNOWLEDGE_RAW_EXTENSIONS.includes(path.extname(item).toLowerCase())) continue
+      const filePath = path.join(dir, item)
+      const stat = fs.statSync(filePath)
+      if (!stat.isFile()) continue
+      files.push({
+        name: item,
+        size: stat.size,
+        mtime: stat.mtime.toISOString(),
+        head: readRawHead(filePath, stat.size),
+      })
+    }
+    files.sort((a, b) => new Date(b.mtime).getTime() - new Date(a.mtime).getTime())
+    return { success: true, files }
+  } catch (error) {
+    console.error('加载知识源文件列表失败:', error)
+    return { success: false, error: String(error), files: [] }
+  }
+})
+
+// 保存上传的知识源文件：字节原样落盘，不做编码转换
+ipcMain.handle('save-knowledge-raw-file', (_, name, bytes) => {
+  try {
+    const fileName = normalizeKnowledgeRawName(name)
+    if (!fileName) {
+      return { success: false, error: '文件名非法或格式不支持' }
+    }
+    if (!bytes || typeof bytes.byteLength !== 'number') {
+      return { success: false, error: '文件内容为空' }
+    }
+    const dir = getKnowledgeRawDir()
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true })
+    }
+    const savedName = resolveKnowledgeRawConflict(dir, fileName)
+    fs.writeFileSync(path.join(dir, savedName), Buffer.from(bytes))
+    return { success: true, savedName }
+  } catch (error) {
+    console.error('保存知识源文件失败:', error)
+    return { success: false, error: String(error) }
+  }
+})
+
+// 预览上限：超出部分不送入渲染层，避免大文件卡死 Markdown 渲染
+const KNOWLEDGE_RAW_PREVIEW_LIMIT = 1024 * 1024
+
+// 读取知识源文件内容（仅用于预览，路径限定在 .raw 内）
+ipcMain.handle('load-knowledge-raw-file', (_, name) => {
+  try {
+    const fileName = normalizeKnowledgeRawName(name)
+    if (!fileName) {
+      return { success: false, error: '文件名非法或格式不支持', content: null }
+    }
+    const filePath = path.join(getKnowledgeRawDir(), fileName)
+    if (!fs.existsSync(filePath)) {
+      return { success: false, error: '文件不存在', content: null }
+    }
+    const stat = fs.statSync(filePath)
+    if (!stat.isFile()) {
+      return { success: false, error: '目标不是文件', content: null }
+    }
+    const fd = fs.openSync(filePath, 'r')
+    let content = ''
+    try {
+      const buffer = Buffer.alloc(Math.min(stat.size, KNOWLEDGE_RAW_PREVIEW_LIMIT))
+      fs.readSync(fd, buffer, 0, buffer.length, 0)
+      // 截断可能拆坏多字节字符，去掉尾部替换符
+      content = buffer.toString('utf-8').replace(/\uFFFD$/, '')
+    } finally {
+      fs.closeSync(fd)
+    }
+    return {
+      success: true,
+      content,
+      size: stat.size,
+      mtime: stat.mtime.toISOString(),
+      truncated: stat.size > KNOWLEDGE_RAW_PREVIEW_LIMIT,
+    }
+  } catch (error) {
+    console.error('读取知识源文件失败:', error)
+    return { success: false, error: String(error), content: null }
+  }
+})
+
 // ===== 知识库独立 git 仓库支持（.knowledges 作为独立仓库，与父项目仓库解耦） =====
 // 知识审核全链路固定使用该本地分支，不随 .knowledges 外部 checkout 漂移
 const KNOWLEDGE_GIT_BRANCH = 'ocean-knowledge'
@@ -1258,7 +1398,7 @@ ipcMain.handle('knowledge-git-init', () => {
     // 排除索引等二进制产物
     const ignorePath = path.join(knowledgesDir, '.gitignore')
     if (!fs.existsSync(ignorePath)) {
-      fs.writeFileSync(ignorePath, '*.sqlite\n.trash-box/\n', 'utf-8')
+      fs.writeFileSync(ignorePath, '*.sqlite\n.trash-box/\n.raw/\n', 'utf-8')
     }
     const add = runGitInKnowledges(['add', '-A'])
     if (add.status !== 0) {

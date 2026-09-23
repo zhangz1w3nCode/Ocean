@@ -78,6 +78,11 @@ const electronAPI = {
   loadKnowledgeGitConfig: () => ipcRenderer.invoke('load-knowledge-git-config'),
   saveKnowledgeGitConfig: (config) => ipcRenderer.invoke('save-knowledge-git-config', config),
 
+  // 知识源（.knowledges/.raw 原始素材）文件相关
+  listKnowledgeRawFiles: () => ipcRenderer.invoke('list-knowledge-raw-files'),
+  saveKnowledgeRawFile: (name, bytes) => ipcRenderer.invoke('save-knowledge-raw-file', name, bytes),
+  loadKnowledgeRawFile: (name) => ipcRenderer.invoke('load-knowledge-raw-file', name),
+
   // 技能文件数据持久化（目录结构，存储在 skills 目录）
   createSkillDirectory: (name, input) => ipcRenderer.invoke('create-skill-directory', name, input),
   saveSkillFile: (name, content) => ipcRenderer.invoke('save-skill-file', name, content),

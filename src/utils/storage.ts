@@ -15,6 +15,15 @@ export interface KnowledgeFolder {
   children: KnowledgeFolder[]
 }
 
+// 知识源文件（.knowledges/.raw 下的原始素材，不参与审核与检索链路）
+export interface KnowledgeRawFile {
+  name: string
+  size: number
+  mtime: string
+  // 卡片预览：主进程随列表返回的文件头部片段
+  head?: string
+}
+
 // 声明全局 window.electronAPI
 declare global {
   interface Window {
@@ -68,6 +77,9 @@ declare global {
       deleteKnowledgeFile: (name: string) => Promise<{ success: boolean; error?: string }>
       loadAllKnowledgeFiles: () => Promise<{ success: boolean; files?: string[]; error?: string }>
       listKnowledgeFolders: () => Promise<{ success: boolean; folders?: KnowledgeFolder[]; error?: string }>
+      listKnowledgeRawFiles: () => Promise<{ success: boolean; files?: KnowledgeRawFile[]; error?: string }>
+      saveKnowledgeRawFile: (name: string, bytes: Uint8Array) => Promise<{ success: boolean; savedName?: string; error?: string }>
+      loadKnowledgeRawFile: (name: string) => Promise<{ success: boolean; content?: string | null; size?: number; mtime?: string; truncated?: boolean; error?: string }>
       loadKnowledgeBaseline: (name: string) => Promise<{ success: boolean; content?: string | null; error?: string }>
       knowledgeGitStatus: () => Promise<{ success: boolean; managed?: boolean; branch?: string | null; hasCommits?: boolean; branchError?: string; error?: string }>
       knowledgeGitInit: () => Promise<{ success: boolean; alreadyManaged?: boolean; branch?: string; hasCommits?: boolean; error?: string }>
@@ -2381,6 +2393,66 @@ export const listKnowledgeFoldersFromLocal = async (): Promise<KnowledgeFolder[]
   } catch (error) {
     console.error('获取知识库目录树失败:', error)
     return []
+  }
+}
+
+// ===== 知识源（.knowledges/.raw 原始素材）文件操作 =====
+
+// 列出已导入的知识源文件（按修改时间倒序）
+export const listKnowledgeRawFilesFromLocal = async (): Promise<KnowledgeRawFile[]> => {
+  if (!isElectron()) return []
+  try {
+    const result = await window.electronAPI!.listKnowledgeRawFiles()
+    return result.success && result.files ? result.files : []
+  } catch (error) {
+    console.error('获取知识源文件列表失败:', error)
+    return []
+  }
+}
+
+// 上传知识源文件：字节原样交给主进程落盘，返回实际保存的文件名（同名会自动改名）
+export const saveKnowledgeRawFileToLocal = async (
+  name: string,
+  bytes: Uint8Array,
+): Promise<{ success: boolean; savedName?: string; error?: string }> => {
+  if (!isElectron()) return { success: false, error: '仅在 Electron 环境中可用' }
+  try {
+    return await window.electronAPI!.saveKnowledgeRawFile(name, bytes)
+  } catch (error) {
+    console.error('保存知识源文件失败:', error)
+    return { success: false, error: String(error) }
+  }
+}
+
+export interface KnowledgeSourcePreview {
+  content: string
+  size: number
+  mtime: string
+  truncated: boolean
+}
+
+// 读取知识源文件内容用于预览（与知识卡的 loadKnowledgeRawFile 是两件事：后者读的是可审核知识）
+export const loadKnowledgeSourcePreview = async (
+  name: string,
+): Promise<{ success: boolean; preview?: KnowledgeSourcePreview; error?: string }> => {
+  if (!isElectron()) return { success: false, error: '仅在 Electron 环境中可用' }
+  try {
+    const result = await window.electronAPI!.loadKnowledgeRawFile(name)
+    if (!result.success || typeof result.content !== 'string') {
+      return { success: false, error: result.error || '读取失败' }
+    }
+    return {
+      success: true,
+      preview: {
+        content: result.content,
+        size: result.size ?? 0,
+        mtime: result.mtime ?? '',
+        truncated: result.truncated ?? false,
+      },
+    }
+  } catch (error) {
+    console.error('预览知识源文件失败:', error)
+    return { success: false, error: String(error) }
   }
 }
 
