@@ -42,7 +42,10 @@ export function create(root: string, relPath: string, content: string, opts?: {
   const filePath = path.join(d, relPath.endsWith('.md') ? relPath : `${relPath}.md`)
   if (fs.existsSync(filePath)) throw new Error(`知识已存在: ${relPath}`)
   const name = path.basename(filePath, '.md')
+  const domain = path.dirname(path.relative(d, filePath))
   let fm = `---\nname: ${name}\n`
+  // domain = 知识所在文件夹（相对 .knowledges），根目录下的知识无 domain
+  if (domain !== '.') fm += `domain: ${domain}\n`
   if (opts?.summary) fm += `summary: ${opts.summary}\n`
   if (opts?.tags && opts.tags.length > 0) {
     fm += `tags: [${opts.tags.join(', ')}]\n`
@@ -80,6 +83,13 @@ export function update(root: string, relPath: string, content: string, opts?: {
   }
   // 更新后回退为待审核
   fields.status = 'pending'
+  // domain 字段与文件实际位置保持一致（兼容无 domain 字段的历史知识）
+  const fileDomain = path.dirname(path.relative(dir(root), filePath))
+  if (fileDomain !== '.') {
+    fields.domain = fileDomain
+  } else {
+    delete fields.domain
+  }
   const updated = buildFrontmatter(fields, content)
   fs.writeFileSync(filePath, updated, 'utf-8')
 }
@@ -87,6 +97,133 @@ export function update(root: string, relPath: string, content: string, opts?: {
 export function del(root: string, relPath: string): void {
   const filePath = path.join(dir(root), relPath.endsWith('.md') ? relPath : `${relPath}.md`)
   if (fs.existsSync(filePath)) fs.unlinkSync(filePath)
+}
+
+// --- domain 管理（domain 即 .knowledges 下的文件夹）---
+
+function resolveDomainDir(root: string, name: string): string {
+  const d = path.resolve(dir(root))
+  const target = path.resolve(d, name)
+  if (target === d || !target.startsWith(d + path.sep)) {
+    throw new Error(`非法的 domain 路径: ${name}`)
+  }
+  return target
+}
+
+export function createDomain(root: string, name: string): void {
+  const target = resolveDomainDir(root, name)
+  if (fs.existsSync(target)) throw new Error(`domain 已存在: ${name}`)
+  fs.mkdirSync(target, { recursive: true })
+}
+
+export interface DomainInfo {
+  domain: string // 相对 .knowledges 的目录路径
+  count: number // 直接位于该目录的知识数
+}
+
+function listDomains(root: string): DomainInfo[] {
+  const d = dir(root)
+  if (!fs.existsSync(d)) return []
+  const result: DomainInfo[] = []
+  scanDomains(d, d, result)
+  return result.sort((a, b) => a.domain.localeCompare(b.domain))
+}
+
+function scanDomains(dir: string, baseDir: string, result: DomainInfo[]): void {
+  for (const item of fs.readdirSync(dir)) {
+    if (EXCLUDED_DIRS.has(item) || item.startsWith('.')) continue
+    const fullPath = path.join(dir, item)
+    if (!fs.statSync(fullPath).isDirectory()) continue
+    const rel = path.relative(baseDir, fullPath)
+    let count = 0
+    for (const f of fs.readdirSync(fullPath)) {
+      if (f.endsWith('.md')) count++
+    }
+    result.push({ domain: rel, count })
+    scanDomains(fullPath, baseDir, result)
+  }
+}
+
+export function searchDomains(root: string, keyword: string): DomainInfo[] {
+  if (!keyword || keyword.trim() === '') return []
+  const kw = keyword.trim().toLowerCase()
+  return listDomains(root).filter(d => d.domain.toLowerCase().includes(kw))
+}
+
+// 列出指定 domain 子树下的全部知识（相对 .knowledges 的路径，含 .md）
+export interface DomainNode {
+  domain: string // 相对 .knowledges 的目录路径
+  knowledges: string[] // 直接位于该目录的知识（相对 .knowledges 完整路径）
+  subdomains: DomainNode[] // 子 domain 节点（递归）
+}
+
+function buildDomainNode(baseDir: string, domainDir: string): DomainNode {
+  const knowledges: string[] = []
+  const subdomains: DomainNode[] = []
+  for (const item of fs.readdirSync(domainDir)) {
+    if (EXCLUDED_DIRS.has(item) || item.startsWith('.')) continue
+    const fullPath = path.join(domainDir, item)
+    if (fs.statSync(fullPath).isDirectory()) {
+      subdomains.push(buildDomainNode(baseDir, fullPath))
+    } else if (item.endsWith('.md')) {
+      knowledges.push(path.relative(baseDir, fullPath))
+    }
+  }
+  knowledges.sort()
+  subdomains.sort((a, b) => a.domain.localeCompare(b.domain))
+  return { domain: path.relative(baseDir, domainDir), knowledges, subdomains }
+}
+
+export function listDomainTree(root: string): DomainNode[] {
+  const d = path.resolve(dir(root))
+  if (!fs.existsSync(d)) return []
+  const nodes: DomainNode[] = []
+  for (const item of fs.readdirSync(d)) {
+    if (EXCLUDED_DIRS.has(item) || item.startsWith('.')) continue
+    const fullPath = path.join(d, item)
+    if (!fs.statSync(fullPath).isDirectory()) continue
+    nodes.push(buildDomainNode(d, fullPath))
+  }
+  return nodes.sort((a, b) => a.domain.localeCompare(b.domain))
+}
+
+export function listDomainSubtree(root: string, name: string): DomainNode {
+  const d = path.resolve(dir(root))
+  const target = resolveDomainDir(root, name)
+  if (!fs.existsSync(target) || !fs.statSync(target).isDirectory()) {
+    throw new Error(`domain 不存在: ${name}`)
+  }
+  return buildDomainNode(d, target)
+}
+
+export function updateDomain(root: string, oldName: string, newName: string): void {
+  const d = path.resolve(dir(root))
+  const oldDir = resolveDomainDir(root, oldName)
+  const newDir = resolveDomainDir(root, newName)
+  if (!fs.existsSync(oldDir)) throw new Error(`domain 不存在: ${oldName}`)
+  if (fs.existsSync(newDir)) throw new Error(`domain 已存在: ${newName}`)
+  if (newDir.startsWith(oldDir + path.sep)) throw new Error('新 domain 不能是旧 domain 的子路径')
+  if (oldDir.startsWith(newDir + path.sep)) throw new Error('新 domain 不能是旧 domain 的父路径')
+  fs.mkdirSync(path.dirname(newDir), { recursive: true })
+  fs.renameSync(oldDir, newDir)
+  // 刷新受影响知识的 domain 字段（含子目录）
+  refreshDomainFields(d, newDir)
+}
+
+function refreshDomainFields(baseDir: string, targetDir: string): void {
+  for (const item of fs.readdirSync(targetDir)) {
+    const fullPath = path.join(targetDir, item)
+    const stat = fs.statSync(fullPath)
+    if (stat.isDirectory()) {
+      refreshDomainFields(baseDir, fullPath)
+    } else if (item.endsWith('.md')) {
+      const fileDomain = path.dirname(path.relative(baseDir, fullPath))
+      const raw = fs.readFileSync(fullPath, 'utf-8')
+      const { fields, body } = parseFrontmatter(raw)
+      fields.domain = fileDomain
+      fs.writeFileSync(fullPath, buildFrontmatter(fields, body), 'utf-8')
+    }
+  }
 }
 
 // --- frontmatter helpers ---
