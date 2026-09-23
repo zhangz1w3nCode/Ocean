@@ -8,7 +8,7 @@ import {
   setProjectPath,
   isElectron,
 } from '../utils/storage'
-
+import { useAppStore } from './appStore'
 interface ProjectState {
   // 状态
   isProjectLoaded: boolean
@@ -64,7 +64,9 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       })
 
       // 初始化侧边栏导航顺序
-      const { initSidebarNavOrder, initSidebarCollapsed } = await import('./appStore').then(m => m.useAppStore.getState())
+      // 注：原先写法 await import('./appStore').then(m => m.useAppStore.getState()) 在生产包里
+      // 会被 Rollup 裁剪 namespace 导致 m.useAppStore 为 undefined，自动恢复项目静默失败（既有 bug）
+      const { initSidebarNavOrder, initSidebarCollapsed } = useAppStore.getState()
       initSidebarNavOrder(config.sidebarNavOrder as any)
       initSidebarCollapsed(config.sidebarCollapsed)
 

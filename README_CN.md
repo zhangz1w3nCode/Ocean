@@ -260,6 +260,33 @@ your-project/
 
 每个资产都是标准的 Markdown 文件，支持可选的 YAML Frontmatter 元数据。这意味着你可以用 Git 对资产进行版本控制，也可以用任何文本编辑器直接编辑。
 
+## 网页端（个人本机使用）
+
+不改一行 `electron/launch.cjs`，用纯 node 进程加载同一套 82 个 IPC handler，通过 HTTP + SSE 服务浏览器。
+
+```bash
+pnpm web:build   # 构建前端（= pnpm build）
+pnpm web:serve   # 手动启动 http://127.0.0.1:8787（托管 dist/ + API + SSE）
+pnpm web:dev     # 开发模式：vite(5273) + API(8787)，前端改动热更新
+```
+
+也可以在桌面端「设置 → 通用 → 网页端访问」用开关托管。开关状态是**项目级**的，持久化在
+`<项目>/.ocean/setting/general.json`（不存在时保存会自动创建）：
+- 开启后桌面端以子进程方式拉起网页端，桌面退出时自动关闭
+- 桌面启动时若上次打开的项目开启了开关，自动拉起
+- 切换项目时按目标项目的开关自动启停/跟随
+
+注意：开关托管与手动 `pnpm web:serve` 共用 8787 端口，二者不可同时开启。
+已知限制：打包版（dmg/asar）下的 `ELECTRON_RUN_AS_NODE` 子进程加载 asar 内脚本尚未验证，发布前需专项验证一次。
+
+- 服务只监听 `127.0.0.1`，无鉴权，仅限个人本机使用；不要暴露到公网。
+- 与桌面端共享 `~/Library/Application Support/ocean` 配置与项目磁盘数据，两边可混用。
+- 「打开文件夹」在网页端通过 macOS 原生目录选择框（osascript）实现，需要本机有 GUI 会话。
+- 「实例详情实时更新」与「Agent Loop 事件流」通过 SSE（`/api/events`）推送。
+- 端到端验证：`node electron/server/e2e-check.mjs`（含 headless Chrome 浏览器断言）。
+- 已知限制：`check-cli-installed` / `install-cli` 未在网页端验证（按约定不做适配）。
+
+
 ## 许可证
 
 [MIT](./LICENSE)

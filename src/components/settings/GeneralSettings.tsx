@@ -1,8 +1,10 @@
 import { useState, useEffect, useCallback } from 'react'
 import type { FC } from 'react'
-import { Settings, CheckCircle2, AlertCircle, Loader2, Terminal, RefreshCw, FileText } from 'lucide-react'
+import { Settings, CheckCircle2, AlertCircle, Loader2, Terminal, RefreshCw, FileText, Globe, Copy } from 'lucide-react'
 import { Button } from '../ui/Button'
+import { Switch } from '../ui/Switch'
 import { useToastStore } from '../../stores/toastStore'
+import { useProjectStore } from '../../stores/projectStore'
 
 interface CliCheckResult {
   installed: boolean
@@ -92,6 +94,56 @@ description: Ocean CLI 工具。通过 ocean 命令完成完整的自循环：�
 
 export const GeneralSettings: FC = () => {
   const { addToast } = useToastStore()
+  const { currentProject } = useProjectStore()
+  // 网页端子进程内没有桌面主进程可托管，浏览器里不显示该开关
+  const isWebMode = !!(window as unknown as { __OCEAN_WEB__?: boolean }).__OCEAN_WEB__
+  const [webEnabled, setWebEnabled] = useState(false)
+  const [webRunning, setWebRunning] = useState(false)
+  const [webBusy, setWebBusy] = useState(false)
+
+  const refreshWebStatus = useCallback(async () => {
+    const st = await window.electronAPI?.webServerStatus?.()
+    setWebRunning(!!st?.running)
+  }, [])
+
+  useEffect(() => {
+    if (isWebMode) return
+    void refreshWebStatus()
+    void window.electronAPI?.loadGeneralSettings?.().then((r) => {
+      if (r?.success) setWebEnabled(!!r.settings?.webServerEnabled)
+    })
+  }, [isWebMode, refreshWebStatus])
+
+  const toggleWebServer = useCallback(async (on: boolean) => {
+    if (webBusy) return
+    setWebBusy(true)
+    try {
+      if (on) {
+        const r = await window.electronAPI?.webServerStart?.(currentProject?.path || '')
+        if (!r?.success) {
+          addToast(r?.error || '网页端启动失败', 'error')
+          return
+        }
+      } else {
+        await window.electronAPI?.webServerStop?.()
+      }
+      // 持久化到项目级 <项目>/.ocean/setting/general.json（保存 handler 自动创建目录与文件）
+      const cur = await window.electronAPI?.loadGeneralSettings?.()
+      const settings = { ...(cur?.settings ?? {}), webServerEnabled: on }
+      const saved = await window.electronAPI?.saveGeneralSettings?.(settings)
+      if (!saved?.success) {
+        addToast('设置保存失败：' + (saved?.error || ''), 'error')
+        return
+      }
+      setWebEnabled(on)
+      await refreshWebStatus()
+      addToast(on ? '网页端已启动' : '网页端已停止', 'success')
+    } finally {
+      setWebBusy(false)
+    }
+  }, [webBusy, currentProject, refreshWebStatus, addToast])
+
+  const webUrl = 'http://127.0.0.1:8787'
   const [cliStatus, setCliStatus] = useState<CliCheckResult | null>(null)
   const [checking, setChecking] = useState(false)
   const [installing, setInstalling] = useState(false)
@@ -325,6 +377,50 @@ export const GeneralSettings: FC = () => {
               </Button>
             </div>
           </div>
+
+          {/* 网页端访问 */}
+          {!isWebMode && (
+            <div className="p-4 rounded-lg border border-gray-100">
+              <div className="flex items-center gap-2 mb-1">
+                <Globe size={14} className="text-macos-text-secondary" strokeWidth={1.5} />
+                <div className="text-sm font-medium text-macos-text">网页端访问</div>
+                <div className="ml-auto">
+                  <Switch checked={webEnabled} onChange={(v) => void toggleWebServer(v)} disabled={webBusy} size="sm" />
+                </div>
+              </div>
+              <div className="text-xs text-macos-text-tertiary mb-3">
+                在本机浏览器中使用 Ocean，与桌面端共享项目数据；开启后桌面端启动时将自动拉起
+              </div>
+              <div className="flex items-center gap-2 text-xs">
+                {webBusy ? (
+                  <>
+                    <Loader2 size={14} className="animate-spin text-macos-text-tertiary" />
+                    <span className="text-macos-text-tertiary">处理中...</span>
+                  </>
+                ) : webRunning ? (
+                  <>
+                    <CheckCircle2 size={14} className="text-green-500" />
+                    <span className="text-macos-text">运行中</span>
+                    <button
+                      className="px-2 py-0.5 bg-gray-50 rounded font-mono text-macos-text-secondary hover:bg-gray-100 flex items-center gap-1"
+                      onClick={() => {
+                        void navigator.clipboard?.writeText(webUrl)
+                        addToast('已复制地址', 'success')
+                      }}
+                    >
+                      {webUrl}
+                      <Copy size={11} />
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <AlertCircle size={14} className="text-macos-text-tertiary" />
+                    <span className="text-macos-text-tertiary">已停止</span>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
