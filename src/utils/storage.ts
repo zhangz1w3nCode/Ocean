@@ -1,6 +1,6 @@
 // Electron 本地存储工具
 
-import type { AppConfig, KnowledgeGraphConfig, AgenticConfig, AgenticToolConfig, Usage, AgentLoopEvent, AssetRoot } from '../types'
+import type { AppConfig, KnowledgeGraphConfig, AgenticConfig, AgenticToolConfig, JevConfig, Usage, AgentLoopEvent, AssetRoot } from '../types'
 import { generateWorkflowMdContent } from './workflow-generator'
 import { updateCachedAssetRoot } from './asset-config'
 import { parse, stringify, Document, isMap, isScalar, isSeq } from 'yaml'
@@ -114,6 +114,9 @@ declare global {
       // Agentic 配置文件 API
       saveAgenticConfig: (config: any) => Promise<{ success: boolean; error?: string }>
       loadAgenticConfig: () => Promise<{ success: boolean; config: any; error?: string }>
+      // Jev 配置文件 API
+      saveJevConfig: (config: any) => Promise<{ success: boolean; error?: string }>
+      loadJevConfig: () => Promise<{ success: boolean; config: any; error?: string }>
       // Agentic 工具执行 API
       executeAgenticTool: (params: {
         type: 'read' | 'write' | 'edit' | 'bash'
@@ -3623,6 +3626,83 @@ export const getDefaultAgenticConfig = (): AgenticConfig => {
     maxIterations: 10,
     timeout: 60,
     updatedAt: new Date().toISOString()
+  }
+}
+
+// ===== Jev 配置存储方法 =====
+
+const JEV_STORAGE_KEY = 'jev-config'
+const JEV_DEFAULT_BASE_URL = 'https://api.typesafe.ai'
+
+export const getDefaultJevConfig = (): JevConfig => {
+  return {
+    baseUrl: JEV_DEFAULT_BASE_URL,
+    apiKey: '',
+    validation: {
+      enabled: false,
+      threshold: 0.7,
+      timeoutMs: 5000
+    },
+    updatedAt: new Date().toISOString()
+  }
+}
+
+const normalizeJevConfig = (parsed: any): JevConfig => {
+  const base = getDefaultJevConfig()
+  const v = parsed?.validation ?? {}
+  return {
+    baseUrl: typeof parsed?.baseUrl === 'string' && parsed.baseUrl.trim() !== '' ? parsed.baseUrl : base.baseUrl,
+    apiKey: typeof parsed?.apiKey === 'string' ? parsed.apiKey : '',
+    validation: {
+      enabled: v.enabled === true,
+      threshold: typeof v.threshold === 'number' && v.threshold > 0 && v.threshold <= 1 ? v.threshold : 0.7,
+      timeoutMs: typeof v.timeoutMs === 'number' && v.timeoutMs > 0 ? v.timeoutMs : 5000
+    },
+    updatedAt: typeof parsed?.updatedAt === 'string' ? parsed.updatedAt : new Date().toISOString()
+  }
+}
+
+/**
+ * 保存 Jev 配置（Electron: .ocean/jev-config.json；浏览器: localStorage）
+ */
+export const saveJevConfig = async (config: JevConfig): Promise<boolean> => {
+  try {
+    if (isElectron() && window.electronAPI?.saveJevConfig) {
+      const result = await window.electronAPI.saveJevConfig(config)
+      if (result.success) {
+        return true
+      }
+      console.error('保存 Jev 配置失败:', result.error)
+      return false
+    }
+    localStorage.setItem(JEV_STORAGE_KEY, JSON.stringify(config))
+    return true
+  } catch (error) {
+    console.error('保存 Jev 配置失败:', error)
+    return false
+  }
+}
+
+/**
+ * 加载 Jev 配置，不存在或异常时返回默认配置
+ */
+export const loadJevConfig = async (): Promise<JevConfig> => {
+  try {
+    if (isElectron() && window.electronAPI?.loadJevConfig) {
+      const result = await window.electronAPI.loadJevConfig()
+      if (result.success && result.config) {
+        return normalizeJevConfig(result.config)
+      }
+      return getDefaultJevConfig()
+    }
+    const stored = localStorage.getItem(JEV_STORAGE_KEY)
+    if (!stored) {
+      return getDefaultJevConfig()
+    }
+    return normalizeJevConfig(JSON.parse(stored))
+  } catch (error) {
+    console.error('加载 Jev 配置失败:', error)
+    return getDefaultJevConfig()
   }
 }
 

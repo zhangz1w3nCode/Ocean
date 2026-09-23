@@ -9,8 +9,9 @@ import {
   serializeStatus, statusAsStr, formatLocalTime, defaultLimits,
   sortedJsonStringifyCompact, serializeProcessStateJson,
 } from './state'
-import { writeDetail, writeError, hasDetail } from './artifact'
+import { writeDetail, writeError, hasDetail, getLatestVersion, readContentAtVersion } from './artifact'
 import { checkStepLimit, checkLoopLimit, checkRetryLimit } from './limits'
+import { loadJevConfig, checkArtifactCompliance, JevUnavailableError, JevComplianceResult } from './jev'
 
 // ---------------------------------------------------------------------------
 // Private helpers
@@ -25,11 +26,21 @@ function loadFlow(root: string, workflow: string): Flow {
   return fromFile(filePath)
 }
 
+function readLatestDetail(
+  root: string, workflow: string, instanceId: string, nodeName: string, invoke: string,
+): string | null {
+  const latest = getLatestVersion(root, workflow, instanceId, nodeName, invoke)
+  if (latest === 0) return null
+  const raw = readContentAtVersion(root, workflow, instanceId, nodeName, invoke, `v${latest}`)
+  if (!raw) return null
+  return raw[0] === 'detail' ? raw[1] : null
+}
+
 // ---------------------------------------------------------------------------
 // next
 // ---------------------------------------------------------------------------
 
-export function next(root: string, workflow: string, instanceId: string, json: boolean): string {
+export async function next(root: string, workflow: string, instanceId: string, json: boolean): Promise<string> {
   const instDir = instanceDir(root, workflow, instanceId)
   const pf = ProcessFile.read(path.join(instDir, 'process.md'))
 
@@ -47,6 +58,40 @@ export function next(root: string, workflow: string, instanceId: string, json: b
   if (lastNode && lastInvoke) {
     if (!hasDetail(root, workflow, instanceId, lastNode, lastInvoke)) {
       throw new Error(`节点 ${lastNode} (${lastInvoke}) 未写入产物，请补写后再 next`)
+    }
+
+    // Jev 产物符合性校验（增强，可降级）：判断上一节点产物是否按照节点内容执行。
+    // 存在性判断由上方 hasDetail 完成；Jev 不可用时退回存在性检查，不阻断推进。
+    const jev = loadJevConfig(root)
+    if (jev && jev.validation.enabled && jev.apiKey.trim()) {
+      const lastNodeObj = flow.nodes.find((n) => n.data.label === lastNode)
+      const isTaskNode = lastNodeObj != null && (
+        lastNodeObj.type === 'business' || lastNodeObj.type === 'process' || lastNodeObj.type === 'local'
+      )
+      if (isTaskNode && lastNodeObj != null) {
+        const artifactContent = readLatestDetail(root, workflow, instanceId, lastNode, lastInvoke)
+        if (artifactContent != null) {
+          const nodeTask = readNodeMd(root, lastNodeObj)
+          let compliance: JevComplianceResult | null = null
+          try {
+            compliance = await checkArtifactCompliance(jev, nodeTask, artifactContent)
+          } catch (e) {
+            if (e instanceof JevUnavailableError) {
+              process.stderr.write(`[Jev] 产物符合性校验不可用（${e.message}），已退回存在性检查\n`)
+            } else {
+              throw e
+            }
+          }
+          if (compliance && compliance.noul < jev.validation.threshold) {
+            throw new Error(
+              `节点「${lastNode}」的产物未按照节点内容执行（Jev 判定概率 ${compliance.noul.toFixed(2)} < 阈值 ${jev.validation.threshold.toFixed(2)}）\n` +
+              `请按节点要求补正产物后重试:\n` +
+              `  ocean artifact update --instance ${instanceId} --node ${lastNode} --invoke ${lastInvoke} --output <产物内容>\n` +
+              `（更新产生新版本，可用 ocean artifact diff 查看变更）`,
+            )
+          }
+        }
+      }
     }
   }
 

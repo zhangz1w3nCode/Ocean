@@ -4,6 +4,7 @@ import { useSettingsStore } from '../stores/settingsStore'
 import { SettingsSidebar } from '../components/settings/SettingsSidebar'
 import { LLMSettings } from './LLMSettings'
 import { AgenticSettings } from '../components/settings/AgenticSettings'
+import { JevSettings } from '../components/settings/JevSettings'
 import { SkillSettings } from '../components/settings/SkillSettings'
 import { KnowledgeSettings } from '../components/settings/KnowledgeSettings'
 import { AssetSourceSettings } from '../components/settings/AssetSourceSettings'
@@ -26,6 +27,8 @@ export const SettingsPage: FC = () => {
         return <LLMSettings />
       case 'agentic':
         return <AgenticSettings />
+      case 'jev':
+        return <JevSettings />
       case 'skill':
         return <SkillSettings />
       case 'knowledge':

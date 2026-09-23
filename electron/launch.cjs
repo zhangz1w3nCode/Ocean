@@ -2264,6 +2264,63 @@ ipcMain.handle('load-agentic-config', async () => {
   }
 })
 
+// ===== Jev 配置文件 IPC =====
+
+/**
+ * 获取 Jev 配置文件路径
+ */
+const getJevConfigPath = () => {
+  try {
+    const projectRoot = getProjectRoot()
+    if (!projectRoot) {
+      throw new Error('项目路径未设置')
+    }
+    const oceanDir = path.join(projectRoot, '.ocean')
+    if (!fs.existsSync(oceanDir)) {
+      fs.mkdirSync(oceanDir, { recursive: true })
+    }
+    return path.join(oceanDir, 'jev-config.json')
+  } catch (error) {
+    console.error('获取 Jev 配置路径失败:', error)
+    throw error
+  }
+}
+
+/**
+ * 保存 Jev 配置到文件
+ */
+ipcMain.handle('save-jev-config', async (_, config) => {
+  try {
+    const configPath = getJevConfigPath()
+    fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf-8')
+    console.log('✅ Jev 配置已保存到:', configPath)
+    return { success: true }
+  } catch (error) {
+    console.error('❌ 保存 Jev 配置失败:', error)
+    return { success: false, error: error.message || String(error) }
+  }
+})
+
+/**
+ * 加载 Jev 配置文件
+ */
+ipcMain.handle('load-jev-config', async () => {
+  try {
+    const configPath = getJevConfigPath()
+    if (!fs.existsSync(configPath)) {
+      console.log('Jev 配置文件不存在,返回空配置')
+      return { success: true, config: null }
+    }
+    const content = fs.readFileSync(configPath, 'utf-8')
+    const config = JSON.parse(content)
+    console.log('✅ Jev 配置已加载')
+    return { success: true, config }
+  } catch (error) {
+    console.error('❌ 加载 Jev 配置失败:', error)
+    return { success: false, error: error.message || String(error), config: null }
+  }
+})
+
 // ========== Agentic 工具执行 ==========
 
 // 自研工具加载
