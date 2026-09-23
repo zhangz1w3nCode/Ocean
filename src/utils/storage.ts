@@ -117,6 +117,7 @@ declare global {
       // Jev 配置文件 API
       saveJevConfig: (config: any) => Promise<{ success: boolean; error?: string }>
       loadJevConfig: () => Promise<{ success: boolean; config: any; error?: string }>
+      testJevConnection: (config: { baseUrl: string; apiKey: string }) => Promise<{ success: boolean; elapsedMs?: number; error?: string }>
       // Agentic 工具执行 API
       executeAgenticTool: (params: {
         type: 'read' | 'write' | 'edit' | 'bash'
@@ -3704,6 +3705,16 @@ export const loadJevConfig = async (): Promise<JevConfig> => {
     console.error('加载 Jev 配置失败:', error)
     return getDefaultJevConfig()
   }
+}
+
+/**
+ * 测试 Jev 连接（需 Electron 桌面端，浏览器直接请求会被 CORS 拦截）
+ */
+export const testJevConnection = async (config: { baseUrl: string; apiKey: string }): Promise<{ success: boolean; elapsedMs?: number; error?: string }> => {
+  if (isElectron() && window.electronAPI?.testJevConnection) {
+    return window.electronAPI.testJevConnection(config)
+  }
+  return { success: false, error: '测试连接需要桌面端环境' }
 }
 
 // ===== 技能文件存储方法 =====

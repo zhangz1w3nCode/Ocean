@@ -1,15 +1,17 @@
 import type { FC } from 'react'
 import { useState, useEffect } from 'react'
-import { Link, KeyRound, Save } from 'lucide-react'
+import { Link, KeyRound, Save, PlugZap } from 'lucide-react'
 import { useToastStore } from '../../stores/toastStore'
 import { Button, Input } from '../ui'
 import type { JevConfig } from '../../types'
-import { loadJevConfig, saveJevConfig } from '../../utils/storage'
+import { loadJevConfig, saveJevConfig, testJevConnection } from '../../utils/storage'
 
 export const JevSettings: FC = () => {
   const { addToast } = useToastStore()
   const [config, setConfig] = useState<JevConfig | null>(null)
   const [saving, setSaving] = useState(false)
+  const [testing, setTesting] = useState(false)
+  const [invalidFields, setInvalidFields] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     loadJevConfig().then(setConfig)
@@ -23,7 +25,46 @@ export const JevSettings: FC = () => {
     )
   }
 
+  const validateFields = (): boolean => {
+    if (!config) return false
+    const invalid = new Set<string>()
+    if (!config.baseUrl.trim()) invalid.add('baseUrl')
+    if (!config.apiKey.trim()) invalid.add('apiKey')
+    if (invalid.size > 0) {
+      setInvalidFields(invalid)
+      return false
+    }
+    setInvalidFields(new Set())
+    return true
+  }
+
+  const handleTest = async () => {
+    if (!config || testing) return
+    if (!validateFields()) {
+      addToast('请填写 API 地址与 API Key 后再测试', 'error')
+      return
+    }
+    setTesting(true)
+    try {
+      const result = await testJevConnection({ baseUrl: config.baseUrl, apiKey: config.apiKey })
+      if (result.success) {
+        addToast(`连接成功（${result.elapsedMs ?? '?'}ms）`, 'success')
+      } else {
+        addToast(`连接失败：${result.error ?? '未知错误'}`, 'error')
+      }
+    } catch (error) {
+      addToast(`连接失败：${error instanceof Error ? error.message : String(error)}`, 'error')
+    } finally {
+      setTesting(false)
+    }
+  }
+
   const handleSave = async () => {
+    if (!config) return
+    if (!validateFields()) {
+      addToast('请填写 API 地址与 API Key 后再保存', 'error')
+      return
+    }
     setSaving(true)
     try {
       const next: JevConfig = {
@@ -66,8 +107,12 @@ export const JevSettings: FC = () => {
           </label>
           <Input
             value={config.baseUrl}
-            onChange={(e) => setConfig({ ...config, baseUrl: e.target.value })}
+            onChange={(e) => {
+              setConfig({ ...config, baseUrl: e.target.value })
+              if (invalidFields.size > 0) setInvalidFields(new Set())
+            }}
             placeholder="https://api.typesafe.ai"
+            invalid={invalidFields.has('baseUrl')}
           />
         </div>
 
@@ -80,21 +125,36 @@ export const JevSettings: FC = () => {
           <Input
             type="password"
             value={config.apiKey}
-            onChange={(e) => setConfig({ ...config, apiKey: e.target.value })}
+            onChange={(e) => {
+              setConfig({ ...config, apiKey: e.target.value })
+              if (invalidFields.size > 0) setInvalidFields(new Set())
+            }}
             placeholder="TypeSafe API Key"
+            invalid={invalidFields.has('apiKey')}
           />
           <div className="mt-1.5 text-xs text-macos-text-tertiary">
             配置存储在项目目录 .ocean/jev-config.json，仅本机使用
           </div>
         </div>
 
-        {/* 保存 */}
-        <div className="flex justify-end">
+        {/* 操作 */}
+        <div className="flex justify-end gap-2">
           <Button
-            variant="primary"
+            variant="outline"
+            size="md"
+            onClick={handleTest}
+            disabled={testing || saving}
+          >
+            <div className="flex items-center gap-1.5">
+              <PlugZap size={14} />
+              {testing ? '测试中...' : '测试连接'}
+            </div>
+          </Button>
+          <Button
+            variant="outline"
             size="md"
             onClick={handleSave}
-            disabled={saving}
+            disabled={saving || testing}
           >
             <div className="flex items-center gap-1.5">
               <Save size={14} />

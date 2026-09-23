@@ -2321,6 +2321,50 @@ ipcMain.handle('load-jev-config', async () => {
   }
 })
 
+/**
+ * 测试 Jev 连接（发最小 Noul 请求验证地址与鉴权）
+ */
+ipcMain.handle('test-jev-connection', async (_, config) => {
+  try {
+    const baseUrl = String(config?.baseUrl || '').trim().replace(/\/+$/, '') || 'https://api.typesafe.ai'
+    const apiKey = String(config?.apiKey || '').trim()
+    if (!apiKey) {
+      return { success: false, error: 'API Key 不能为空' }
+    }
+    const started = Date.now()
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 5000)
+    let res
+    try {
+      res = await fetch(`${baseUrl}/v1/systemone`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: JSON.stringify({
+          state: 'connection test',
+          questions: { ok: { type: 'noul', instructions: 'Is this a connection test?' } },
+          model: 'jev-latest',
+        }),
+        signal: controller.signal,
+      })
+    } finally {
+      clearTimeout(timer)
+    }
+    const elapsedMs = Date.now() - started
+    if (res.ok) {
+      return { success: true, elapsedMs }
+    }
+    const statusText = res.status === 401 || res.status === 403 ? '鉴权失败，请检查 API Key' : `HTTP ${res.status}`
+    return { success: false, error: statusText, elapsedMs }
+  } catch (error) {
+    const msg = error?.name === 'AbortError' ? '请求超时（5s）' : (error?.message || String(error))
+    return { success: false, error: msg }
+  }
+})
+
 // ========== Agentic 工具执行 ==========
 
 // 自研工具加载

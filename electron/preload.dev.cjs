@@ -126,6 +126,7 @@ const electronAPI = {
   loadAgenticConfig: () => ipcRenderer.invoke('load-agentic-config'),
   saveJevConfig: (config) => ipcRenderer.invoke('save-jev-config', config),
   loadJevConfig: () => ipcRenderer.invoke('load-jev-config'),
+  testJevConnection: (config) => ipcRenderer.invoke('test-jev-connection', config),
   // Agentic 工具执行 API
   executeAgenticTool: (params) => ipcRenderer.invoke('execute-agentic-tool', params),
   // Agent Loop API（真正的 LLM 驱动工具调用）
