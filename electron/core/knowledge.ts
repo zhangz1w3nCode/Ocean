@@ -206,17 +206,19 @@ export function updateDomain(root: string, oldName: string, newName: string): vo
   if (oldDir.startsWith(newDir + path.sep)) throw new Error('新 domain 不能是旧 domain 的父路径')
   fs.mkdirSync(path.dirname(newDir), { recursive: true })
   fs.renameSync(oldDir, newDir)
-  // 刷新受影响知识的 domain 字段（含子目录）
-  refreshDomainFields(d, newDir)
+  // 刷新受影响知识的 domain 字段与子树内部 wikilink（含子目录）
+  refreshDomainFields(d, newDir, oldName, newName)
+  // 重写子树外其他知识中指向旧 domain 的 wikilink
+  rewriteExternalLinks(root, d, newDir, oldName, newName)
 }
 
-function refreshDomainFields(baseDir: string, targetDir: string): void {
+function refreshDomainFields(baseDir: string, targetDir: string, oldName: string, newName: string): void {
   for (const item of fs.readdirSync(targetDir)) {
     if (EXCLUDED_DIRS.has(item) || item.startsWith('.')) continue
     const fullPath = path.join(targetDir, item)
     const stat = fs.statSync(fullPath)
     if (stat.isDirectory()) {
-      refreshDomainFields(baseDir, fullPath)
+      refreshDomainFields(baseDir, fullPath, oldName, newName)
     } else if (item.endsWith('.md')) {
       const raw = fs.readFileSync(fullPath, 'utf-8')
       // 仅改写带合法 frontmatter 的知识文件，非知识 .md 保持原样
@@ -224,8 +226,42 @@ function refreshDomainFields(baseDir: string, targetDir: string): void {
       const fileDomain = path.dirname(path.relative(baseDir, fullPath))
       const { fields, body } = parseFrontmatter(raw)
       fields.domain = fileDomain
-      fs.writeFileSync(fullPath, buildFrontmatter(fields, body), 'utf-8')
+      const newBody = rewriteDomainLinks(body, oldName, newName)
+      fs.writeFileSync(fullPath, buildFrontmatter(fields, newBody), 'utf-8')
     }
+  }
+}
+
+// 重写正文中 wikilink 指向旧 domain 的路径前缀（纯文件名引用不受影响）
+function rewriteDomainLinks(body: string, oldName: string, newName: string): string {
+  const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const prefixRe = new RegExp(`(^|\\/)${esc(oldName)}\\/`)
+  return body.replace(/\[\[([^\]|]+?)(\.(?:md|mdx))?(\|[^\]]+)?\]\]/g, (m, rawTarget: string, ext: string, alias: string) => {
+    const tick = rawTarget.includes('`')
+    const t = rawTarget.trim().replace(/^`+|`+$/g, '')
+    if (!prefixRe.test(t)) return m
+    const replaced = t.replace(prefixRe, (_mm: string, p1: string) => `${p1}${newName}/`)
+    return `[[${tick ? '`' + replaced + '`' : replaced}${ext || ''}${alias || ''}]]`
+  })
+}
+
+// 重写移动子树之外其他知识中指向旧 domain 的 wikilink
+function rewriteExternalLinks(root: string, baseDir: string, movedDir: string, oldName: string, newName: string): void {
+  const movedRel = path.relative(baseDir, movedDir)
+  for (const relPath of list(root)) {
+    if (relPath.startsWith(movedRel + path.sep)) continue
+    const filePath = path.join(baseDir, relPath)
+    let raw: string
+    try {
+      raw = fs.readFileSync(filePath, 'utf-8')
+    } catch {
+      continue
+    }
+    if (!/^---\n[\s\S]*?\n---\n?/.test(raw)) continue
+    const { fields, body } = parseFrontmatter(raw)
+    const newBody = rewriteDomainLinks(body, oldName, newName)
+    if (newBody === body) continue
+    fs.writeFileSync(filePath, buildFrontmatter(fields, newBody), 'utf-8')
   }
 }
 
