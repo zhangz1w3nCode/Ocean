@@ -819,7 +819,8 @@ async function handleWorkflow(root: string, args: ReturnType<typeof parseArgs>):
       const output = typeof args.flags.output === 'string' ? args.flags.output : undefined
       const outputFile = typeof args.flags['output-file'] === 'string' ? args.flags['output-file'] : undefined
       const content = readOutput(output, outputFile)
-      args.flags.json ? printJson({ message: complete(root, wf, id, content) }) : printMarkdownTable(complete(root, wf, id, content))
+      const message = await complete(root, wf, id, content)
+      args.flags.json ? printJson({ message }) : printMarkdownTable(message)
       break
     }
 
