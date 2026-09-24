@@ -9,9 +9,12 @@ import {
   serializeStatus, statusAsStr, formatLocalTime, defaultLimits,
   sortedJsonStringifyCompact, serializeProcessStateJson,
 } from './state'
-import { writeDetail, writeError, hasDetail, getLatestVersion, readContentAtVersion } from './artifact'
+import { writeDetail, writeError, hasDetail } from './artifact'
 import { checkStepLimit, checkLoopLimit, checkRetryLimit } from './limits'
-import { loadJevConfig, checkArtifactCompliance, JevUnavailableError, JevComplianceResult } from './jev'
+import {
+  loadLlmReviewConfig, resolveLlmProvider, checkArtifactWithLLM,
+  LlmReviewUnavailableError, LlmReviewResult,
+} from './llm_review'
 
 // ---------------------------------------------------------------------------
 // Private helpers
@@ -24,16 +27,6 @@ function instanceDir(root: string, workflow: string, instanceId: string): string
 function loadFlow(root: string, workflow: string): Flow {
   const filePath = path.join(root, '.workflows', workflow, 'meta-data', 'flow.json')
   return fromFile(filePath)
-}
-
-function readLatestDetail(
-  root: string, workflow: string, instanceId: string, nodeName: string, invoke: string,
-): string | null {
-  const latest = getLatestVersion(root, workflow, instanceId, nodeName, invoke)
-  if (latest === 0) return null
-  const raw = readContentAtVersion(root, workflow, instanceId, nodeName, invoke, `v${latest}`)
-  if (!raw) return null
-  return raw[0] === 'detail' ? raw[1] : null
 }
 
 // ---------------------------------------------------------------------------
@@ -58,40 +51,6 @@ export async function next(root: string, workflow: string, instanceId: string, j
   if (lastNode && lastInvoke) {
     if (!hasDetail(root, workflow, instanceId, lastNode, lastInvoke)) {
       throw new Error(`节点 ${lastNode} (${lastInvoke}) 未写入产物，请补写后再 next`)
-    }
-
-    // Jev 产物符合性校验（增强，可降级）：判断上一节点产物是否按照节点内容执行。
-    // 存在性判断由上方 hasDetail 完成；Jev 不可用时退回存在性检查，不阻断推进。
-    const jev = loadJevConfig(root)
-    if (jev && jev.validation.enabled && jev.apiKey.trim()) {
-      const lastNodeObj = flow.nodes.find((n) => n.data.label === lastNode)
-      const isTaskNode = lastNodeObj != null && (
-        lastNodeObj.type === 'business' || lastNodeObj.type === 'process' || lastNodeObj.type === 'local'
-      )
-      if (isTaskNode && lastNodeObj != null) {
-        const artifactContent = readLatestDetail(root, workflow, instanceId, lastNode, lastInvoke)
-        if (artifactContent != null) {
-          const nodeTask = readNodeMd(root, lastNodeObj)
-          let compliance: JevComplianceResult | null = null
-          try {
-            compliance = await checkArtifactCompliance(jev, nodeTask, artifactContent)
-          } catch (e) {
-            if (e instanceof JevUnavailableError) {
-              process.stderr.write(`[Jev] 产物符合性校验不可用（${e.message}），已退回存在性检查\n`)
-            } else {
-              throw e
-            }
-          }
-          if (compliance && compliance.noul < jev.validation.threshold) {
-            throw new Error(
-              `节点「${lastNode}」的产物未按照节点内容执行（Jev 判定概率 ${compliance.noul.toFixed(2)} < 阈值 ${jev.validation.threshold.toFixed(2)}）\n` +
-              `请按节点要求补正产物后重试:\n` +
-              `  ocean artifact update --instance ${instanceId} --node ${lastNode} --invoke ${lastInvoke} --output <产物内容>\n` +
-              `（更新产生新版本，可用 ocean artifact diff 查看变更）`,
-            )
-          }
-        }
-      }
     }
   }
 
@@ -120,7 +79,7 @@ export async function next(root: string, workflow: string, instanceId: string, j
 // complete
 // ---------------------------------------------------------------------------
 
-export function complete(root: string, workflow: string, instanceId: string, output: string): string {
+export async function complete(root: string, workflow: string, instanceId: string, output: string): Promise<string> {
   const instDir = instanceDir(root, workflow, instanceId)
   const pf = ProcessFile.read(path.join(instDir, 'process.md'))
 
@@ -135,6 +94,41 @@ export function complete(root: string, workflow: string, instanceId: string, out
   if (output.trim() === '') {
     throw new Error('请通过 --output / --output-file / stdin 提供产物')
   }
+
+  // LLM 智能审核（complete 时写入前把关，严格模式）：
+  // 审核不通过或 LLM 不可用时产物均不写入、状态不推进；
+  // LLM 不可用时报错提示（可关闭审核或修复后重试）。
+  const llmReview = loadLlmReviewConfig(root)
+  const llmProvider = llmReview != null && llmReview.enabled
+    ? resolveLlmProvider(root, llmReview.providerId, llmReview.model)
+    : null
+  if (llmReview != null && llmReview.enabled && llmProvider != null) {
+    const isTaskNode = currentNode.type === 'business' || currentNode.type === 'process' || currentNode.type === 'local'
+    if (isTaskNode) {
+      const nodeTask = readNodeMd(root, currentNode)
+      let review: LlmReviewResult | null = null
+      try {
+        review = await checkArtifactWithLLM(root, llmReview, llmProvider, nodeTask, output)
+      } catch (e) {
+        if (e instanceof LlmReviewUnavailableError) {
+          throw new Error(
+            `写入产物失败：LLM 智能审核不可用（${e.message}）\n` +
+            `请检查模型配置与网络后重试，或在「工作流 → 设置」中关闭 LLM 智能审核`,
+          )
+        } else {
+          throw e
+        }
+      }
+      if (review != null && !review.pass) {
+        const reason = review.reason ? `（LLM 审核：${review.reason}）` : ''
+        throw new Error(
+          `写入产物失败：产物未按照节点内容执行/格式输出${reason}\n` +
+          `请重新按照节点要求执行/输出后再提交`,
+        )
+      }
+    }
+  }
+
   writeDetail(root, workflow, instanceId, pf.state.current_name, pf.state.current_invoke, output)
 
   const name = pf.state.current_name
