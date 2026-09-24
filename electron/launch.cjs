@@ -2404,6 +2404,63 @@ ipcMain.handle('load-agentic-config', async () => {
   }
 })
 
+// ===== LLM 智能审核产物配置文件 IPC =====
+
+/**
+ * 获取 LLM 智能审核配置文件路径
+ */
+const getLlmReviewConfigPath = () => {
+  try {
+    const projectRoot = getProjectRoot()
+    if (!projectRoot) {
+      throw new Error('项目路径未设置')
+    }
+    const oceanDir = path.join(projectRoot, '.ocean')
+    if (!fs.existsSync(oceanDir)) {
+      fs.mkdirSync(oceanDir, { recursive: true })
+    }
+    return path.join(oceanDir, 'cli-workflow-llm-judge-artifacts.json')
+  } catch (error) {
+    console.error('获取 LLM 智能审核配置路径失败:', error)
+    throw error
+  }
+}
+
+/**
+ * 保存 LLM 智能审核配置到文件
+ */
+ipcMain.handle('save-llm-review-config', async (_, config) => {
+  try {
+    const configPath = getLlmReviewConfigPath()
+    fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf-8')
+    console.log('✅ LLM 智能审核配置已保存到:', configPath)
+    return { success: true }
+  } catch (error) {
+    console.error('❌ 保存 LLM 智能审核配置失败:', error)
+    return { success: false, error: error.message || String(error) }
+  }
+})
+
+/**
+ * 加载 LLM 智能审核配置文件
+ */
+ipcMain.handle('load-llm-review-config', async () => {
+  try {
+    const configPath = getLlmReviewConfigPath()
+    if (!fs.existsSync(configPath)) {
+      console.log('LLM 智能审核配置文件不存在,返回空配置')
+      return { success: true, config: null }
+    }
+    const content = fs.readFileSync(configPath, 'utf-8')
+    const config = JSON.parse(content)
+    console.log('✅ LLM 智能审核配置已加载')
+    return { success: true, config }
+  } catch (error) {
+    console.error('❌ 加载 LLM 智能审核配置失败:', error)
+    return { success: false, error: error.message || String(error), config: null }
+  }
+})
+
 // ========== Agentic 工具执行 ==========
 
 // 自研工具加载

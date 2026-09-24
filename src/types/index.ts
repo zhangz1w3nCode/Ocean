@@ -302,6 +302,21 @@ export interface AgenticConfig {
   updatedAt: string          // 更新时间
 }
 
+// LLM 智能审核产物配置（complete 时写入前把关）
+export interface LlmReviewParams {
+  temperature: number        // 温度（默认 0，保证校验确定性）
+  maxTokens: number          // 最大输出 token（默认 1024）
+  timeoutMs: number          // 审核请求超时（毫秒，默认 90000；思考型模型长产物实测 37-44s）
+}
+
+export interface LlmReviewConfig {
+  enabled: boolean           // 是否启用 workflow next 产物智能审核
+  providerId: string         // 引用 llm-config.json 的提供商 id（空则用第一个）
+  model: string              // 模型（空则用提供商默认模型）
+  prompt: string             // 审核提示词模板，占位符 {{node_task}} {{artifact}}
+  params: LlmReviewParams
+}
+
 // ========== Agent Loop 类型定义 ==========
 
 // Agent Loop 事件类型

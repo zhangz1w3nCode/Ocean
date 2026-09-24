@@ -1,6 +1,6 @@
 // Electron 本地存储工具
 
-import type { AppConfig, KnowledgeGraphConfig, AgenticConfig, AgenticToolConfig, Usage, AgentLoopEvent, AssetRoot } from '../types'
+import type { AppConfig, KnowledgeGraphConfig, AgenticConfig, AgenticToolConfig, LlmReviewConfig, Usage, AgentLoopEvent, AssetRoot } from '../types'
 import { generateWorkflowMdContent } from './workflow-generator'
 import { updateCachedAssetRoot } from './asset-config'
 import { parse, stringify, Document, isMap, isScalar, isSeq } from 'yaml'
@@ -126,6 +126,9 @@ declare global {
       // Agentic 配置文件 API
       saveAgenticConfig: (config: any) => Promise<{ success: boolean; error?: string }>
       loadAgenticConfig: () => Promise<{ success: boolean; config: any; error?: string }>
+      // LLM 智能审核配置文件 API
+      saveLlmReviewConfig: (config: any) => Promise<{ success: boolean; error?: string }>
+      loadLlmReviewConfig: () => Promise<{ success: boolean; config: any; error?: string }>
       // Agentic 工具执行 API
       executeAgenticTool: (params: {
         type: 'read' | 'write' | 'edit' | 'bash'
@@ -3695,6 +3698,94 @@ export const getDefaultAgenticConfig = (): AgenticConfig => {
     maxIterations: 10,
     timeout: 60,
     updatedAt: new Date().toISOString()
+  }
+}
+
+// ===== LLM 智能审核产物配置存储方法 =====
+
+const LLM_REVIEW_STORAGE_KEY = 'cli-workflow-llm-judge-artifacts'
+
+// 与 electron/core/llm_review.ts 的 DEFAULT_LLM_REVIEW_PROMPT 保持一致。
+// 输出格式约束由 CLI 侧固定拼接（对用户隐藏），用户提示词仅承载判断指令。
+export const DEFAULT_LLM_REVIEW_PROMPT = `你是产物符合性校验判断器。给定「节点任务内容」和「产物内容」，判断产物是否按照节点任务的要求完成——即产物是否兑现了节点任务声明要完成的事项，而非占位、空白、敷衍或无关内容。逐项核对节点任务声明的输出要求（清单/表格/数据/路径/结论等要素）是否在产物中真实出现。
+
+## 节点任务
+{{node_task}}
+
+## 产物
+{{artifact}}`
+
+export const getDefaultLlmReviewConfig = (): LlmReviewConfig => {
+  return {
+    enabled: false,
+    providerId: '',
+    model: '',
+    prompt: DEFAULT_LLM_REVIEW_PROMPT,
+    params: {
+      temperature: 0,
+      maxTokens: 1024,
+      timeoutMs: 90000
+    }
+  }
+}
+
+const normalizeLlmReviewConfig = (parsed: any): LlmReviewConfig => {
+  const base = getDefaultLlmReviewConfig()
+  const params = parsed?.params ?? {}
+  return {
+    enabled: parsed?.enabled === true,
+    providerId: typeof parsed?.providerId === 'string' ? parsed.providerId : '',
+    model: typeof parsed?.model === 'string' ? parsed.model : '',
+    prompt: typeof parsed?.prompt === 'string' && parsed.prompt.trim() !== '' ? parsed.prompt : base.prompt,
+    params: {
+      temperature: typeof params.temperature === 'number' ? params.temperature : 0,
+      maxTokens: typeof params.maxTokens === 'number' && params.maxTokens > 0 ? params.maxTokens : 1024,
+      timeoutMs: typeof params.timeoutMs === 'number' && params.timeoutMs > 0 ? params.timeoutMs : 90000
+    }
+  }
+}
+
+/**
+ * 保存 LLM 智能审核配置（Electron: .ocean/cli-workflow-llm-judge-artifacts.json；浏览器: localStorage）
+ */
+export const saveLlmReviewConfig = async (config: LlmReviewConfig): Promise<boolean> => {
+  try {
+    if (isElectron() && window.electronAPI?.saveLlmReviewConfig) {
+      const result = await window.electronAPI.saveLlmReviewConfig(config)
+      if (result.success) {
+        return true
+      }
+      console.error('保存 LLM 智能审核配置失败:', result.error)
+      return false
+    }
+    localStorage.setItem(LLM_REVIEW_STORAGE_KEY, JSON.stringify(config))
+    return true
+  } catch (error) {
+    console.error('保存 LLM 智能审核配置失败:', error)
+    return false
+  }
+}
+
+/**
+ * 加载 LLM 智能审核配置，不存在或异常时返回默认配置
+ */
+export const loadLlmReviewConfig = async (): Promise<LlmReviewConfig> => {
+  try {
+    if (isElectron() && window.electronAPI?.loadLlmReviewConfig) {
+      const result = await window.electronAPI.loadLlmReviewConfig()
+      if (result.success && result.config) {
+        return normalizeLlmReviewConfig(result.config)
+      }
+      return getDefaultLlmReviewConfig()
+    }
+    const stored = localStorage.getItem(LLM_REVIEW_STORAGE_KEY)
+    if (!stored) {
+      return getDefaultLlmReviewConfig()
+    }
+    return normalizeLlmReviewConfig(JSON.parse(stored))
+  } catch (error) {
+    console.error('加载 LLM 智能审核配置失败:', error)
+    return getDefaultLlmReviewConfig()
   }
 }
 

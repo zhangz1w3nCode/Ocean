@@ -11,6 +11,10 @@ import {
 } from './state'
 import { writeDetail, writeError, hasDetail } from './artifact'
 import { checkStepLimit, checkLoopLimit, checkRetryLimit } from './limits'
+import {
+  loadLlmReviewConfig, resolveLlmProvider, checkArtifactWithLLM,
+  LlmReviewUnavailableError, LlmReviewResult,
+} from './llm_review'
 
 // ---------------------------------------------------------------------------
 // Private helpers
@@ -29,7 +33,7 @@ function loadFlow(root: string, workflow: string): Flow {
 // next
 // ---------------------------------------------------------------------------
 
-export function next(root: string, workflow: string, instanceId: string, json: boolean): string {
+export async function next(root: string, workflow: string, instanceId: string, json: boolean): Promise<string> {
   const instDir = instanceDir(root, workflow, instanceId)
   const pf = ProcessFile.read(path.join(instDir, 'process.md'))
 
@@ -75,7 +79,7 @@ export function next(root: string, workflow: string, instanceId: string, json: b
 // complete
 // ---------------------------------------------------------------------------
 
-export function complete(root: string, workflow: string, instanceId: string, output: string): string {
+export async function complete(root: string, workflow: string, instanceId: string, output: string): Promise<string> {
   const instDir = instanceDir(root, workflow, instanceId)
   const pf = ProcessFile.read(path.join(instDir, 'process.md'))
 
@@ -90,6 +94,41 @@ export function complete(root: string, workflow: string, instanceId: string, out
   if (output.trim() === '') {
     throw new Error('请通过 --output / --output-file / stdin 提供产物')
   }
+
+  // LLM 智能审核（complete 时写入前把关，严格模式）：
+  // 审核不通过或 LLM 不可用时产物均不写入、状态不推进；
+  // LLM 不可用时报错提示（可关闭审核或修复后重试）。
+  const llmReview = loadLlmReviewConfig(root)
+  const llmProvider = llmReview != null && llmReview.enabled
+    ? resolveLlmProvider(root, llmReview.providerId, llmReview.model)
+    : null
+  if (llmReview != null && llmReview.enabled && llmProvider != null) {
+    const isTaskNode = currentNode.type === 'business' || currentNode.type === 'process' || currentNode.type === 'local'
+    if (isTaskNode) {
+      const nodeTask = readNodeMd(root, currentNode)
+      let review: LlmReviewResult | null = null
+      try {
+        review = await checkArtifactWithLLM(root, llmReview, llmProvider, nodeTask, output)
+      } catch (e) {
+        if (e instanceof LlmReviewUnavailableError) {
+          throw new Error(
+            `写入产物失败：LLM 智能审核不可用（${e.message}）\n` +
+            `请检查模型配置与网络后重试，或在「工作流 → 设置」中关闭 LLM 智能审核`,
+          )
+        } else {
+          throw e
+        }
+      }
+      if (review != null && !review.pass) {
+        const reason = review.reason ? `（LLM 审核：${review.reason}）` : ''
+        throw new Error(
+          `写入产物失败：产物未按照节点内容执行/格式输出${reason}\n` +
+          `请重新按照节点要求执行/输出后再提交`,
+        )
+      }
+    }
+  }
+
   writeDetail(root, workflow, instanceId, pf.state.current_name, pf.state.current_invoke, output)
 
   const name = pf.state.current_name

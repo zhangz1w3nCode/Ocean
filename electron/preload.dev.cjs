@@ -129,6 +129,8 @@ const electronAPI = {
   // Agentic 配置文件 API
   saveAgenticConfig: (config) => ipcRenderer.invoke('save-agentic-config', config),
   loadAgenticConfig: () => ipcRenderer.invoke('load-agentic-config'),
+  saveLlmReviewConfig: (config) => ipcRenderer.invoke('save-llm-review-config', config),
+  loadLlmReviewConfig: () => ipcRenderer.invoke('load-llm-review-config'),
   // Agentic 工具执行 API
   executeAgenticTool: (params) => ipcRenderer.invoke('execute-agentic-tool', params),
   // Agent Loop API（真正的 LLM 驱动工具调用）
