@@ -15,6 +15,40 @@ export interface KnowledgeFolder {
   children: KnowledgeFolder[]
 }
 
+// 知识编译（加工任务）类型
+export interface KnowledgeCompileTask {
+  id: string
+  sourceName: string
+  status: 'pending' | 'processing' | 'done' | 'failed' | 'cancelled'
+  addedAt: number
+  error?: string | null
+  retryCount?: number
+  phase?: string
+  detail?: string
+  cards?: string[]
+  finishedAt?: number
+}
+
+export interface KnowledgeCompileSummary {
+  pending: number
+  processing: number
+  done: number
+  failed: number
+  cancelled: number
+  paused: boolean
+  total: number
+}
+
+export interface KnowledgeCompileEvent {
+  type: 'task-updated' | 'progress' | 'queue-paused' | 'queue-resumed' | 'restored' | 'drained' | 'cleared'
+  task?: KnowledgeCompileTask
+  taskId?: string
+  phase?: string
+  detail?: string
+  reason?: string
+  count?: number
+}
+
 // 知识源文件（.knowledges/.raw 下的原始素材，不参与审核与检索链路）
 export interface KnowledgeRawFile {
   name: string
@@ -80,6 +114,15 @@ declare global {
       listKnowledgeRawFiles: () => Promise<{ success: boolean; files?: KnowledgeRawFile[]; error?: string }>
       saveKnowledgeRawFile: (name: string, bytes: Uint8Array) => Promise<{ success: boolean; savedName?: string; error?: string }>
       loadKnowledgeRawFile: (name: string) => Promise<{ success: boolean; content?: string | null; size?: number; mtime?: string; truncated?: boolean; error?: string }>
+      readKnowledgeSource: (name: string) => Promise<{ success: boolean; content?: string | null; kind?: string; fromCache?: boolean; size?: number; error?: string }>
+      enqueueKnowledgeCompile: (names: string[], llm?: { provider: any; model?: string }) => Promise<{ success: boolean; tasks?: any[]; error?: string }>
+      listCompileTasks: () => Promise<{ success: boolean; tasks?: any[]; summary?: KnowledgeCompileSummary; error?: string }>
+      retryCompileTask: (taskId: string) => Promise<{ success: boolean; error?: string }>
+      cancelCompileTask: (taskId: string) => Promise<{ success: boolean; error?: string }>
+      pauseCompileQueue: () => Promise<{ success: boolean }>
+      resumeCompileQueue: () => Promise<{ success: boolean }>
+      clearCompileTasks: () => Promise<{ success: boolean; removed?: number }>
+      onKnowledgeCompileEvent: (callback: (data: KnowledgeCompileEvent) => void) => () => void
       loadKnowledgeBaseline: (name: string) => Promise<{ success: boolean; content?: string | null; error?: string }>
       knowledgeGitStatus: () => Promise<{ success: boolean; managed?: boolean; branch?: string | null; hasCommits?: boolean; branchError?: string; error?: string }>
       knowledgeGitInit: () => Promise<{ success: boolean; alreadyManaged?: boolean; branch?: string; hasCommits?: boolean; error?: string }>
@@ -120,6 +163,10 @@ declare global {
       installCli: () => Promise<{ success: boolean; path?: string; note?: string; error?: string }>
       // LLM 调用 API
       callLLMApi: (provider: any, prompt: string, model?: string) => Promise<{ success: boolean; content?: string; usage?: Usage; error?: string }>
+      // 流式 LLM 调用（知识编译）：messages 多角色、params 可控、taskId 关联 token 事件与 abort
+      callLLMStreamApi: (payload: { provider: any; messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>; params?: { temperature?: number; maxTokens?: number; topP?: number }; taskId?: string }) => Promise<{ success: boolean; content?: string; usage?: Usage; aborted?: boolean; error?: string }>
+      abortLLMStream: (taskId: string) => Promise<{ success: boolean; error?: string }>
+      onLLMStreamToken: (callback: (data: { taskId: string; token: string }) => void) => () => void
       // LLM 配置文件 API
       saveLLMConfig: (config: any) => Promise<{ success: boolean; error?: string }>
       loadLLMConfig: () => Promise<{ success: boolean; config: any; error?: string }>
@@ -2005,7 +2052,7 @@ export const deleteAgentFileFromLocal = async (name: string): Promise<boolean> =
 const KNOWLEDGE_FILES_KEY = 'flow-editor-knowledge-files'
 
 // 解析知识库 frontmatter（yaml 解析，保留全部字段供合并写回）
-const parseKnowledgeFrontmatter = (content: string): { metadata: Record<string, any>; body: string } => {
+export const parseKnowledgeFrontmatter = (content: string): { metadata: Record<string, any>; body: string } => {
   const frontmatterRegex = /^---\n([\s\S]*?)\n---\n([\s\S]*)$/
   const match = content.match(frontmatterRegex)
 

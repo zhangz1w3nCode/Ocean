@@ -1,5 +1,5 @@
 import type { FC } from 'react'
-import { FileText, File } from 'lucide-react'
+import { FileText, File, Check } from 'lucide-react'
 import { Card } from '../ui/Card'
 import { formatRelativeTime, formatFileSize, fileExtensionOf } from '../../utils/format'
 import type { KnowledgeRawFile } from '../../utils/storage'
@@ -7,14 +7,22 @@ import type { KnowledgeRawFile } from '../../utils/storage'
 interface KnowledgeSourceCardProps {
   file: KnowledgeRawFile
   onClick?: () => void
+  selectMode?: boolean
+  selected?: boolean
+  onToggleSelect?: () => void
 }
 
-export const KnowledgeSourceCard: FC<KnowledgeSourceCardProps> = ({ file, onClick }) => {
+export const KnowledgeSourceCard: FC<KnowledgeSourceCardProps> = ({ file, onClick, selectMode, selected, onToggleSelect }) => {
   const ext = fileExtensionOf(file.name)
   const Icon = ext === 'MD' ? FileText : File
 
   return (
-    <Card className="relative p-0 h-full flex flex-col" onClick={onClick}>
+    <Card
+      className={`relative p-0 h-full flex flex-col cursor-pointer transition-colors ${
+        selectMode && selected ? 'ring-2 ring-blue-400 bg-blue-50/40' : ''
+      }`}
+      onClick={selectMode ? onToggleSelect : onClick}
+    >
       {/* 头部区域 */}
       <div className="px-4 pb-0 pt-4">
         <div className="flex items-start justify-between mb-2 gap-2">
@@ -26,9 +34,20 @@ export const KnowledgeSourceCard: FC<KnowledgeSourceCardProps> = ({ file, onClic
               {file.name}
             </h3>
           </div>
-          <span className="inline-flex items-center px-2 py-0.5 bg-blue-50 text-blue-600 rounded-full text-xs flex-shrink-0">
-            {ext || '未知'}
-          </span>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {selectMode && (
+              <span
+                className={`w-5 h-5 rounded border flex items-center justify-center ${
+                  selected ? 'bg-blue-500 border-blue-500 text-white' : 'border-gray-300 bg-white'
+                }`}
+              >
+                {selected && <Check size={14} />}
+              </span>
+            )}
+            <span className="inline-flex items-center px-2 py-0.5 bg-blue-50 text-blue-600 rounded-full text-xs">
+              {ext || '未知'}
+            </span>
+          </div>
         </div>
 
         {/* 元信息区域 */}

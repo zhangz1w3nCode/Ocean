@@ -9,6 +9,7 @@ import { KnowledgeCatalogPage } from '../../pages/KnowledgeCatalogPage'
 import { KnowledgeSettingsPage } from '../../pages/KnowledgeSettingsPage'
 import { KnowledgeReviewPage } from '../../pages/KnowledgeReviewPage'
 import { KnowledgeSourcePage } from '../../pages/KnowledgeSourcePage'
+import { KnowledgeCompilePage } from '../../pages/KnowledgeCompilePage'
 
 export const KnowledgeLayout: FC = () => {
   const { knowledgeSubPage } = useAppStore()
@@ -38,6 +39,8 @@ export const KnowledgeLayout: FC = () => {
 
   const renderContent = () => {
     switch (knowledgeSubPage) {
+      case 'compile':
+        return <KnowledgeCompilePage />
       case 'source':
         return <KnowledgeSourcePage />
       case 'library':

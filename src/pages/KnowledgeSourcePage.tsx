@@ -1,6 +1,6 @@
 import type { FC } from 'react'
 import { useState, useEffect, useMemo, useCallback } from 'react'
-import { Search, Inbox, Plus } from 'lucide-react'
+import { Search, Plus, Wand2, X, Inbox, Loader2 } from 'lucide-react'
 import {
   KnowledgeSourceCard,
   KnowledgeSourceUploadModal,
@@ -14,6 +14,8 @@ import {
   saveKnowledgeRawFileToLocal,
   type KnowledgeRawFile,
 } from '../utils/storage'
+import { useCompileStore } from '../stores/compileStore'
+import { useAppStore } from '../stores/appStore'
 
 // toast 宽度有限，文件名列表过长时截断，避免提示被撑爆
 const summarizeNames = (names: string[]): string => {
@@ -29,6 +31,41 @@ export const KnowledgeSourcePage: FC<{ nested?: boolean }> = ({ nested = false }
   const [uploading, setUploading] = useState(false)
   const [isPreviewOpen, setIsPreviewOpen] = useState(false)
   const [previewFile, setPreviewFile] = useState<KnowledgeRawFile | null>(null)
+  // 编译多选模式
+  const [selectMode, setSelectMode] = useState(false)
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const { enqueue } = useCompileStore()
+  const { setKnowledgeSubPage } = useAppStore()
+  const [submitting, setSubmitting] = useState(false)
+
+  const toggleSelect = (name: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(name)) next.delete(name)
+      else next.add(name)
+      return next
+    })
+  }
+
+  const exitSelectMode = () => {
+    setSelectMode(false)
+    setSelected(new Set())
+  }
+
+  const compileSelected = async () => {
+    if (selected.size === 0 || submitting) return
+    setSubmitting(true)
+    const names = [...selected]
+    const result = await enqueue(names)
+    setSubmitting(false)
+    if (result.success) {
+      addToast(`已入队 ${names.length} 个知识源的编译任务`, 'success')
+      exitSelectMode()
+      setKnowledgeSubPage('compile')
+    } else {
+      addToast(result.error || '入队失败', 'error')
+    }
+  }
 
   const refreshRawFiles = useCallback(async () => {
     setRawFiles(await listKnowledgeRawFilesFromLocal())
@@ -88,6 +125,21 @@ export const KnowledgeSourcePage: FC<{ nested?: boolean }> = ({ nested = false }
       {/* 页面头部 */}
       <div className="h-16 px-6 flex items-center justify-end">
         <div className="flex items-center gap-3">
+          {selectMode && (
+            <>
+              <span className="text-sm text-macos-text-secondary">已选 {selected.size} / {rawFiles.length}</span>
+              <Button
+                variant="outline"
+                onClick={() => setSelected(new Set(visibleFiles.map((f) => f.name)))}
+                className="py-2 text-sm rounded-lg"
+              >
+                全选
+              </Button>
+              <Button variant="outline" onClick={exitSelectMode} className="py-2 text-sm rounded-lg">
+                <X size={16} />
+              </Button>
+            </>
+          )}
           {/* 搜索框 */}
           <div className="relative">
             <Search
@@ -107,6 +159,20 @@ export const KnowledgeSourcePage: FC<{ nested?: boolean }> = ({ nested = false }
             />
           </div>
 
+          {/* 编译入口：进入多选模式 */}
+          {rawFiles.length > 0 && !selectMode && (
+            <Button
+              variant="outline"
+              onClick={() => setSelectMode(true)}
+              className="group bg-[#E5E7EB] border border-gray-300 text-gray-700 hover:bg-gray-200 hover:border-gray-400 rounded-lg py-2 text-sm overflow-hidden"
+            >
+              <Wand2 size={16} className="flex-shrink-0" />
+              <span className="max-w-0 group-hover:max-w-[80px] overflow-hidden whitespace-nowrap transition-[max-width,margin] duration-500 ease-in-out group-hover:ml-1.5">
+                编译知识源
+              </span>
+            </Button>
+          )}
+
           {/* 添加按钮 */}
           <Button
             variant="outline"
@@ -123,6 +189,21 @@ export const KnowledgeSourcePage: FC<{ nested?: boolean }> = ({ nested = false }
 
       {/* 页面内容 */}
       <div className="flex-1 p-6 overflow-y-auto">
+        {selectMode && selected.size > 0 && (
+          <div className="max-w-6xl mx-auto mb-4">
+            <div className="flex items-center justify-between bg-blue-50/60 border border-blue-100 rounded-xl px-4 py-2.5">
+              <span className="text-sm text-blue-700">已选择 {selected.size} 个知识源</span>
+              <Button
+                onClick={() => void compileSelected()}
+                disabled={submitting}
+                className="bg-blue-500 hover:bg-blue-600 text-white rounded-lg py-2 px-4 text-sm"
+              >
+                {submitting ? <Loader2 size={16} className="animate-spin" /> : <Wand2 size={16} />}
+                <span className="ml-1">编译选中（{selected.size}）</span>
+              </Button>
+            </div>
+          </div>
+        )}
         {visibleFiles.length > 0 ? (
           <div className="max-w-6xl mx-auto">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 auto-rows-fr">
@@ -130,6 +211,9 @@ export const KnowledgeSourcePage: FC<{ nested?: boolean }> = ({ nested = false }
                 <KnowledgeSourceCard
                   key={file.name}
                   file={file}
+                  selectMode={selectMode}
+                  selected={selected.has(file.name)}
+                  onToggleSelect={() => toggleSelect(file.name)}
                   onClick={() => {
                     setPreviewFile(file)
                     setIsPreviewOpen(true)

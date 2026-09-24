@@ -20,8 +20,8 @@ const call = (ch: string, ...args: unknown[]) => handlers.get(ch)!(null, ...args
 afterAll(() => { rmSync(tmp, { recursive: true, force: true }) })
 
 describe('handler 注册表', () => {
-  it('launch.cjs 的 87 个 handler 全部注册', () => {
-    expect(handlers.size).toBe(87)
+  it('launch.cjs 的 99 个 handler 全部注册', () => {
+    expect(handlers.size).toBe(99)
     for (const ch of ['set-project-path', 'save-workflow-file', 'run-agent-loop', 'subscribe-instance-detail', 'list-knowledge-raw-files', 'save-knowledge-raw-file', 'load-knowledge-raw-file']) {
       expect(handlers.has(ch)).toBe(true)
     }
@@ -29,7 +29,7 @@ describe('handler 注册表', () => {
 
   it('ready resolve 后 handler 表仍然完整', async () => {
     await ready
-    expect(handlers.size).toBe(87)
+    expect(handlers.size).toBe(99)
   })
 
   it('纯 node 下完成 项目设置→保存→读取 真实落盘回路', async () => {

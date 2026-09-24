@@ -82,6 +82,8 @@ const setProjectPath = (projectPath) => {
   }
   // 迁移数据
   migrateDataDir(projectPath)
+  // 知识编译队列按项目恢复：pending 不自动跑（避免启动即扣费）；切项目时旧 runner 由 epoch 守卫自行退出
+  try { compileQueue.restore() } catch { /* 队列恢复失败不阻塞项目切换 */ }
 }
 
 // 工作流数据存储目录（项目根 .workflows，跨资产来源共享，不随 assetRoot 变化）
@@ -1059,16 +1061,21 @@ const scanDirRecursive = (dir, baseDir = dir, result = []) => {
 }
 
 // 保存知识库文件（Markdown格式，支持子目录路径，如 "backend/api"）
+// 写盘核心抽为 saveKnowledgeContent：save-knowledge-file IPC 与知识编译模块共用同一实现（唯一写入通道）
+const saveKnowledgeContent = (name, content) => {
+  const knowledgesDir = getKnowledgesDir()
+  const filePath = path.join(knowledgesDir, `${name}.md`)
+  // 自动创建中间目录
+  const dirPath = path.dirname(filePath)
+  if (!fs.existsSync(dirPath)) {
+    fs.mkdirSync(dirPath, { recursive: true })
+  }
+  fs.writeFileSync(filePath, content, 'utf-8')
+}
+
 ipcMain.handle('save-knowledge-file', (_, name, content) => {
   try {
-    const knowledgesDir = getKnowledgesDir()
-    const filePath = path.join(knowledgesDir, `${name}.md`)
-    // 自动创建中间目录
-    const dirPath = path.dirname(filePath)
-    if (!fs.existsSync(dirPath)) {
-      fs.mkdirSync(dirPath, { recursive: true })
-    }
-    fs.writeFileSync(filePath, content, 'utf-8')
+    saveKnowledgeContent(name, content)
     return { success: true }
   } catch (error) {
     console.error('保存知识库文件失败:', error)
@@ -1111,7 +1118,7 @@ ipcMain.handle('delete-knowledge-file', (_, name) => {
 // ===== 知识源（.knowledges/.raw 原始素材）文件相关 IPC =====
 
 const KNOWLEDGE_RAW_DIR = '.raw'
-const KNOWLEDGE_RAW_EXTENSIONS = ['.md', '.txt']
+const KNOWLEDGE_RAW_EXTENSIONS = ['.md', '.txt', '.pdf', '.docx']
 
 const getKnowledgeRawDir = () => path.join(getKnowledgesDir(), KNOWLEDGE_RAW_DIR)
 
@@ -1246,6 +1253,171 @@ ipcMain.handle('load-knowledge-raw-file', (_, name) => {
     console.error('读取知识源文件失败:', error)
     return { success: false, error: String(error), content: null }
   }
+})
+
+// 知识编译用全文读取（与预览不同：不能拿截断内容，否则 LLM 会基于半个文档生成知识卡）。
+// md/txt 直读；pdf/docx 经 source-parser 解析为文本，带 .raw/.cache mtime 缓存 + 解析器版本标记。
+const { parseSourceBuffer, readCachedParse, writeCachedParse, SOURCE_SIZE_LIMIT } =
+  require('./core/source-parser.cjs')
+const { streamLLM } = require('./core/llm-stream.cjs')
+
+// 知识源全文读取（编译与预览共用）：md/txt 直读；pdf/docx 经 source-parser 解析（带 .raw/.cache 缓存）
+const readKnowledgeSourceInternal = async (name) => {
+  const fileName = normalizeKnowledgeRawName(name)
+  if (!fileName) {
+    const err = new Error('文件名非法或格式不支持')
+    err.code = 'INVALID_NAME'
+    throw err
+  }
+  const filePath = path.join(getKnowledgeRawDir(), fileName)
+  if (!fs.existsSync(filePath)) throw new Error('知识源文件不存在')
+  const stat = fs.statSync(filePath)
+  if (!stat.isFile()) throw new Error('目标不是文件')
+  if (stat.size > SOURCE_SIZE_LIMIT) {
+    throw new Error(`文件 ${Math.round(stat.size / 1024 / 1024)}MB 超过加工上限 ${Math.round(SOURCE_SIZE_LIMIT / 1024 / 1024)}MB，请先拆分`)
+  }
+  const cacheDir = path.join(getKnowledgeRawDir(), '.cache')
+  const cached = readCachedParse(cacheDir, fileName, stat.mtimeMs)
+  if (cached !== null) return { content: cached, kind: 'cached', fromCache: true, size: stat.size }
+  const buffer = fs.readFileSync(filePath)
+  const { kind, content } = await parseSourceBuffer(fileName, buffer)
+  writeCachedParse(cacheDir, fileName, content)
+  return { content, kind, fromCache: false, size: stat.size }
+}
+
+ipcMain.handle('read-knowledge-source', async (_, name) => {
+  try {
+    return { success: true, ...(await readKnowledgeSourceInternal(name)) }
+  } catch (error) {
+    console.error('读取知识源全文失败:', error)
+    return { success: false, error: String(error), content: null }
+  }
+})
+
+// ===== 知识编译队列（P3）：服务注入 + IPC + 事件推送 =====
+// .ocean 状态文件路径白名单（缓存/队列/告警日志都在 .ocean 内，防路径注入）
+const normalizeOceanStateRel = (rel) => {
+  const value = String(rel == null ? '' : rel)
+  if (!/^[A-Za-z0-9._/-]{1,200}$/.test(value)) return null
+  if (value.includes('..') || value.startsWith('/') || value.endsWith('/')) return null
+  return value
+}
+const getOceanStateDir = () => path.join(getProjectRoot(), '.ocean')
+
+const compileServices = {
+  streamLLM,
+  readSource: async (name) => {
+    const r = await readKnowledgeSourceInternal(name)
+    return { content: r.content, kind: r.kind }
+  },
+  listCards: () => {
+    // 卡索引（喂编译 prompt 的"是否已存在"判断）：相对路径 + name + 卡型 + summary
+    const cards = scanDirRecursive(getKnowledgesDir())
+    const { parseFrontmatter: parseFm } = require('./core/knowledge-ingest/frontmatter.cjs')
+    const out = []
+    for (const rel of cards) {
+      try {
+        const raw = fs.readFileSync(path.join(getKnowledgesDir(), `${rel}.md`), 'utf-8')
+        const { frontmatter } = parseFm(raw)
+        out.push({
+          relPath: rel,
+          name: (frontmatter && frontmatter.name) || rel.split('/').pop(),
+          cardType: frontmatter && frontmatter.type,
+          summary: frontmatter && frontmatter.summary,
+        })
+      } catch { /* 单卡解析失败不阻塞索引 */ }
+    }
+    return out
+  },
+  loadCard: (relPath) => {
+    try {
+      const p = path.join(getKnowledgesDir(), `${relPath}.md`)
+      return fs.existsSync(p) ? fs.readFileSync(p, 'utf-8') : null
+    } catch {
+      return null
+    }
+  },
+  saveCard: (relPath, content) => saveKnowledgeContent(relPath, content),
+  readState: (rel) => {
+    const normalized = normalizeOceanStateRel(rel)
+    if (!normalized) return null
+    const p = path.join(getOceanStateDir(), normalized)
+    try {
+      return fs.existsSync(p) ? fs.readFileSync(p, 'utf-8') : null
+    } catch {
+      return null
+    }
+  },
+  writeState: (rel, content) => {
+    const normalized = normalizeOceanStateRel(rel)
+    if (!normalized) throw new Error(`状态文件路径非法: ${rel}`)
+    const p = path.join(getOceanStateDir(), normalized)
+    fs.mkdirSync(path.dirname(p), { recursive: true })
+    fs.writeFileSync(p, String(content == null ? '' : content), 'utf-8')
+  },
+  fileExists: (cardPathWithMd) => {
+    try {
+      return fs.existsSync(path.join(getKnowledgesDir(), cardPathWithMd))
+    } catch {
+      return false
+    }
+  },
+}
+
+const emitCompileEvent = (type, payload) => {
+  try {
+    mainWindow?.webContents?.send('knowledge-compile-event', { type, ...payload })
+  } catch {
+    // 窗口可能已关闭；推送失败不影响队列
+  }
+}
+
+const { createCompileQueue } = require('./core/compile-queue.cjs')
+const compileQueue = createCompileQueue({ services: compileServices, emit: emitCompileEvent })
+// 队列恢复不在模块加载时执行：此时 currentProjectPath 尚未恢复，getProjectRoot 会回退到 worktree 根，
+// 读错目录导致队列恒空。改在 setProjectPath（项目路径确定/切换）时恢复——语义同 llm_wiki 切项目守卫。
+
+ipcMain.handle('enqueue-knowledge-compile', (_, names, llm) => {
+  try {
+    const list = Array.isArray(names) ? names.filter((n) => typeof n === 'string' && n) : []
+    if (list.length === 0) return { success: false, error: '未提供知识源' }
+    if (llm && llm.provider) compileQueue.setLLM(llm)
+    const tasks = compileQueue.enqueue(list)
+    return { success: true, tasks }
+  } catch (error) {
+    console.error('入队失败:', error)
+    return { success: false, error: String(error) }
+  }
+})
+
+ipcMain.handle('list-compile-tasks', () => {
+  try {
+    return { success: true, tasks: compileQueue.list(), summary: compileQueue.summary() }
+  } catch (error) {
+    return { success: false, error: String(error), tasks: [] }
+  }
+})
+
+ipcMain.handle('retry-compile-task', (_, taskId) => {
+  const ok = compileQueue.retry(String(taskId))
+  return ok ? { success: true } : { success: false, error: '任务不存在或状态不允许重试' }
+})
+
+ipcMain.handle('cancel-compile-task', (_, taskId) => {
+  const ok = compileQueue.cancel(String(taskId))
+  return ok ? { success: true } : { success: false, error: '任务不存在或已完成' }
+})
+
+ipcMain.handle('pause-compile-queue', () => {
+  return { success: compileQueue.pause() }
+})
+
+ipcMain.handle('resume-compile-queue', () => {
+  return { success: compileQueue.resume() }
+})
+
+ipcMain.handle('clear-compile-tasks', () => {
+  return { success: true, removed: compileQueue.clearCompletedAndCancelled() }
 })
 
 // ===== 知识库独立 git 仓库支持（.knowledges 作为独立仓库，与父项目仓库解耦） =====
@@ -2300,6 +2472,49 @@ ipcMain.handle('call-llm-api', async (_, { provider, prompt, model }) => {
       error: error instanceof Error ? error.message : String(error)
     }
   }
+})
+
+/**
+ * 流式 LLM 调用（知识编译两步 CoT 专用）：
+ * - messages 多角色列表（system/user），params（temperature/maxTokens/topP）可控
+ * - SSE 流式解析（openai 兼容 + anthropic 双格式），每个 delta 经 'llm-stream-token' 事件推送
+ *   （webContents.send，web 端由 stub 自动转 SSE）
+ * - 'abort-llm-stream' IPC 可按 taskId 取消（AbortController 表）
+ * 返回结构与 call-llm-api 对齐：{ success, content, usage } / { success:false, error }
+ */
+const llmStreamControllers = new Map()
+let llmStreamSeq = 0
+
+const emitLLMStreamToken = (taskId, token) => {
+  try {
+    mainWindow?.webContents?.send('llm-stream-token', { taskId, token })
+  } catch {
+    // 窗口可能已关闭；推送失败不影响流式解析本身
+  }
+}
+
+ipcMain.handle('abort-llm-stream', (_, taskId) => {
+  const controller = llmStreamControllers.get(String(taskId))
+  if (!controller) return { success: false, error: 'stream not found' }
+  controller.abort()
+  return { success: true }
+})
+
+ipcMain.handle('call-llm-stream-api', async (_, { provider, messages, params, taskId }) => {
+  const callId = String(taskId || `stream-${Date.now()}-${++llmStreamSeq}`)
+  const controller = new AbortController()
+  llmStreamControllers.set(callId, controller)
+  const result = await streamLLM(provider, messages, params, {
+    onToken: (token) => emitLLMStreamToken(callId, token),
+    signal: controller.signal,
+    log: (msg) => console.log(`${msg} taskId=${callId}`),
+  })
+  if (result.success) {
+    console.log(`[llm-stream] done taskId=${callId} chars=${result.content.length}`)
+  } else {
+    console.error(`[llm-stream] ${result.aborted ? 'aborted' : 'failed'} taskId=${callId}:`, result.aborted ? '' : result.error)
+  }
+  return result
 })
 /**
  * 获取 LLM 配置文件路径
