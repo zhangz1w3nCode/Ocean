@@ -86,6 +86,17 @@ export const KnowledgeSettingsPage: FC = () => {
     return () => { cancelled = true }
   }, [])
 
+  // 归一化：providers 就绪后，无效 providerId（不在列表，如历史残留/外部写入）置空——
+  // UI 展示与保存逻辑回落到列表第一个，避免配置静默指向不存在的提供商
+  useEffect(() => {
+    if (llmProviders.length === 0) return
+    setCompileModelConfig((c) =>
+      c.providerId && !llmProviders.some((p) => p.id === c.providerId)
+        ? { ...c, providerId: '' }
+        : c,
+    )
+  }, [llmProviders])
+
   useEffect(() => {
     loadLLMProviders()
   }, [loadLLMProviders])
