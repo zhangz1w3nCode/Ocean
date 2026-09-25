@@ -78,6 +78,29 @@ const electronAPI = {
   loadKnowledgeGitConfig: () => ipcRenderer.invoke('load-knowledge-git-config'),
   saveKnowledgeGitConfig: (config) => ipcRenderer.invoke('save-knowledge-git-config', config),
 
+  // 知识源（.knowledges/.raw 原始素材）文件相关
+  listKnowledgeRawFiles: () => ipcRenderer.invoke('list-knowledge-raw-files'),
+  saveKnowledgeRawFile: (name, bytes) => ipcRenderer.invoke('save-knowledge-raw-file', name, bytes),
+  loadKnowledgeRawFile: (name) => ipcRenderer.invoke('load-knowledge-raw-file', name),
+  // 知识编译用全文读取：md/txt 直读，pdf/docx 解析为文本，带 .raw/.cache 缓存
+  readKnowledgeSource: (name) => ipcRenderer.invoke('read-knowledge-source', name),
+
+  // 知识编译队列（加工任务）
+  enqueueKnowledgeCompile: (names, llm) => ipcRenderer.invoke('enqueue-knowledge-compile', names, llm),
+  listCompileTasks: () => ipcRenderer.invoke('list-compile-tasks'),
+  retryCompileTask: (taskId) => ipcRenderer.invoke('retry-compile-task', taskId),
+  cancelCompileTask: (taskId) => ipcRenderer.invoke('cancel-compile-task', taskId),
+  pauseCompileQueue: () => ipcRenderer.invoke('pause-compile-queue'),
+  resumeCompileQueue: () => ipcRenderer.invoke('resume-compile-queue'),
+  clearCompileTasks: () => ipcRenderer.invoke('clear-compile-tasks'),
+  loadKnowledgeCompileConfig: () => ipcRenderer.invoke('load-knowledge-compile-config'),
+  saveKnowledgeCompileConfig: (config) => ipcRenderer.invoke('save-knowledge-compile-config', config),
+  onKnowledgeCompileEvent: (callback) => {
+    const listener = (_event, data) => callback(data)
+    ipcRenderer.on('knowledge-compile-event', listener)
+    return () => ipcRenderer.removeListener('knowledge-compile-event', listener)
+  },
+
   // 技能文件数据持久化（目录结构，存储在 skills 目录）
   createSkillDirectory: (name, input) => ipcRenderer.invoke('create-skill-directory', name, input),
   saveSkillFile: (name, content) => ipcRenderer.invoke('save-skill-file', name, content),
@@ -118,6 +141,14 @@ const electronAPI = {
   installCli: () => ipcRenderer.invoke('install-cli'),
   // LLM 调用 API (绑过 CORS)
   callLLMApi: (provider, prompt, model) => ipcRenderer.invoke('call-llm-api', { provider, prompt, model }),
+  // 流式 LLM 调用（知识编译两步 CoT 专用）：多消息、参数可控、token 事件推送、可 abort
+  callLLMStreamApi: (payload) => ipcRenderer.invoke('call-llm-stream-api', payload),
+  abortLLMStream: (taskId) => ipcRenderer.invoke('abort-llm-stream', taskId),
+  onLLMStreamToken: (callback) => {
+    const listener = (_event, data) => callback(data)
+    ipcRenderer.on('llm-stream-token', listener)
+    return () => ipcRenderer.removeListener('llm-stream-token', listener)
+  },
   // LLM 配置文件 API
   saveLLMConfig: (config) => ipcRenderer.invoke('save-llm-config', config),
   loadLLMConfig: () => ipcRenderer.invoke('load-llm-config'),

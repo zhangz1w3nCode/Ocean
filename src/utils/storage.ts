@@ -15,6 +15,55 @@ export interface KnowledgeFolder {
   children: KnowledgeFolder[]
 }
 
+// 知识加工独立模型配置（知识-设置 中选择；缺省回退全局 providers 第一个）
+export interface KnowledgeCompileModelConfig {
+  providerId?: string
+  model?: string
+}
+
+// 知识编译（加工任务）类型
+export interface KnowledgeCompileTask {
+  id: string
+  sourceName: string
+  status: 'pending' | 'processing' | 'done' | 'failed' | 'cancelled'
+  addedAt: number
+  error?: string | null
+  retryCount?: number
+  phase?: string
+  detail?: string
+  cards?: string[]
+  finishedAt?: number
+}
+
+export interface KnowledgeCompileSummary {
+  pending: number
+  processing: number
+  done: number
+  failed: number
+  cancelled: number
+  paused: boolean
+  total: number
+}
+
+export interface KnowledgeCompileEvent {
+  type: 'task-updated' | 'progress' | 'queue-paused' | 'queue-resumed' | 'restored' | 'drained' | 'cleared'
+  task?: KnowledgeCompileTask
+  taskId?: string
+  phase?: string
+  detail?: string
+  reason?: string
+  count?: number
+}
+
+// 知识源文件（.knowledges/.raw 下的原始素材，不参与审核与检索链路）
+export interface KnowledgeRawFile {
+  name: string
+  size: number
+  mtime: string
+  // 卡片预览：主进程随列表返回的文件头部片段
+  head?: string
+}
+
 // 声明全局 window.electronAPI
 declare global {
   interface Window {
@@ -68,6 +117,20 @@ declare global {
       deleteKnowledgeFile: (name: string) => Promise<{ success: boolean; error?: string }>
       loadAllKnowledgeFiles: () => Promise<{ success: boolean; files?: string[]; error?: string }>
       listKnowledgeFolders: () => Promise<{ success: boolean; folders?: KnowledgeFolder[]; error?: string }>
+      listKnowledgeRawFiles: () => Promise<{ success: boolean; files?: KnowledgeRawFile[]; error?: string }>
+      saveKnowledgeRawFile: (name: string, bytes: Uint8Array) => Promise<{ success: boolean; savedName?: string; error?: string }>
+      loadKnowledgeRawFile: (name: string) => Promise<{ success: boolean; content?: string | null; size?: number; mtime?: string; truncated?: boolean; error?: string }>
+      readKnowledgeSource: (name: string) => Promise<{ success: boolean; content?: string | null; kind?: string; fromCache?: boolean; size?: number; error?: string }>
+      enqueueKnowledgeCompile: (names: string[], llm?: { provider: any; model?: string }) => Promise<{ success: boolean; tasks?: any[]; error?: string }>
+      listCompileTasks: () => Promise<{ success: boolean; tasks?: any[]; summary?: KnowledgeCompileSummary; error?: string }>
+      retryCompileTask: (taskId: string) => Promise<{ success: boolean; error?: string }>
+      cancelCompileTask: (taskId: string) => Promise<{ success: boolean; error?: string }>
+      pauseCompileQueue: () => Promise<{ success: boolean }>
+      resumeCompileQueue: () => Promise<{ success: boolean }>
+      clearCompileTasks: () => Promise<{ success: boolean; removed?: number }>
+      loadKnowledgeCompileConfig: () => Promise<{ success: boolean; config?: KnowledgeCompileModelConfig | null; error?: string }>
+      saveKnowledgeCompileConfig: (config: KnowledgeCompileModelConfig) => Promise<{ success: boolean; error?: string }>
+      onKnowledgeCompileEvent: (callback: (data: KnowledgeCompileEvent) => void) => () => void
       loadKnowledgeBaseline: (name: string) => Promise<{ success: boolean; content?: string | null; error?: string }>
       knowledgeGitStatus: () => Promise<{ success: boolean; managed?: boolean; branch?: string | null; hasCommits?: boolean; branchError?: string; error?: string }>
       knowledgeGitInit: () => Promise<{ success: boolean; alreadyManaged?: boolean; branch?: string; hasCommits?: boolean; error?: string }>
@@ -108,6 +171,10 @@ declare global {
       installCli: () => Promise<{ success: boolean; path?: string; note?: string; error?: string }>
       // LLM 调用 API
       callLLMApi: (provider: any, prompt: string, model?: string) => Promise<{ success: boolean; content?: string; usage?: Usage; error?: string }>
+      // 流式 LLM 调用（知识编译）：messages 多角色、params 可控、taskId 关联 token 事件与 abort
+      callLLMStreamApi: (payload: { provider: any; messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>; params?: { temperature?: number; maxTokens?: number; topP?: number }; taskId?: string }) => Promise<{ success: boolean; content?: string; usage?: Usage; aborted?: boolean; error?: string }>
+      abortLLMStream: (taskId: string) => Promise<{ success: boolean; error?: string }>
+      onLLMStreamToken: (callback: (data: { taskId: string; token: string }) => void) => () => void
       // LLM 配置文件 API
       saveLLMConfig: (config: any) => Promise<{ success: boolean; error?: string }>
       loadLLMConfig: () => Promise<{ success: boolean; config: any; error?: string }>
@@ -1993,7 +2060,7 @@ export const deleteAgentFileFromLocal = async (name: string): Promise<boolean> =
 const KNOWLEDGE_FILES_KEY = 'flow-editor-knowledge-files'
 
 // 解析知识库 frontmatter（yaml 解析，保留全部字段供合并写回）
-const parseKnowledgeFrontmatter = (content: string): { metadata: Record<string, any>; body: string } => {
+export const parseKnowledgeFrontmatter = (content: string): { metadata: Record<string, any>; body: string } => {
   const frontmatterRegex = /^---\n([\s\S]*?)\n---\n([\s\S]*)$/
   const match = content.match(frontmatterRegex)
 
@@ -2391,6 +2458,66 @@ export const listKnowledgeFoldersFromLocal = async (): Promise<KnowledgeFolder[]
   } catch (error) {
     console.error('获取知识库目录树失败:', error)
     return []
+  }
+}
+
+// ===== 知识源（.knowledges/.raw 原始素材）文件操作 =====
+
+// 列出已导入的知识源文件（按修改时间倒序）
+export const listKnowledgeRawFilesFromLocal = async (): Promise<KnowledgeRawFile[]> => {
+  if (!isElectron()) return []
+  try {
+    const result = await window.electronAPI!.listKnowledgeRawFiles()
+    return result.success && result.files ? result.files : []
+  } catch (error) {
+    console.error('获取知识源文件列表失败:', error)
+    return []
+  }
+}
+
+// 上传知识源文件：字节原样交给主进程落盘，返回实际保存的文件名（同名会自动改名）
+export const saveKnowledgeRawFileToLocal = async (
+  name: string,
+  bytes: Uint8Array,
+): Promise<{ success: boolean; savedName?: string; error?: string }> => {
+  if (!isElectron()) return { success: false, error: '仅在 Electron 环境中可用' }
+  try {
+    return await window.electronAPI!.saveKnowledgeRawFile(name, bytes)
+  } catch (error) {
+    console.error('保存知识源文件失败:', error)
+    return { success: false, error: String(error) }
+  }
+}
+
+export interface KnowledgeSourcePreview {
+  content: string
+  size: number
+  mtime: string
+  truncated: boolean
+}
+
+// 读取知识源文件内容用于预览（与知识卡的 loadKnowledgeRawFile 是两件事：后者读的是可审核知识）
+export const loadKnowledgeSourcePreview = async (
+  name: string,
+): Promise<{ success: boolean; preview?: KnowledgeSourcePreview; error?: string }> => {
+  if (!isElectron()) return { success: false, error: '仅在 Electron 环境中可用' }
+  try {
+    const result = await window.electronAPI!.loadKnowledgeRawFile(name)
+    if (!result.success || typeof result.content !== 'string') {
+      return { success: false, error: result.error || '读取失败' }
+    }
+    return {
+      success: true,
+      preview: {
+        content: result.content,
+        size: result.size ?? 0,
+        mtime: result.mtime ?? '',
+        truncated: result.truncated ?? false,
+      },
+    }
+  } catch (error) {
+    console.error('预览知识源文件失败:', error)
+    return { success: false, error: String(error) }
   }
 }
 
@@ -3521,6 +3648,20 @@ export const resolveKnowledgeGitProvider = async (
   if (!provider) return null
   const finalModel = model || provider.defaultModel || ''
   return { provider, model: finalModel }
+}
+
+/** 读取知识加工独立模型配置（.ocean/knowledge-compile-config.json） */
+export const loadKnowledgeCompileConfig = async (): Promise<KnowledgeCompileModelConfig | null> => {
+  if (!isElectron() || !window.electronAPI?.loadKnowledgeCompileConfig) return null
+  const result = await window.electronAPI.loadKnowledgeCompileConfig()
+  return result.success ? (result.config || null) : null
+}
+
+/** 保存知识加工独立模型配置 */
+export const saveKnowledgeCompileConfig = async (config: KnowledgeCompileModelConfig): Promise<boolean> => {
+  if (!isElectron() || !window.electronAPI?.saveKnowledgeCompileConfig) return false
+  const result = await window.electronAPI.saveKnowledgeCompileConfig(config)
+  return result.success === true
 }
 
 // ===== Agentic 配置存储方法 =====
