@@ -12,7 +12,7 @@
 const crypto = require('node:crypto')
 const { parseFileBlocks } = require('./knowledge-ingest/card-blocks.cjs')
 const { sanitizeIngestedFileContent } = require('./knowledge-ingest/sanitize.cjs')
-const { buildKnowledgeCard, parseKnowledgeCard, mergeUnionArrays, COMPILE_CARD_TYPES, RELATION_VOCABULARY } =
+const { buildKnowledgeCard, parseKnowledgeCard, mergeUnionArrays, validateRelations, COMPILE_CARD_TYPES, RELATION_VOCABULARY } =
   require('./knowledge-frontmatter.cjs')
 
 const CACHE_STATE_FILE = 'knowledge-compile-cache.json'
@@ -240,6 +240,15 @@ function writeCardBlock(services, block, sourceName) {
   if (!incomingFm.name) {
     incomingFm.name = relPath.split('/').pop()
   }
+  // 内容级校验（对齐 llm_wiki validateWikiPageRouting 的丢弃语义）：
+  // 词表外 relation / 非法卡型属"有意的内容级决策"（soft drop）——丢卡 + warning，不进硬失败、不触发任务重试；
+  // hardFailures 仅保留 FS 写盘错误（磁盘满/权限等"意外损失"）
+  const relCheck = validateRelations(incomingFm.relations)
+  if (!relCheck.valid) {
+    const err = new Error(`relations 词表校验失败: ${relCheck.errors.join('; ')}`)
+    err.softDrop = true
+    throw err
+  }
 
   const existing = services.loadCard(relPath)
   let content
@@ -371,9 +380,12 @@ async function compileSource(ctx) {
     try {
       cards.push(writeCardBlock(services, block, sourceName))
     } catch (err) {
-      const msg = `写卡失败 "${block.path}": ${err instanceof Error ? err.message : String(err)}`
+      const softDrop = Boolean(err && err.softDrop)
+      const msg = softDrop
+        ? `Dropped "${block.path}" — ${err instanceof Error ? err.message : String(err)}（内容级校验，参考 llm_wiki soft drop 语义）`
+        : `写卡失败 "${block.path}": ${err instanceof Error ? err.message : String(err)}`
       warnings.push(msg)
-      hardFailures.push(block.path)
+      if (!softDrop) hardFailures.push(block.path)
     }
   }
 
@@ -400,8 +412,13 @@ async function compileSource(ctx) {
         try {
           cards.push(writeCardBlock(services, block, sourceName))
         } catch (err) {
-          warnings.push(`修复写卡失败 "${block.path}": ${err instanceof Error ? err.message : String(err)}`)
-          hardFailures.push(block.path)
+          const softDrop = Boolean(err && err.softDrop)
+          warnings.push(
+            softDrop
+              ? `Dropped "${block.path}" — ${err instanceof Error ? err.message : String(err)}（内容级校验，soft drop）`
+              : `修复写卡失败 "${block.path}": ${err instanceof Error ? err.message : String(err)}`,
+          )
+          if (!softDrop) hardFailures.push(block.path)
         }
       }
       unrecovered = unrecovered.filter(

@@ -182,6 +182,40 @@ describe('compileSource 全链路（假 LLM）', () => {
     expect(result.warnings.join('\n')).toContain('兜底')
   })
 
+  it('词表违规 soft drop：丢卡 + 警告，任务成功不重试（llm_wiki 语义）', async () => {
+    const services = createFakeServices()
+    // 含词表外 relation 的卡（rel "实现"）
+    const badRelCard = [
+      '---',
+      'name: BadRel',
+      'type: entity',
+      'summary: s',
+      'domain: entities',
+      'relations:',
+      '  - to: X',
+      '    rel: 实现',
+      'sources:',
+      '  - path: .knowledges/.raw/demo.md',
+      "    anchor: ''",
+      '    kind: md',
+      '---',
+    ].join('\n')
+    const llm = llmScript([
+      { content: '分析' },
+      { content: FILE_BLOCK('wiki/entities/BadRel.md', badRelCard, 'b') + '\n' + FILE_BLOCK('wiki/sources/demo.md', SOURCE_FM, 'b') },
+    ])
+    services.streamLLM.mockImplementation(llm)
+    const result = await compileSource({ sourceName: 'demo.md', services, llm: {} as any })
+    // 违规卡被丢弃，其余正常
+    expect(result.cards).not.toContain('entities/BadRel')
+    expect(result.cards).toContain('sources/demo')
+    // 任务成功：缓存写入（不触发完整性门/重试）
+    expect(services.states.has('knowledge-compile-cache.json')).toBe(true)
+    // warning 记录了丢弃
+    expect(result.warnings.join('\n')).toContain('Dropped')
+    expect(result.warnings.join('\n')).toContain('词表')
+  })
+
   it('写卡失败触发完整性门：抛错且不写缓存', async () => {
     const services = createFakeServices()
     services.saveCard.mockImplementation((relPath: string) => {
