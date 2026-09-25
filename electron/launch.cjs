@@ -1735,6 +1735,33 @@ ipcMain.handle('save-knowledge-git-config', (_, config) => {
   }
 })
 
+// 知识加工独立模型配置（provider/model 二选一存储，无开关；缺省回退全局 providers 第一个）
+ipcMain.handle('load-knowledge-compile-config', () => {
+  try {
+    const configPath = path.join(getProjectRoot(), '.ocean', 'knowledge-compile-config.json')
+    if (!fs.existsSync(configPath)) {
+      return { success: true, config: null }
+    }
+    return { success: true, config: JSON.parse(fs.readFileSync(configPath, 'utf-8')) }
+  } catch (error) {
+    console.error('读取知识加工模型配置失败:', error)
+    return { success: false, error: String(error), config: null }
+  }
+})
+
+ipcMain.handle('save-knowledge-compile-config', (_, config) => {
+  try {
+    const dir = path.join(getProjectRoot(), '.ocean')
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+    const configPath = path.join(dir, 'knowledge-compile-config.json')
+    fs.writeFileSync(configPath, JSON.stringify(config || {}, null, 2), 'utf-8')
+    return { success: true }
+  } catch (error) {
+    console.error('保存知识加工模型配置失败:', error)
+    return { success: false, error: String(error) }
+  }
+})
+
 // 读取知识文件在 .knowledges 固定分支最新提交中的基线内容（审核页 diff 用）
 // 返回 null 表示无基线（如知识库未托管 / 文件为新建未提交）
 ipcMain.handle('get-knowledge-baseline', (_, name) => {

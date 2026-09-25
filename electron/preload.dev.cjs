@@ -93,6 +93,8 @@ const electronAPI = {
   pauseCompileQueue: () => ipcRenderer.invoke('pause-compile-queue'),
   resumeCompileQueue: () => ipcRenderer.invoke('resume-compile-queue'),
   clearCompileTasks: () => ipcRenderer.invoke('clear-compile-tasks'),
+  loadKnowledgeCompileConfig: () => ipcRenderer.invoke('load-knowledge-compile-config'),
+  saveKnowledgeCompileConfig: (config) => ipcRenderer.invoke('save-knowledge-compile-config', config),
   onKnowledgeCompileEvent: (callback) => {
     const listener = (_event, data) => callback(data)
     ipcRenderer.on('knowledge-compile-event', listener)

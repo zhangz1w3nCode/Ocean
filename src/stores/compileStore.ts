@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import type { KnowledgeCompileTask, KnowledgeCompileSummary, KnowledgeCompileEvent } from '../utils/storage'
-import { isElectron, resolveKnowledgeGitProvider } from '../utils/storage'
+import { isElectron, resolveKnowledgeGitProvider, loadKnowledgeCompileConfig } from '../utils/storage'
 
 interface CompileState {
   tasks: KnowledgeCompileTask[]
@@ -98,7 +98,9 @@ export const useCompileStore = create<CompileState>((set, get) => ({
       return { success: false, error: '仅桌面端支持知识编译' }
     }
     if (names.length === 0) return { success: false, error: '未选择知识源' }
-    const llm = await resolveKnowledgeGitProvider()
+    // 优先用「知识-设置 → 知识加工模型」的独立选择；未配置时回退全局 providers 第一个
+    const compileCfg = await loadKnowledgeCompileConfig()
+    const llm = await resolveKnowledgeGitProvider(compileCfg?.providerId || undefined, compileCfg?.model || undefined)
     if (!llm) return { success: false, error: '尚未配置 LLM 提供商（设置 → LLM 配置）' }
     const result = await window.electronAPI.enqueueKnowledgeCompile(names, { provider: llm.provider, model: llm.model })
     await get().refresh()

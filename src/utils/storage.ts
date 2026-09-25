@@ -15,6 +15,12 @@ export interface KnowledgeFolder {
   children: KnowledgeFolder[]
 }
 
+// 知识加工独立模型配置（知识-设置 中选择；缺省回退全局 providers 第一个）
+export interface KnowledgeCompileModelConfig {
+  providerId?: string
+  model?: string
+}
+
 // 知识编译（加工任务）类型
 export interface KnowledgeCompileTask {
   id: string
@@ -122,6 +128,8 @@ declare global {
       pauseCompileQueue: () => Promise<{ success: boolean }>
       resumeCompileQueue: () => Promise<{ success: boolean }>
       clearCompileTasks: () => Promise<{ success: boolean; removed?: number }>
+      loadKnowledgeCompileConfig: () => Promise<{ success: boolean; config?: KnowledgeCompileModelConfig | null; error?: string }>
+      saveKnowledgeCompileConfig: (config: KnowledgeCompileModelConfig) => Promise<{ success: boolean; error?: string }>
       onKnowledgeCompileEvent: (callback: (data: KnowledgeCompileEvent) => void) => () => void
       loadKnowledgeBaseline: (name: string) => Promise<{ success: boolean; content?: string | null; error?: string }>
       knowledgeGitStatus: () => Promise<{ success: boolean; managed?: boolean; branch?: string | null; hasCommits?: boolean; branchError?: string; error?: string }>
@@ -3640,6 +3648,20 @@ export const resolveKnowledgeGitProvider = async (
   if (!provider) return null
   const finalModel = model || provider.defaultModel || ''
   return { provider, model: finalModel }
+}
+
+/** 读取知识加工独立模型配置（.ocean/knowledge-compile-config.json） */
+export const loadKnowledgeCompileConfig = async (): Promise<KnowledgeCompileModelConfig | null> => {
+  if (!isElectron() || !window.electronAPI?.loadKnowledgeCompileConfig) return null
+  const result = await window.electronAPI.loadKnowledgeCompileConfig()
+  return result.success ? (result.config || null) : null
+}
+
+/** 保存知识加工独立模型配置 */
+export const saveKnowledgeCompileConfig = async (config: KnowledgeCompileModelConfig): Promise<boolean> => {
+  if (!isElectron() || !window.electronAPI?.saveKnowledgeCompileConfig) return false
+  const result = await window.electronAPI.saveKnowledgeCompileConfig(config)
+  return result.success === true
 }
 
 // ===== Agentic 配置存储方法 =====
