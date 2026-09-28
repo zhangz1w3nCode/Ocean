@@ -45,10 +45,10 @@ export function generateWorkflowMd(workflow: any, nodes: any[], edges: any[]): s
     if (node.type === 'start') return '开始'
     if (node.type === 'end') return '结束'
     if (node.type === 'business') {
-      return node.data?.nodeDefName || node.data?.label || node.id
+      return node.data?.label || node.data?.nodeDefName || node.id
     }
     if (node.type === 'local') {
-      return node.data?.localNodeName || node.data?.label || node.id
+      return node.data?.label || node.data?.localNodeName || node.id
     }
     if (node.type === 'process') {
       return node.data?.label || node.data?.content?.slice(0, 20) || '处理'
