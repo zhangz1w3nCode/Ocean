@@ -381,7 +381,7 @@ const TaskDetail: FC<{ onEditClick: () => void }> = ({ onEditClick }) => {
               {/* 任务上下文 */}
               <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 col-span-2">
                 <div className="flex items-center justify-between mb-4">
-                  <span className="text-sm font-bold text-macos-text">任务上下文</span>
+                  <span className="text-sm font-bold text-macos-text">任务上下文管理</span>
                   <Button
                     variant="outline"
                     size="sm"

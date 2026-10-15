@@ -3589,7 +3589,7 @@ ipcMain.handle('save-task-context', (_, payload) => {
     const existing = readTaskFile(taskName)
     if (!existing) return { success: false, error: `任务不存在: ${taskName}` }
     const contextName = sanitizeTaskName(p.contextName)
-    if (!contextName) return { success: false, error: '上下文名称不能为空，且不能包含 / \\ .. 等非法字符' }
+    if (!contextName) return { success: false, error: '上下文主题不能为空，且不能包含 / \\ .. 等非法字符' }
     const content = typeof p.content === 'string' ? p.content : ''
     if (!content.trim()) return { success: false, error: '上下文内容不能为空' }
 

@@ -61,14 +61,14 @@ export const TaskContextFormModal: FC<TaskContextFormModalProps> = ({
 
     if (!contextName.trim()) {
       setInvalidFields(new Set(['contextName']))
-      addToast('请输入上下文名称', 'warning')
+      addToast('请输入上下文主题', 'warning')
       setTimeout(() => setInvalidFields(new Set()), 3000)
       return
     }
 
     if (contextName.includes('/') || contextName.includes('\\') || contextName.includes('..')) {
       setInvalidFields(new Set(['contextName']))
-      addToast('上下文名称不能包含 / \\ .. 等非法字符', 'warning')
+      addToast('上下文主题不能包含 / \\ .. 等非法字符', 'warning')
       setTimeout(() => setInvalidFields(new Set()), 3000)
       return
     }
@@ -130,7 +130,7 @@ export const TaskContextFormModal: FC<TaskContextFormModalProps> = ({
           <div>
             <label className="flex items-center gap-2 text-sm font-medium text-macos-text mb-1.5">
               <Type size={16} className="text-macos-text-secondary" />
-              上下文名称 *
+              上下文主题 *
             </label>
             <Input
               placeholder="例如：需求背景"
@@ -144,7 +144,7 @@ export const TaskContextFormModal: FC<TaskContextFormModalProps> = ({
               invalid={invalidFields.has('contextName')}
             />
             {isEdit && (
-              <p className="text-xs text-macos-text-tertiary mt-1">上下文名称不可修改</p>
+              <p className="text-xs text-macos-text-tertiary mt-1">上下文主题不可修改</p>
             )}
           </div>
 
