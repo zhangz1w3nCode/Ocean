@@ -1,7 +1,8 @@
 import type { FC } from 'react'
 import { useState, useEffect, useRef } from 'react'
 import { Type, FileText, User, GitBranch, Tags, CircleDot, Edit3, Eye } from 'lucide-react'
-import { Modal, Input, Textarea, Button, ConfirmModal, Dropdown, MarkdownEditor, MarkdownRenderer } from '../ui'
+import { Modal, Input, Button, ConfirmModal, Dropdown, MarkdownEditor, MarkdownRenderer } from '../ui'
+import { TagChipsInput } from './TagChipsInput'
 import { useToastStore } from '../../stores/toastStore'
 import type { TaskSummary, TaskStatus, CreateTaskPayload, UpdateTaskPayload } from '../../types'
 
@@ -14,12 +15,6 @@ interface TaskFormModalProps {
   /** 创建模式的名称唯一性校验（已有任务名列表） */
   existingNames?: string[]
   onConfirm: (payload: CreateTaskPayload | UpdateTaskPayload) => Promise<boolean>
-}
-
-// 逗号/顿号分隔文本 → 字符串数组（去空去重）
-const splitListInput = (text: string): string[] => {
-  const parts = text.split(/[,，、]/).map(s => s.trim()).filter(Boolean)
-  return [...new Set(parts)]
 }
 
 const STATUS_BADGE_CLASSES: Record<string, string> = {
@@ -41,8 +36,8 @@ export const TaskFormModal: FC<TaskFormModalProps> = ({
   const [name, setName] = useState('')
   const [content, setContent] = useState('')
   const [handler, setHandler] = useState('')
-  const [repo, setRepo] = useState('')
-  const [tags, setTags] = useState('')
+  const [repoList, setRepoList] = useState<string[]>([])
+  const [tagsList, setTagsList] = useState<string[]>([])
   const [status, setStatus] = useState<TaskStatus>('等待处理')
   // 任务内容编辑/预览切换（仅创建模式的内容字段）
   const [contentPreview, setContentPreview] = useState<'edit' | 'preview'>('edit')
@@ -54,8 +49,8 @@ export const TaskFormModal: FC<TaskFormModalProps> = ({
 
   // 表单实时镜像（ref）：脏检测快照必须读到重置后的值，
   // 直接闭包捕获 state 会拿到「上一次会话 → 重置」间的旧值造成误判
-  const formStateRef = useRef({ name, content, handler, repo, tags, status })
-  formStateRef.current = { name, content, handler, repo, tags, status }
+  const formStateRef = useRef({ name, content, handler, repoList, tagsList, status })
+  formStateRef.current = { name, content, handler, repoList, tagsList, status }
 
   const isCreate = mode === 'create'
   const taskStatus = (task?.status || '等待处理') as TaskStatus
@@ -79,16 +74,16 @@ export const TaskFormModal: FC<TaskFormModalProps> = ({
         setName('')
         setContent('')
         setHandler('')
-        setRepo('')
-        setTags('')
+        setRepoList([])
+        setTagsList([])
         setStatus('等待处理')
         setContentPreview('edit')
       } else {
         setName(task?.name || '')
         setContent(task?.content || '')
         setHandler(task?.handler || '')
-        setRepo((task?.repo || []).join(', '))
-        setTags((task?.tags || []).join(', '))
+        setRepoList(task?.repo || [])
+        setTagsList(task?.tags || [])
         setStatus(taskStatus)
       }
       setInvalidFields(new Set())
@@ -132,8 +127,8 @@ export const TaskFormModal: FC<TaskFormModalProps> = ({
         name: name.trim(),
         content: content.trim(),
         handler: handler.trim(),
-        repo: splitListInput(repo),
-        tags: splitListInput(tags),
+        repo: repoList,
+        tags: tagsList,
       } as CreateTaskPayload)
       if (success) addToast('任务创建成功', 'success')
     } else {
@@ -141,8 +136,8 @@ export const TaskFormModal: FC<TaskFormModalProps> = ({
         name: name.trim(),
         content: content.trim(),
         handler: handler.trim(),
-        repo: splitListInput(repo),
-        tags: splitListInput(tags),
+        repo: repoList,
+        tags: tagsList,
         status: canSelectStatus ? status : undefined,
       } as UpdateTaskPayload)
       if (success) addToast('任务更新成功', 'success')
@@ -235,29 +230,34 @@ export const TaskFormModal: FC<TaskFormModalProps> = ({
             )}
           </div>
 
-          {/* 关联仓库（多个，逗号分隔） */}
+          {/* 关联仓库（胶囊多选） */}
           <div>
             <label className="flex items-center gap-2 text-sm font-medium text-macos-text mb-1.5">
               <GitBranch size={16} className="text-macos-text-secondary" />
-              关联仓库名称（可选，多个用逗号分隔）
+              关联仓库（可选）
             </label>
-            <Input
-              placeholder="例如：Ocean, pi-agent"
-              value={repo}
-              onChange={(e) => setRepo(e.target.value)}
+            <TagChipsInput
+              items={repoList}
+              onChange={setRepoList}
+              addLabel="添加仓库"
+              placeholder="输入仓库"
+              itemLabel="仓库"
+              variant="gray"
             />
           </div>
 
-          {/* 任务标签（多个，逗号分隔） */}
+          {/* 任务标签（胶囊多选） */}
           <div>
             <label className="flex items-center gap-2 text-sm font-medium text-macos-text mb-1.5">
               <Tags size={16} className="text-macos-text-secondary" />
-              任务标签（可选，多个用逗号分隔）
+              任务标签（可选）
             </label>
-            <Input
-              placeholder="例如：前端, 功能开发"
-              value={tags}
-              onChange={(e) => setTags(e.target.value)}
+            <TagChipsInput
+              items={tagsList}
+              onChange={setTagsList}
+              addLabel="添加标签"
+              placeholder="输入标签"
+              itemLabel="标签"
             />
           </div>
 
