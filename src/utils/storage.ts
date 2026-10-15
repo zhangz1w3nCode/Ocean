@@ -1,6 +1,6 @@
 // Electron 本地存储工具
 
-import type { AppConfig, KnowledgeGraphConfig, AgenticConfig, AgenticToolConfig, LlmReviewConfig, Usage, AgentLoopEvent, AssetRoot } from '../types'
+import type { AppConfig, KnowledgeGraphConfig, AgenticConfig, AgenticToolConfig, LlmReviewConfig, Usage, AgentLoopEvent, AssetRoot, TaskSummary, TaskDetail, CreateTaskPayload, UpdateTaskPayload } from '../types'
 import { generateWorkflowMdContent } from './workflow-generator'
 import { updateCachedAssetRoot } from './asset-config'
 import { parse, stringify, Document, isMap, isScalar, isSeq } from 'yaml'
@@ -42,6 +42,12 @@ declare global {
       subscribeInstanceDetail: (workflowName: string, instanceId: string) => Promise<{ success: boolean; detail?: any; error?: string }>
       unsubscribeInstanceDetail: () => Promise<{ success: boolean }>
       onInstanceDetailDelta: (callback: (delta: Record<string, any>) => void) => () => void
+      // 任务管理（存储在项目根 .tasks/ 目录）
+      listTasks: () => Promise<{ success: boolean; tasks?: TaskSummary[]; error?: string }>
+      readTaskDetail: (taskName: string) => Promise<{ success: boolean; detail?: TaskDetail; error?: string }>
+      createTask: (payload: CreateTaskPayload) => Promise<{ success: boolean; task?: TaskSummary; error?: string }>
+      updateTask: (payload: UpdateTaskPayload) => Promise<{ success: boolean; task?: TaskSummary; error?: string }>
+      saveTaskContext: (payload: { taskName: string; contextName: string; content: string }) => Promise<{ success: boolean; isUpdate?: boolean; error?: string }>
       // 节点文件相关（Markdown 格式，以名称命名文件）
       saveNodeFile: (name: string, content: string) => Promise<{ success: boolean; error?: string }>
       loadNodeFile: (name: string) => Promise<{ success: boolean; content: string | null; mtime: string | null; error?: string }>

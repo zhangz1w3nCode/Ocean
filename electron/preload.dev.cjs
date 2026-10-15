@@ -159,6 +159,13 @@ const electronAPI = {
   loadKnowledgeTemplateFile: (templateType) =>
     ipcRenderer.invoke('load-knowledge-template-file', templateType),
 
+  // 任务管理 API（存储在项目根 .tasks/ 目录）
+  listTasks: () => ipcRenderer.invoke('list-tasks'),
+  readTaskDetail: (taskName) => ipcRenderer.invoke('read-task-detail', taskName),
+  createTask: (payload) => ipcRenderer.invoke('create-task', payload),
+  updateTask: (payload) => ipcRenderer.invoke('update-task', payload),
+  saveTaskContext: (payload) => ipcRenderer.invoke('save-task-context', payload),
+
 }
 
 // 通过 window 暴露

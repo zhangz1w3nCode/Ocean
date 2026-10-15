@@ -446,3 +446,66 @@ export interface InstanceDetail {
   traceLog: string
   instanceMd: string
 }
+
+// ==================== 任务管理 ====================
+// 数据落盘在项目根 .tasks/{task-name}/：
+//   TASK.md（YAML frontmatter + 正文=任务内容）、context/*.md、trace/trace.jsonl
+
+// 任务状态（仅前进：等待处理 → 处理中 →（已完成 | 已取消）；终态锁定）
+export type TaskStatus = '等待处理' | '处理中' | '已完成' | '已取消'
+
+// 任务列表项（对应 .tasks/{task-name}/TASK.md frontmatter）
+export interface TaskSummary {
+  name: string
+  status: TaskStatus
+  handler: string
+  repo: string[]
+  tags: string[]
+  createdAt: string
+  updatedAt: string
+}
+
+// 任务上下文（.tasks/{task-name}/context/*.md）
+export interface TaskContextFile {
+  name: string
+  content: string
+  updatedAt: string
+}
+
+// 任务 trace 事件（.tasks/{task-name}/trace/trace.jsonl，紧凑 JSON 行）
+export interface TaskTraceEvent {
+  ts: string
+  type: string
+  message: string
+  from?: string
+  to?: string
+  fields?: string[]
+  name?: string
+}
+
+// 任务详情（read-task-detail 返回）
+export interface TaskDetail {
+  task: TaskSummary & { content: string }
+  contexts: TaskContextFile[]
+  trace: TaskTraceEvent[]
+}
+
+// 创建任务入参（名称/内容必填，其余选填；context 为初始上下文内容）
+export interface CreateTaskPayload {
+  name: string
+  content: string
+  handler?: string
+  repo?: string[]
+  tags?: string[]
+  context?: string
+}
+
+// 更新任务入参（状态仅处理中时可选改为已完成/已取消）
+export interface UpdateTaskPayload {
+  name: string
+  content: string
+  handler?: string
+  repo?: string[]
+  tags?: string[]
+  status?: TaskStatus
+}
