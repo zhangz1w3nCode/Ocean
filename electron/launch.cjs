@@ -3533,7 +3533,8 @@ ipcMain.handle('update-task', (_, payload) => {
 
     // 状态机（仅前进）：
     //   等待处理 --(手动 或 处理人由空变有自动)--> 处理中 --(手动)--> 已完成 | 已取消；
-    //   等待处理也可直接手动流转到已完成/已取消；终态锁定；手动选择优先于自动规则
+    //   等待处理也可直接手动流转到已完成/已取消；终态锁定；手动选择优先于自动规则；
+    //   等待处理 → 处中 需先指定处理人
     let nextStatus = existing.status
     const requested = typeof p.status === 'string' && TASK_STATUSES.includes(p.status) ? p.status : null
     if (requested && requested !== existing.status) {
@@ -3544,6 +3545,10 @@ ipcMain.handle('update-task', (_, payload) => {
           : []
       if (!allowed.includes(requested)) {
         return { success: false, error: `当前状态「${existing.status}」不能变更为「${requested}」` }
+      }
+      // 等待处理 → 处理中 门禁：必须先指定任务处理人
+      if (existing.status === TASK_STATUS_PENDING && requested === TASK_STATUS_RUNNING && handler === '') {
+        return { success: false, error: '请先指定任务处理人，再推进到「处理中」' }
       }
       nextStatus = requested
     }

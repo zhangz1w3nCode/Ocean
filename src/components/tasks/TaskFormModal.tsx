@@ -103,6 +103,14 @@ export const TaskFormModal: FC<TaskFormModalProps> = ({
   const handleSubmit = async () => {
     if (isSubmitting) return
 
+    // 门禁：等待处理 → 处中 必须先指定处理人（与后端状态机同步）
+    if (!isCreate && status === '处理中' && taskStatus === '等待处理' && !handler.trim()) {
+      setInvalidFields(new Set(['handler']))
+      addToast('请先填写任务处理人，再推进到「处理中」', 'warning')
+      setTimeout(() => setInvalidFields(new Set()), 3000)
+      return
+    }
+
     if (!name.trim()) {
       setInvalidFields(new Set(['name']))
       addToast('请输入任务名称', 'warning')
@@ -231,7 +239,11 @@ export const TaskFormModal: FC<TaskFormModalProps> = ({
             <Input
               placeholder="例如：张三"
               value={handler}
-              onChange={(e) => setHandler(e.target.value)}
+              onChange={(e) => {
+                setHandler(e.target.value)
+                if (invalidFields.has('handler')) setInvalidFields(new Set())
+              }}
+              invalid={invalidFields.has('handler')}
             />
             {!isCreate && taskStatus === '等待处理' && !handler.trim() && (
               <p className="text-xs text-macos-text-tertiary mt-1">填写处理人并保存后，状态将自动转为「处理中」</p>
