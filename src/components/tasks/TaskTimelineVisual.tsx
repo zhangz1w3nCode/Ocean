@@ -85,12 +85,19 @@ const defaultEdgeOptions = {
 
 // 事件节点：类型圆点 + 徽标 + 相对时间 + 说明（卡片式，描边按事件类型着色）
 type TimelineEventNodeType = Node<{ evt: TaskTraceEvent }, 'timeline'>
-const TimelineEventNode: FC<NodeProps<TimelineEventNodeType>> = ({ data }) => {
+const traceRingColors: Record<string, string> = {
+  'task-created': 'ring-green-100',
+  'task-updated': 'ring-blue-100',
+  'status-changed': 'ring-amber-100',
+  'context-created': 'ring-purple-100',
+  'context-updated': 'ring-gray-100',
+}
+const TimelineEventNode: FC<NodeProps<TimelineEventNodeType>> = ({ data, selected }) => {
   const evt = data.evt
   return (
     <div
-      className="bg-white rounded-lg border px-3 py-2 shadow-sm w-[240px]"
-      style={{ borderColor: traceBorderColors[evt.type] || '#9ca3af' }}
+      className={`bg-white rounded-lg border px-3 py-2 shadow-sm w-[240px] ${selected ? `ring-4 ${traceRingColors[evt.type] || 'ring-gray-100'}` : ''}`}
+      style={{ borderColor: traceBorderColors[evt.type] || '#9ca3af', borderWidth: selected ? 2 : 1 }}
     >
       <Handle type="target" position={Position.Left} isConnectable={false} />
       <Handle type="source" position={Position.Right} isConnectable={false} />
@@ -197,7 +204,7 @@ interface TaskTimelineVisualProps {
 // 事件按时间正序从左到右排成横向节点链（带箭头连线），画布平移/缩放/自适应视野，
 // 详情页内嵌卡片与放大弹窗共用。
 export const TaskTimelineVisual: FC<TaskTimelineVisualProps> = ({ trace, status, fullHeight = false }) => {
-  const [selectedEvent, setSelectedEvent] = useState<TaskTraceEvent | null>(null)
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
   const [panelWidth, setPanelWidth] = useState(PANEL_DEFAULT_W)
   const isTerminal = status === '已完成' || status === '已取消'
   const nodes: Array<TimelineEventNodeType | TimelineMarkerNodeType> = useMemo(() => {
@@ -208,6 +215,7 @@ export const TaskTimelineVisual: FC<TaskTimelineVisualProps> = ({ trace, status,
       type: 'timeline',
       position: { x: (i + 1) * 300, y: 0 },
       data: { evt },
+      selected: `evt-${i}` === selectedNodeId,
       draggable: false,
       selectable: false,
       focusable: false,
@@ -222,7 +230,7 @@ export const TaskTimelineVisual: FC<TaskTimelineVisualProps> = ({ trace, status,
       // 结束节点仅在任务终态出现（已完成/已取消）
       ...(isTerminal ? [marker('tl-end', 'timeline-end', '结束', (sorted.length + 1) * 300)] : []),
     ]
-  }, [trace, isTerminal])
+  }, [trace, isTerminal, selectedNodeId])
 
   const edges: Edge[] = useMemo(() => {
     const sorted = [...trace].sort((a, b) => new Date(a.ts).getTime() - new Date(b.ts).getTime())
@@ -275,9 +283,12 @@ export const TaskTimelineVisual: FC<TaskTimelineVisualProps> = ({ trace, status,
   // 点击事件节点 — 展示该事件的完整变更详情面板（复制实例图节点点击→右侧面板交互）
   const onNodeClick = useCallback((_e: React.MouseEvent, node: Node) => {
     if (node.type !== 'timeline') return
-    const evt = (node.data as { evt: TaskTraceEvent }).evt
-    setSelectedEvent(prev => (prev && prev.ts === evt.ts && prev.type === evt.type && prev.message === evt.message) ? null : evt)
+    setSelectedNodeId(prev => (prev === node.id ? null : node.id))
   }, [])
+  const selectedEvent = useMemo(
+    () => (selectedNodeId ? ((nodes.find(n => n.id === selectedNodeId)?.data as { evt: TaskTraceEvent } | undefined)?.evt ?? null) : null),
+    [selectedNodeId, nodes]
+  )
 
   // 面板左缘拖拽调宽（复制实例图产物面板）
   const handlePanelResizeStart = useCallback((e: React.MouseEvent) => {
@@ -312,7 +323,7 @@ export const TaskTimelineVisual: FC<TaskTimelineVisualProps> = ({ trace, status,
         nodeTypes={nodeTypes}
         defaultEdgeOptions={defaultEdgeOptions}
         onNodeClick={onNodeClick}
-        onPaneClick={() => setSelectedEvent(null)}
+        onPaneClick={() => setSelectedNodeId(null)}
         nodesConnectable={false}
         nodesDraggable={false}
         elementsSelectable={false}
@@ -351,7 +362,7 @@ export const TaskTimelineVisual: FC<TaskTimelineVisualProps> = ({ trace, status,
                 </span>
               </div>
               <button
-                onClick={() => setSelectedEvent(null)}
+                onClick={() => setSelectedNodeId(null)}
                 className="p-1 rounded-md text-macos-text-tertiary hover:text-macos-text hover:bg-gray-100 transition-colors flex-shrink-0"
               >
                 <X size={16} strokeWidth={1.5} />
