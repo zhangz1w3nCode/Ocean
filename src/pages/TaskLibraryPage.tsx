@@ -473,7 +473,6 @@ const TaskDetail: FC<{ onEditClick: () => void }> = ({ onEditClick }) => {
         isOpen={isEditContentOpen}
         onClose={() => setIsEditContentOpen(false)}
         initialContent={task?.content || ''}
-        updatedAt={task?.updatedAt}
         onConfirm={handleContentSave}
       />
 

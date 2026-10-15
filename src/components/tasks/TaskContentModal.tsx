@@ -3,14 +3,11 @@ import { useState, useEffect, useRef } from 'react'
 import { Edit3, Eye } from 'lucide-react'
 import { Modal, Button, ConfirmModal, MarkdownEditor, MarkdownRenderer } from '../ui'
 import { useToastStore } from '../../stores/toastStore'
-import { formatRelativeTime } from '../../utils/format'
 
 interface TaskContentModalProps {
   isOpen: boolean
   onClose: () => void
   initialContent: string
-  /** 任务最近更新时间（查看态展示） */
-  updatedAt?: string
   onConfirm: (content: string) => Promise<boolean>
 }
 
@@ -19,7 +16,6 @@ export const TaskContentModal: FC<TaskContentModalProps> = ({
   isOpen,
   onClose,
   initialContent,
-  updatedAt,
   onConfirm,
 }) => {
   const { addToast } = useToastStore()
@@ -201,11 +197,6 @@ export const TaskContentModal: FC<TaskContentModalProps> = ({
         ) : (
           // 查看态：md 渲染（与上下文查看弹窗同构）
           <div className="flex-1 min-h-0 flex flex-col">
-            <div className="flex items-center gap-2 mb-3 pb-2 border-b border-gray-100">
-              <span className="text-xs text-macos-text-tertiary">
-                {updatedAt ? `更新于 ${formatRelativeTime(updatedAt)}` : ''}
-              </span>
-            </div>
             <div className="flex-1 min-h-0 overflow-y-auto">
               {initialContent.trim() ? (
                 <MarkdownRenderer content={initialContent} className="text-sm" />
