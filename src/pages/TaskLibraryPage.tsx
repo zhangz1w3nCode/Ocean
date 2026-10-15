@@ -10,7 +10,7 @@ import { useTaskStore } from '../stores/taskStore'
 import { useToastStore } from '../stores/toastStore'
 import type { TaskSummary, TaskContextFile, TaskTraceEvent, TaskStatus } from '../types'
 import { formatRelativeTime } from '../utils/format'
-import { TaskFormModal, TaskContextModal, TaskContextFormModal, TaskContentModal, TaskTimelineModal, traceTypeLabels, traceTypeColors } from '../components/tasks'
+import { TaskFormModal, TaskContextModal, TaskContextFormModal, TaskContentModal, TaskTimelineModal, TaskTimelineVisual } from '../components/tasks'
 
 // 任务状态配色（列表/详情/标签页统一）
 const statusColors: Record<string, string> = {
@@ -192,43 +192,6 @@ const DetailField: FC<{ icon: typeof Clock; label: string; children: React.React
   </div>
 )
 
-const TraceTable: FC<{ trace: TaskTraceEvent[] }> = ({ trace }) => {
-  const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('asc')
-
-  const sorted = [...trace].sort((a, b) => {
-    const cmp = new Date(a.ts).getTime() - new Date(b.ts).getTime()
-    return sortOrder === 'desc' ? -cmp : cmp
-  })
-
-  return (
-    <div className="w-full">
-      <div className="flex items-center px-3 py-2.5 gap-4 text-xs font-medium text-macos-text-tertiary border-b border-gray-100">
-        <button onClick={() => setSortOrder(sortOrder === 'desc' ? 'asc' : 'desc')} className="flex-1 min-w-0 flex items-center justify-center gap-1 cursor-pointer hover:text-macos-text transition-colors">
-          时间
-          {sortOrder === 'desc' ? <ChevronDown size={12} /> : <ChevronUp size={12} />}
-        </button>
-        <span className="flex-1 min-w-0 text-center">事件</span>
-        <span className="flex-[2] min-w-0 text-center">说明</span>
-      </div>
-      {sorted.map((evt, i) => (
-        <div key={i} className="flex items-center px-3 py-3 gap-4 border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
-          <span className="flex-1 min-w-0 text-xs text-macos-text-tertiary text-center" title={evt.ts}>
-            {evt.ts ? formatRelativeTime(evt.ts) : '-'}
-          </span>
-          <div className="flex-1 min-w-0 flex justify-center">
-            <span className={`text-xs px-2 py-0.5 rounded-md font-medium ${traceTypeColors[evt.type] || 'bg-gray-100 text-gray-500'}`}>
-              {traceTypeLabels[evt.type] || evt.type}
-            </span>
-          </div>
-          <span className="flex-[2] min-w-0 text-xs text-macos-text truncate text-center" title={evt.message}>
-            {evt.message || '-'}
-          </span>
-        </div>
-      ))}
-    </div>
-  )
-}
-
 const TaskDetail: FC<{ onEditClick: () => void }> = ({ onEditClick }) => {
   const { selectedTask, detail, isLoadingDetail, showList, refreshDetail, updateTask, saveTaskContext } = useTaskStore()
   const { addToast } = useToastStore()
@@ -367,26 +330,20 @@ const TaskDetail: FC<{ onEditClick: () => void }> = ({ onEditClick }) => {
                 </div>
               </div>
 
-              {/* 任务内容（右上角放大编辑，支持 md 编辑/预览） */}
+              {/* 处理时间线（内嵌可视化节点链，右上角放大查看完整大图；参照实例「执行进度」形态） */}
               <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
                 <div className="flex items-center justify-between mb-3">
-                  <span className="text-sm font-bold text-macos-text">任务内容</span>
+                  <span className="text-sm font-bold text-macos-text">处理时间线</span>
                   <button
-                    onClick={() => setIsEditContentOpen(true)}
-                    disabled={!task}
-                    title="编辑任务内容"
+                    onClick={() => setIsTimelineOpen(true)}
+                    disabled={!detail || detail.trace.length === 0}
+                    title="查看完整时间线"
                     className="p-1 rounded-md text-macos-text-tertiary hover:text-macos-text hover:bg-gray-100 transition-colors"
                   >
                     <Maximize2 size={14} strokeWidth={1.5} />
                   </button>
                 </div>
-                <div className="max-h-200 overflow-y-auto">
-                  {task!.content ? (
-                    <MarkdownRenderer content={task!.content} className="text-sm" />
-                  ) : (
-                    <p className="text-sm text-macos-text-tertiary text-center py-8">暂无任务内容</p>
-                  )}
-                </div>
+                <TaskTimelineVisual trace={detail.trace} />
               </div>
 
               {/* 任务上下文 */}
@@ -431,24 +388,26 @@ const TaskDetail: FC<{ onEditClick: () => void }> = ({ onEditClick }) => {
                 )}
               </div>
 
-              {/* 处理时间线（右上角可视化大图） */}
+              {/* 任务内容（整行，右上角放大编辑，支持 md 编辑/预览） */}
               <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 col-span-2">
                 <div className="flex items-center justify-between mb-3">
-                  <span className="text-sm font-bold text-macos-text">处理时间线</span>
+                  <span className="text-sm font-bold text-macos-text">任务内容</span>
                   <button
-                    onClick={() => setIsTimelineOpen(true)}
-                    disabled={!detail || detail.trace.length === 0}
-                    title="查看完整时间线"
+                    onClick={() => setIsEditContentOpen(true)}
+                    disabled={!task}
+                    title="编辑任务内容"
                     className="p-1 rounded-md text-macos-text-tertiary hover:text-macos-text hover:bg-gray-100 transition-colors"
                   >
                     <Maximize2 size={14} strokeWidth={1.5} />
                   </button>
                 </div>
-                {detail.trace.length > 0 ? (
-                  <TraceTable trace={detail.trace} />
-                ) : (
-                  <p className="text-sm text-macos-text-tertiary text-center py-8">暂无事件记录</p>
-                )}
+                <div className="max-h-200 overflow-y-auto">
+                  {task!.content ? (
+                    <MarkdownRenderer content={task!.content} className="text-sm" />
+                  ) : (
+                    <p className="text-sm text-macos-text-tertiary text-center py-8">暂无任务内容</p>
+                  )}
+                </div>
               </div>
             </div>
           ) : (
