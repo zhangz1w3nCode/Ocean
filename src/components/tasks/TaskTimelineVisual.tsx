@@ -1,5 +1,7 @@
 import type { FC } from 'react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
+import { Play, Square, X, Clock, FileText, ArrowRight, ListChecks, StickyNote } from 'lucide-react'
 import {
   ReactFlow,
   Background,
@@ -54,6 +56,20 @@ const traceBorderColors: Record<string, string> = {
   'context-updated': '#9ca3af',
 }
 
+// 面板「状态变更」行的事件状态徽标配色（与任务状态徽标一致）
+const statusBadgeClass = (s: string) => ({
+  '等待处理': 'bg-gray-100 text-gray-500',
+  '处理中': 'bg-blue-50 text-blue-600',
+  '已完成': 'bg-green-50 text-green-600',
+  '已取消': 'bg-red-50 text-red-600',
+}[s] || 'bg-gray-100 text-gray-500')
+
+// 复制自实例图节点详情面板的宽度参数：默认 360，左缘可拖拽调宽
+const PANEL_DEFAULT_W = 360
+const PANEL_MIN_W = 300
+const PANEL_MAX_W = 680
+const PANEL_EDGE_GAP = 32
+
 // 复制自 InstanceFlowGraph 的自适应视野参数
 const FIT_PADDING = 0.2
 const FIT_MIN_ZOOM = 0.05
@@ -94,7 +110,34 @@ const TimelineEventNode: FC<NodeProps<TimelineEventNodeType>> = ({ data }) => {
   )
 }
 
-const nodeTypes = { timeline: TimelineEventNode }
+// 开始节点（样式复制自实例图 StartNode：绿色 Play 图标胶囊卡）
+type TimelineMarkerNodeType = Node<{ label: string }, 'timeline-start' | 'timeline-end'>
+const TimelineStartNode: FC<NodeProps<Node<{ label: string }, 'timeline-start'>>> = ({ data }) => (
+  <div className="min-w-[80px] px-4 py-2.5 rounded-xl bg-white border-2 border-gray-200 shadow-lg">
+    <div className="flex items-center gap-2">
+      <div className="w-6 h-6 rounded-full flex items-center justify-center bg-green-100">
+        <Play size={12} className="text-green-600" />
+      </div>
+      <span className="text-sm font-medium text-gray-800">{data.label}</span>
+    </div>
+    <Handle type="source" position={Position.Right} isConnectable={false} />
+  </div>
+)
+
+// 结束节点（样式复制自实例图 EndNode：红色 Square 图标胶囊卡）
+const TimelineEndNode: FC<NodeProps<Node<{ label: string }, 'timeline-end'>>> = ({ data }) => (
+  <div className="min-w-[80px] px-4 py-2.5 rounded-xl bg-white border-2 border-gray-200 shadow-lg">
+    <div className="flex items-center gap-2">
+      <div className="w-6 h-6 rounded-full flex items-center justify-center bg-red-100">
+        <Square size={12} className="text-red-600" />
+      </div>
+      <span className="text-sm font-medium text-gray-800">{data.label}</span>
+    </div>
+    <Handle type="target" position={Position.Left} isConnectable={false} />
+  </div>
+)
+
+const nodeTypes = { timeline: TimelineEventNode, 'timeline-start': TimelineStartNode, 'timeline-end': TimelineEndNode }
 
 // 复制自 InstanceFlowGraph 的 FlowFitController（去掉跟随模式）：
 // 容器就绪/尺寸变化/节点集变化时全图等比缩放 + 居中（getViewportForBounds 单一 zoom 天然等比居中）；
@@ -144,6 +187,8 @@ const TimelineFitController: FC<{
 
 interface TaskTimelineVisualProps {
   trace: TaskTraceEvent[]
+  /** 任务当前状态：终态（已完成/已取消）才显示结束节点（同实例图 completed 才出 end） */
+  status?: string
   /** 撑满父容器高度（放大弹窗用）；默认 300px（内嵌卡片，同实例执行进度） */
   fullHeight?: boolean
 }
@@ -151,30 +196,61 @@ interface TaskTimelineVisualProps {
 // 可视化时间线（ReactFlow，复制自 InstanceFlowGraph 的画布骨架改造）：
 // 事件按时间正序从左到右排成横向节点链（带箭头连线），画布平移/缩放/自适应视野，
 // 详情页内嵌卡片与放大弹窗共用。
-export const TaskTimelineVisual: FC<TaskTimelineVisualProps> = ({ trace, fullHeight = false }) => {
-  const nodes: TimelineEventNodeType[] = useMemo(() => {
+export const TaskTimelineVisual: FC<TaskTimelineVisualProps> = ({ trace, status, fullHeight = false }) => {
+  const [selectedEvent, setSelectedEvent] = useState<TaskTraceEvent | null>(null)
+  const [panelWidth, setPanelWidth] = useState(PANEL_DEFAULT_W)
+  const isTerminal = status === '已完成' || status === '已取消'
+  const nodes: Array<TimelineEventNodeType | TimelineMarkerNodeType> = useMemo(() => {
     const sorted = [...trace].sort((a, b) => new Date(a.ts).getTime() - new Date(b.ts).getTime())
-    // 从左到右：节点宽 240 + 间距 60，时间正序横向推进
-    return sorted.map((evt, i) => ({
+    // 从左到右：开始 → 事件链（节点宽 240 + 间距 60）→ 结束
+    const eventNodes: TimelineEventNodeType[] = sorted.map((evt, i) => ({
       id: `evt-${i}`,
       type: 'timeline',
-      position: { x: i * 300, y: 0 },
+      position: { x: (i + 1) * 300, y: 0 },
       data: { evt },
       draggable: false,
       selectable: false,
       focusable: false,
     }))
-  }, [trace])
+    // 开始/结束节点较矮，垂直方向居中对齐事件卡片
+    const marker = (id: string, type: 'timeline-start' | 'timeline-end', label: string, x: number): TimelineMarkerNodeType => ({
+      id, type, position: { x, y: 10 }, data: { label }, draggable: false, selectable: false, focusable: false,
+    })
+    return [
+      marker('tl-start', 'timeline-start', '开始', 0),
+      ...eventNodes,
+      // 结束节点仅在任务终态出现（已完成/已取消）
+      ...(isTerminal ? [marker('tl-end', 'timeline-end', '结束', (sorted.length + 1) * 300)] : []),
+    ]
+  }, [trace, isTerminal])
 
   const edges: Edge[] = useMemo(() => {
     const sorted = [...trace].sort((a, b) => new Date(a.ts).getTime() - new Date(b.ts).getTime())
-    return sorted.slice(1).map((_, i) => ({
-      id: `edge-${i}`,
-      source: `evt-${i}`,
-      target: `evt-${i + 1}`,
+    if (sorted.length === 0) return []
+    const chain: Edge[] = [{
+      id: 'edge-start',
+      source: 'tl-start',
+      target: 'evt-0',
       ...defaultEdgeOptions,
-    }))
-  }, [trace])
+    }]
+    sorted.slice(1).forEach((_, i) => {
+      chain.push({
+        id: `edge-${i}`,
+        source: `evt-${i}`,
+        target: `evt-${i + 1}`,
+        ...defaultEdgeOptions,
+      })
+    })
+    if (isTerminal) {
+      chain.push({
+        id: 'edge-end',
+        source: `evt-${sorted.length - 1}`,
+        target: 'tl-end',
+        ...defaultEdgeOptions,
+      })
+    }
+    return chain
+  }, [trace, isTerminal])
 
   const fitKey = useMemo(() => nodes.map(n => n.id).join('|'), [nodes])
   const userInteracted = useRef(false)
@@ -196,7 +272,35 @@ export const TaskTimelineVisual: FC<TaskTimelineVisualProps> = ({ trace, fullHei
     return () => ro.disconnect()
   }, [nodes.length])
 
-  if (nodes.length === 0) {
+  // 点击事件节点 — 展示该事件的完整变更详情面板（复制实例图节点点击→右侧面板交互）
+  const onNodeClick = useCallback((_e: React.MouseEvent, node: Node) => {
+    if (node.type !== 'timeline') return
+    const evt = (node.data as { evt: TaskTraceEvent }).evt
+    setSelectedEvent(prev => (prev && prev.ts === evt.ts && prev.type === evt.type && prev.message === evt.message) ? null : evt)
+  }, [])
+
+  // 面板左缘拖拽调宽（复制实例图产物面板）
+  const handlePanelResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    const startX = e.clientX
+    const startWidth = panelWidth
+    const onMove = (ev: MouseEvent) => {
+      const delta = startX - ev.clientX // 向左拖动增加宽度
+      const avail = (containerRef.current?.clientWidth || startWidth + PANEL_EDGE_GAP) - PANEL_EDGE_GAP
+      const maxW = Math.max(PANEL_MIN_W, Math.min(PANEL_MAX_W, avail))
+      setPanelWidth(Math.round(Math.min(maxW, Math.max(PANEL_MIN_W, startWidth + delta))))
+    }
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+    }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+  }, [panelWidth])
+  // 窄容器（卡片内联视图）下不能超出画布宽度
+  const panelW = Math.max(PANEL_MIN_W, Math.min(panelWidth, (box.w || panelWidth + PANEL_EDGE_GAP) - PANEL_EDGE_GAP))
+
+  if (trace.length === 0) {
     return <p className="text-sm text-macos-text-tertiary text-center py-8">暂无事件记录</p>
   }
 
@@ -207,6 +311,8 @@ export const TaskTimelineVisual: FC<TaskTimelineVisualProps> = ({ trace, fullHei
         edges={edges}
         nodeTypes={nodeTypes}
         defaultEdgeOptions={defaultEdgeOptions}
+        onNodeClick={onNodeClick}
+        onPaneClick={() => setSelectedEvent(null)}
         nodesConnectable={false}
         nodesDraggable={false}
         elementsSelectable={false}
@@ -220,6 +326,93 @@ export const TaskTimelineVisual: FC<TaskTimelineVisualProps> = ({ trace, fullHei
         <Background color="#E5E5E5" gap={20} size={1} variant={BackgroundVariant.Dots} />
         <TimelineFitController box={box} fitKey={fitKey} userInteracted={userInteracted} />
       </ReactFlow>
+
+      {/* 事件详情面板 — 复制实例图产物面板的形态：右侧滑入、左缘拖拽调宽 */}
+      <AnimatePresence>
+        {selectedEvent && (
+          <motion.div
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 20 }}
+            transition={{ duration: 0.15 }}
+            className="absolute right-4 top-4 bottom-4 bg-white rounded-xl border border-gray-200 shadow-lg z-10 flex flex-col overflow-hidden"
+            style={{ width: panelW }}
+          >
+            {/* 左边缘拖拽调宽手柄：纯透明热区（与 Modal.tsx / 实例图面板一致） */}
+            <div
+              onMouseDown={handlePanelResizeStart}
+              className="absolute left-0 top-0 bottom-0 w-1.5 cursor-col-resize z-20"
+            />
+            <div className="flex items-center justify-between px-4 h-12 flex-shrink-0 border-b border-gray-100">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className={`w-2 h-2 rounded-full flex-shrink-0 ${traceDotColors[selectedEvent.type] || 'bg-gray-400'}`} />
+                <span className={`text-xs px-2 py-0.5 rounded-md font-medium flex-shrink-0 ${traceTypeColors[selectedEvent.type] || 'bg-gray-100 text-gray-500'}`}>
+                  {traceTypeLabels[selectedEvent.type] || selectedEvent.type}
+                </span>
+              </div>
+              <button
+                onClick={() => setSelectedEvent(null)}
+                className="p-1 rounded-md text-macos-text-tertiary hover:text-macos-text hover:bg-gray-100 transition-colors flex-shrink-0"
+              >
+                <X size={16} strokeWidth={1.5} />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4">
+              <div className="flex flex-col gap-3">
+                <div className="flex items-start gap-2">
+                  <Clock size={14} className="text-macos-text-tertiary flex-shrink-0 mt-0.5" strokeWidth={1.5} />
+                  <div className="min-w-0">
+                    <p className="text-xs text-macos-text-tertiary mb-0.5">发生时间</p>
+                    <p className="text-sm text-macos-text font-mono break-all">{selectedEvent.ts}</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-2">
+                  <FileText size={14} className="text-macos-text-tertiary flex-shrink-0 mt-0.5" strokeWidth={1.5} />
+                  <div className="min-w-0">
+                    <p className="text-xs text-macos-text-tertiary mb-0.5">说明</p>
+                    <p className="text-sm text-macos-text break-words">{selectedEvent.message || '-'}</p>
+                  </div>
+                </div>
+                {selectedEvent.from != null && selectedEvent.to != null && (
+                  <div className="flex items-start gap-2">
+                    <ArrowRight size={14} className="text-macos-text-tertiary flex-shrink-0 mt-0.5" strokeWidth={1.5} />
+                    <div className="min-w-0">
+                      <p className="text-xs text-macos-text-tertiary mb-0.5">状态变更</p>
+                      <p className="text-sm text-macos-text flex items-center gap-1.5 flex-wrap">
+                        <span className={`text-xs px-2 py-0.5 rounded-md font-medium ${statusBadgeClass(selectedEvent.from)}`}>{selectedEvent.from}</span>
+                        <ArrowRight size={12} className="text-macos-text-tertiary" />
+                        <span className={`text-xs px-2 py-0.5 rounded-md font-medium ${statusBadgeClass(selectedEvent.to)}`}>{selectedEvent.to}</span>
+                      </p>
+                    </div>
+                  </div>
+                )}
+                {Array.isArray(selectedEvent.fields) && selectedEvent.fields.length > 0 && (
+                  <div className="flex items-start gap-2">
+                    <ListChecks size={14} className="text-macos-text-tertiary flex-shrink-0 mt-0.5" strokeWidth={1.5} />
+                    <div className="min-w-0">
+                      <p className="text-xs text-macos-text-tertiary mb-0.5">变更字段</p>
+                      <p className="text-sm text-macos-text flex gap-1 flex-wrap">
+                        {selectedEvent.fields.map(f => (
+                          <span key={f} className="text-xs px-1.5 py-0.5 rounded-md bg-blue-50 text-blue-600">{f}</span>
+                        ))}
+                      </p>
+                    </div>
+                  </div>
+                )}
+                {selectedEvent.name != null && (
+                  <div className="flex items-start gap-2">
+                    <StickyNote size={14} className="text-macos-text-tertiary flex-shrink-0 mt-0.5" strokeWidth={1.5} />
+                    <div className="min-w-0">
+                      <p className="text-xs text-macos-text-tertiary mb-0.5">上下文</p>
+                      <p className="text-sm text-macos-text break-words">{selectedEvent.name}</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }

@@ -330,8 +330,29 @@ const TaskDetail: FC<{ onEditClick: () => void }> = ({ onEditClick }) => {
                 </div>
               </div>
 
-              {/* 处理时间线（内嵌可视化节点链，右上角放大查看完整大图；参照实例「执行进度」形态） */}
+              {/* 任务内容（右上角放大编辑，支持 md 编辑/预览） */}
               <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-sm font-bold text-macos-text">任务内容</span>
+                  <button
+                    onClick={() => setIsEditContentOpen(true)}
+                    disabled={!task}
+                    title="编辑任务内容"
+                    className="p-1 rounded-md text-macos-text-tertiary hover:text-macos-text hover:bg-gray-100 transition-colors"
+                  >
+                    <Maximize2 size={14} strokeWidth={1.5} />
+                  </button>
+                </div>
+                <div className="max-h-200 overflow-y-auto">
+                  {task!.content ? (
+                    <MarkdownRenderer content={task!.content} className="text-sm" />
+                  ) : (
+                    <p className="text-sm text-macos-text-tertiary text-center py-8">暂无任务内容</p>
+                  )}
+                </div>
+              </div>
+              {/* 处理时间线（整行，内嵌可视化节点链，右上角放大查看完整大图；参照实例「执行进度」形态） */}
+              <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 col-span-2">
                 <div className="flex items-center justify-between mb-3">
                   <span className="text-sm font-bold text-macos-text">处理时间线</span>
                   <button
@@ -343,7 +364,7 @@ const TaskDetail: FC<{ onEditClick: () => void }> = ({ onEditClick }) => {
                     <Maximize2 size={14} strokeWidth={1.5} />
                   </button>
                 </div>
-                <TaskTimelineVisual trace={detail.trace} />
+                <TaskTimelineVisual trace={detail.trace} status={task?.status} />
               </div>
 
               {/* 任务上下文 */}
@@ -388,27 +409,6 @@ const TaskDetail: FC<{ onEditClick: () => void }> = ({ onEditClick }) => {
                 )}
               </div>
 
-              {/* 任务内容（整行，右上角放大编辑，支持 md 编辑/预览） */}
-              <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 col-span-2">
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-sm font-bold text-macos-text">任务内容</span>
-                  <button
-                    onClick={() => setIsEditContentOpen(true)}
-                    disabled={!task}
-                    title="编辑任务内容"
-                    className="p-1 rounded-md text-macos-text-tertiary hover:text-macos-text hover:bg-gray-100 transition-colors"
-                  >
-                    <Maximize2 size={14} strokeWidth={1.5} />
-                  </button>
-                </div>
-                <div className="max-h-200 overflow-y-auto">
-                  {task!.content ? (
-                    <MarkdownRenderer content={task!.content} className="text-sm" />
-                  ) : (
-                    <p className="text-sm text-macos-text-tertiary text-center py-8">暂无任务内容</p>
-                  )}
-                </div>
-              </div>
             </div>
           ) : (
             <div className="py-20 text-center">
@@ -451,6 +451,7 @@ const TaskDetail: FC<{ onEditClick: () => void }> = ({ onEditClick }) => {
         isOpen={isTimelineOpen}
         onClose={() => setIsTimelineOpen(false)}
         trace={detail?.trace || []}
+        status={detail?.task?.status}
       />
     </>
   )
