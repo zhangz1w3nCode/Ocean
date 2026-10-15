@@ -1,6 +1,5 @@
 import type { FC } from 'react'
 import { Modal, MarkdownRenderer, Button } from '../ui'
-import { formatRelativeTime } from '../../utils/format'
 import type { TaskContextFile } from '../../types'
 
 interface TaskContextModalProps {
@@ -40,11 +39,6 @@ export const TaskContextModal: FC<TaskContextModalProps> = ({ context, onClose, 
         </div>
       }
     >
-      <div className="flex items-center gap-2 mb-3 pb-2 border-b border-gray-100">
-        <span className="text-xs text-macos-text-tertiary">
-          更新于 {context.updatedAt ? formatRelativeTime(context.updatedAt) : '-'}
-        </span>
-      </div>
       <div className="flex-1 min-h-0 overflow-y-auto">
         {context.content ? (
           <MarkdownRenderer content={context.content} className="text-sm" />
