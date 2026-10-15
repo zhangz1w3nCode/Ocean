@@ -3580,11 +3580,12 @@ ipcMain.handle('update-task', (_, payload) => {
     frontmatter.updated_at = now
     fs.writeFileSync(getTaskMdPath(name), serializeTaskMd(frontmatter, content), 'utf-8')
 
-    if (statusChanged) {
-      appendTaskTrace(name, { ts: now, type: 'status-changed', from: existing.status, to: nextStatus, message: `状态变更：${existing.status} → ${nextStatus}` })
-    }
+    // 事件顺序：先字段变更后状态变更——字段变更（如指定处理人）是因，状态推进是果
     if (changedFields.length) {
       appendTaskTrace(name, { ts: now, type: 'task-updated', fields: changedFields, message: `更新字段：${changedFields.join('、')}` })
+    }
+    if (statusChanged) {
+      appendTaskTrace(name, { ts: now, type: 'status-changed', from: existing.status, to: nextStatus, message: `状态变更：${existing.status} → ${nextStatus}` })
     }
 
     return { success: true, task: { name, status: nextStatus, handler, repo, tags, relatedTasks, createdAt: existing.createdAt, updatedAt: now } }
