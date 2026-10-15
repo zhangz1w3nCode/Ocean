@@ -1,6 +1,6 @@
 import type { FC } from 'react'
 import { useState, useEffect, useRef } from 'react'
-import { Type, FileText, User, GitBranch, Tags, CircleDot, Edit3, Eye } from 'lucide-react'
+import { Type, FileText, User, GitBranch, Tags, CircleDot, Edit3, Eye, Link2 } from 'lucide-react'
 import { Modal, Input, Button, ConfirmModal, Dropdown, MarkdownEditor, MarkdownRenderer } from '../ui'
 import { TagChipsInput } from './TagChipsInput'
 import { useToastStore } from '../../stores/toastStore'
@@ -14,6 +14,8 @@ interface TaskFormModalProps {
   task?: TaskSummary & { content?: string } | null
   /** 创建模式的名称唯一性校验（已有任务名列表） */
   existingNames?: string[]
+  /** 可关联的已有任务名列表（编辑模式自动排除自身） */
+  taskOptions?: string[]
   onConfirm: (payload: CreateTaskPayload | UpdateTaskPayload) => Promise<boolean>
 }
 
@@ -30,6 +32,7 @@ export const TaskFormModal: FC<TaskFormModalProps> = ({
   mode,
   task = null,
   existingNames = [],
+  taskOptions = [],
   onConfirm,
 }) => {
   const { addToast } = useToastStore()
@@ -38,6 +41,7 @@ export const TaskFormModal: FC<TaskFormModalProps> = ({
   const [handler, setHandler] = useState('')
   const [repoList, setRepoList] = useState<string[]>([])
   const [tagsList, setTagsList] = useState<string[]>([])
+  const [relatedTaskList, setRelatedTaskList] = useState<string[]>([])
   const [status, setStatus] = useState<TaskStatus>('等待处理')
   // 任务内容编辑/预览切换（仅创建模式的内容字段）
   const [contentPreview, setContentPreview] = useState<'edit' | 'preview'>('edit')
@@ -49,8 +53,8 @@ export const TaskFormModal: FC<TaskFormModalProps> = ({
 
   // 表单实时镜像（ref）：脏检测快照必须读到重置后的值，
   // 直接闭包捕获 state 会拿到「上一次会话 → 重置」间的旧值造成误判
-  const formStateRef = useRef({ name, content, handler, repoList, tagsList, status })
-  formStateRef.current = { name, content, handler, repoList, tagsList, status }
+  const formStateRef = useRef({ name, content, handler, repoList, tagsList, relatedTaskList, status })
+  formStateRef.current = { name, content, handler, repoList, tagsList, relatedTaskList, status }
 
   const isCreate = mode === 'create'
   const taskStatus = (task?.status || '等待处理') as TaskStatus
@@ -76,6 +80,7 @@ export const TaskFormModal: FC<TaskFormModalProps> = ({
         setHandler('')
         setRepoList([])
         setTagsList([])
+        setRelatedTaskList([])
         setStatus('等待处理')
         setContentPreview('edit')
       } else {
@@ -84,6 +89,7 @@ export const TaskFormModal: FC<TaskFormModalProps> = ({
         setHandler(task?.handler || '')
         setRepoList(task?.repo || [])
         setTagsList(task?.tags || [])
+        setRelatedTaskList(task?.relatedTasks || [])
         setStatus(taskStatus)
       }
       setInvalidFields(new Set())
@@ -129,6 +135,7 @@ export const TaskFormModal: FC<TaskFormModalProps> = ({
         handler: handler.trim(),
         repo: repoList,
         tags: tagsList,
+        relatedTasks: relatedTaskList,
       } as CreateTaskPayload)
       if (success) addToast('任务创建成功', 'success')
     } else {
@@ -138,6 +145,7 @@ export const TaskFormModal: FC<TaskFormModalProps> = ({
         handler: handler.trim(),
         repo: repoList,
         tags: tagsList,
+        relatedTasks: relatedTaskList,
         status: canSelectStatus ? status : undefined,
       } as UpdateTaskPayload)
       if (success) addToast('任务更新成功', 'success')
@@ -258,6 +266,24 @@ export const TaskFormModal: FC<TaskFormModalProps> = ({
               addLabel="添加标签"
               placeholder="输入标签"
               itemLabel="标签"
+            />
+          </div>
+
+          {/* 关联任务（选择模式：从已有任务中选择，编辑模式排除自身） */}
+          <div>
+            <label className="flex items-center gap-2 text-sm font-medium text-macos-text mb-1.5">
+              <Link2 size={16} className="text-macos-text-secondary" />
+              关联任务（可选）
+            </label>
+            <TagChipsInput
+              items={relatedTaskList}
+              onChange={setRelatedTaskList}
+              addLabel="添加任务"
+              placeholder="选择任务"
+              itemLabel="关联任务"
+              variant="gray"
+              options={taskOptions.filter(t => t !== name)}
+              emptyOptionHint="暂无可关联的任务"
             />
           </div>
 

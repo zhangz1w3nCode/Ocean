@@ -3,7 +3,7 @@ import { useState, useEffect, useRef, memo } from 'react'
 import { motion, AnimatePresence, Reorder, useDragControls } from 'framer-motion'
 import {
   Search, RefreshCw, ClipboardList, Plus, ChevronLeft, ChevronUp, ChevronDown,
-  X, Home, Clock, User, GitBranch, Tags, CircleDot, StickyNote, FileText, Maximize2,
+  X, Home, Clock, User, GitBranch, Tags, CircleDot, StickyNote, FileText, Maximize2, Link2,
 } from 'lucide-react'
 import { Button, Dropdown, MarkdownRenderer } from '../components/ui'
 import { useTaskStore } from '../stores/taskStore'
@@ -347,6 +347,17 @@ const TaskDetail: FC<{ onEditClick: () => void }> = ({ onEditClick }) => {
                       <span className="text-macos-text-tertiary">-</span>
                     )}
                   </DetailField>
+                  <DetailField icon={Link2} label="关联">
+                    {task!.relatedTasks && task!.relatedTasks.length > 0 ? (
+                      <span className="flex gap-1 overflow-hidden flex-wrap">
+                        {task!.relatedTasks.map(rt => (
+                          <span key={rt} className="text-xs px-1.5 py-0.5 rounded-md bg-gray-50 text-gray-600 truncate max-w-[80px]" title={rt}>{rt}</span>
+                        ))}
+                      </span>
+                    ) : (
+                      <span className="text-macos-text-tertiary">-</span>
+                    )}
+                  </DetailField>
                   <DetailField icon={Clock} label="创建">
                     {task!.createdAt ? formatRelativeTime(task!.createdAt) : '-'}
                   </DetailField>
@@ -603,6 +614,7 @@ export const TaskLibraryPage: FC = () => {
         onClose={() => setIsCreateModalOpen(false)}
         mode="create"
         existingNames={tasks.map(t => t.name)}
+        taskOptions={tasks.map(t => t.name)}
         onConfirm={handleCreate}
       />
 
@@ -612,6 +624,7 @@ export const TaskLibraryPage: FC = () => {
         onClose={() => setIsEditModalOpen(false)}
         mode="edit"
         task={detail?.task ?? null}
+        taskOptions={tasks.map(t => t.name)}
         onConfirm={handleUpdate}
       />
     </div>

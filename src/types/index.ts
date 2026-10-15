@@ -461,6 +461,7 @@ export interface TaskSummary {
   handler: string
   repo: string[]
   tags: string[]
+  relatedTasks: string[]
   createdAt: string
   updatedAt: string
 }
@@ -497,6 +498,7 @@ export interface CreateTaskPayload {
   handler?: string
   repo?: string[]
   tags?: string[]
+  relatedTasks?: string[]
   context?: string
 }
 
@@ -507,5 +509,6 @@ export interface UpdateTaskPayload {
   handler?: string
   repo?: string[]
   tags?: string[]
+  relatedTasks?: string[]
   status?: TaskStatus
 }

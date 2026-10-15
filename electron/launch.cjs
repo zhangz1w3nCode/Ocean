@@ -3380,6 +3380,7 @@ const readTaskFile = (taskName) => {
     handler: frontmatter.handler != null ? String(frontmatter.handler).trim() : '',
     repo: readTaskArrayField(frontmatter.repo),
     tags: readTaskArrayField(frontmatter.tags),
+    relatedTasks: readTaskArrayField(frontmatter.related_tasks),
     content: body,
     createdAt: frontmatter.created_at != null ? String(frontmatter.created_at) : '',
     updatedAt: frontmatter.updated_at != null ? String(frontmatter.updated_at) : '',
@@ -3394,6 +3395,7 @@ const taskSummaryOf = (task, dirName) => ({
   handler: task.handler,
   repo: task.repo,
   tags: task.tags,
+  relatedTasks: task.relatedTasks,
   createdAt: task.createdAt,
   updatedAt: task.updatedAt,
 })
@@ -3484,12 +3486,15 @@ ipcMain.handle('create-task', (_, payload) => {
     const handler = typeof p.handler === 'string' ? p.handler.trim() : ''
     const repo = normalizeTaskStringArray(p.repo)
     const tags = normalizeTaskStringArray(p.tags)
+    // 关联任务：仅收录当前已存在的任务名，防止引用不存在的任务
+    const relatedTasks = normalizeTaskStringArray(p.relatedTasks).filter(t => fs.existsSync(getTaskDir(t)))
     fs.writeFileSync(getTaskMdPath(name), serializeTaskMd({
       name,
       status: TASK_STATUS_PENDING,
       handler,
       repo,
       tags,
+      related_tasks: relatedTasks,
       created_at: now,
       updated_at: now,
     }, content), 'utf-8')
@@ -3503,7 +3508,7 @@ ipcMain.handle('create-task', (_, payload) => {
       appendTaskTrace(name, { ts: now, type: 'context-created', name: contextName, message: `新增上下文：${contextName}` })
     }
 
-    return { success: true, task: { name, status: TASK_STATUS_PENDING, handler, repo, tags, createdAt: now, updatedAt: now } }
+    return { success: true, task: { name, status: TASK_STATUS_PENDING, handler, repo, tags, relatedTasks, createdAt: now, updatedAt: now } }
   } catch (error) {
     console.error('创建任务失败:', error)
     return { success: false, error: String(error) }
@@ -3523,6 +3528,8 @@ ipcMain.handle('update-task', (_, payload) => {
     const handler = typeof p.handler === 'string' ? p.handler.trim() : ''
     const repo = normalizeTaskStringArray(p.repo)
     const tags = normalizeTaskStringArray(p.tags)
+    // 关联任务：仅收录当前已存在的任务名（排除自身）
+    const relatedTasks = normalizeTaskStringArray(p.relatedTasks).filter(t => t !== name && fs.existsSync(getTaskDir(t)))
 
     // 状态机（仅前进）：
     //   等待处理 --(手动 或 处理人由空变有自动)--> 处理中 --(手动)--> 已完成 | 已取消；
@@ -3551,6 +3558,7 @@ ipcMain.handle('update-task', (_, payload) => {
     if (handler !== existing.handler) changedFields.push('处理人')
     if (JSON.stringify(repo) !== JSON.stringify(existing.repo)) changedFields.push('关联仓库')
     if (JSON.stringify(tags) !== JSON.stringify(existing.tags)) changedFields.push('标签')
+    if (JSON.stringify(relatedTasks) !== JSON.stringify(existing.relatedTasks)) changedFields.push('关联任务')
     const statusChanged = nextStatus !== existing.status
     if (!changedFields.length && !statusChanged) {
       return { success: true, task: taskSummaryOf(existing, name) }
@@ -3563,6 +3571,7 @@ ipcMain.handle('update-task', (_, payload) => {
     frontmatter.handler = handler
     frontmatter.repo = repo
     frontmatter.tags = tags
+    frontmatter.related_tasks = relatedTasks
     frontmatter.updated_at = now
     fs.writeFileSync(getTaskMdPath(name), serializeTaskMd(frontmatter, content), 'utf-8')
 
@@ -3573,7 +3582,7 @@ ipcMain.handle('update-task', (_, payload) => {
       appendTaskTrace(name, { ts: now, type: 'task-updated', fields: changedFields, message: `更新字段：${changedFields.join('、')}` })
     }
 
-    return { success: true, task: { name, status: nextStatus, handler, repo, tags, createdAt: existing.createdAt, updatedAt: now } }
+    return { success: true, task: { name, status: nextStatus, handler, repo, tags, relatedTasks, createdAt: existing.createdAt, updatedAt: now } }
   } catch (error) {
     console.error('更新任务失败:', error)
     return { success: false, error: String(error) }
