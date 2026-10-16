@@ -1,7 +1,7 @@
 import type { FC } from 'react'
 import { useState, useEffect, useCallback } from 'react'
 import {
-  GitBranch, CheckCircle2, AlertCircle, Loader2, RefreshCw, Sparkles, RotateCcw,
+  GitBranch, CheckCircle2, AlertCircle, Loader2, RefreshCw, Sparkles, RotateCcw, Wand2,
 } from 'lucide-react'
 import { Button, Switch, MarkdownEditor, Dropdown } from '../components/ui'
 import { useToastStore } from '../stores/toastStore'
@@ -14,6 +14,9 @@ import {
   getDefaultKnowledgeGitConfig,
   getDefaultKnowledgeGitCommitMessagePrompt,
   type KnowledgeGitConfig,
+  loadKnowledgeCompileConfig,
+  saveKnowledgeCompileConfig,
+  type KnowledgeCompileModelConfig,
 } from '../utils/storage'
 
 /**
@@ -32,6 +35,10 @@ export const KnowledgeSettingsPage: FC = () => {
 
   const [gitConfig, setGitConfig] = useState<KnowledgeGitConfig>(getDefaultKnowledgeGitConfig())
   const [savingConfig, setSavingConfig] = useState(false)
+
+  // 知识加工独立模型配置（无开关，只有提供商/模型/保存）
+  const [compileModelConfig, setCompileModelConfig] = useState<KnowledgeCompileModelConfig>({})
+  const [savingCompileConfig, setSavingCompileConfig] = useState(false)
 
   // 刷新 git 托管状态
   const refreshStatus = useCallback(async (showToast = false) => {
@@ -72,6 +79,25 @@ export const KnowledgeSettingsPage: FC = () => {
   }, [])
 
   useEffect(() => {
+    let cancelled = false
+    loadKnowledgeCompileConfig().then((config) => {
+      if (!cancelled) setCompileModelConfig(config || {})
+    })
+    return () => { cancelled = true }
+  }, [])
+
+  // 归一化：providers 就绪后，无效 providerId（不在列表，如历史残留/外部写入）置空——
+  // UI 展示与保存逻辑回落到列表第一个，避免配置静默指向不存在的提供商
+  useEffect(() => {
+    if (llmProviders.length === 0) return
+    setCompileModelConfig((c) =>
+      c.providerId && !llmProviders.some((p) => p.id === c.providerId)
+        ? { ...c, providerId: '' }
+        : c,
+    )
+  }, [llmProviders])
+
+  useEffect(() => {
     loadLLMProviders()
   }, [loadLLMProviders])
 
@@ -96,6 +122,45 @@ export const KnowledgeSettingsPage: FC = () => {
     }
     return list.map((m) => ({ value: m, label: m }))
   })()
+
+  // 知识加工模型：当前选中提供商（独立于 git 配置的选择）
+  const selectedCompileProvider =
+    llmProviders.find((p) => p.id === compileModelConfig.providerId) ||
+    llmProviders[0] ||
+    null
+
+  const compileModelOptions: { value: string; label: string }[] = (() => {
+    if (!selectedCompileProvider) return []
+    const list = [...(selectedCompileProvider.availableModels || [])]
+    if (selectedCompileProvider.defaultModel && !list.includes(selectedCompileProvider.defaultModel)) {
+      list.unshift(selectedCompileProvider.defaultModel)
+    }
+    return list.map((m) => ({ value: m, label: m }))
+  })()
+
+  // 保存知识加工模型配置
+  const handleSaveCompileConfig = useCallback(async () => {
+    // 归一化：UI 隐式回退的提供商/模型显式落盘，避免存成空
+    const providerId = compileModelConfig.providerId || selectedCompileProvider?.id || ''
+    const model = compileModelConfig.model || selectedCompileProvider?.defaultModel || ''
+    if (!providerId) {
+      addToast('请选择模型提供商', 'warning')
+      return
+    }
+    if (!model) {
+      addToast('请选择模型', 'warning')
+      return
+    }
+    const toSave = { providerId, model }
+    setCompileModelConfig(toSave)
+    setSavingCompileConfig(true)
+    try {
+      const ok = await saveKnowledgeCompileConfig(toSave)
+      addToast(ok ? '保存成功' : '保存失败', ok ? 'success' : 'error')
+    } finally {
+      setSavingCompileConfig(false)
+    }
+  }, [compileModelConfig, selectedCompileProvider, addToast])
 
   // 开启 git 托管
   const handleInit = useCallback(async () => {
@@ -302,6 +367,52 @@ export const KnowledgeSettingsPage: FC = () => {
               className="bg-[#E5E7EB] border border-gray-300 text-gray-700 hover:bg-gray-200 hover:border-gray-400 rounded-lg px-4 py-2 text-sm"
             >
               {savingConfig ? '保存中...' : '保存'}
+            </Button>
+          </div>
+        </div>
+
+        {/* 知识加工模型 */}
+        <div className="p-4 rounded-lg border border-gray-100">
+          <div className="flex items-center gap-2 mb-1">
+            <Wand2 size={14} className="text-macos-text-secondary" strokeWidth={1.5} />
+            <div className="text-sm font-medium text-macos-text">知识加工模型</div>
+          </div>
+          <div className="text-xs text-macos-text-tertiary mb-3">
+            知识加工（编译知识源为知识卡片）使用的模型。此处的提供商/模型选择独立保存，不影响设置中的 LLM 默认配置；未配置时使用提供商列表第一个
+          </div>
+
+          <div className="grid grid-cols-2 gap-4 mt-4">
+            <div className="min-w-0">
+              <div className="text-sm font-medium text-macos-text mb-2">模型提供商</div>
+              <Dropdown
+                value={selectedCompileProvider?.id || ''}
+                options={providerOptions}
+                onChange={(v) => setCompileModelConfig((c) => ({ ...c, providerId: v, model: '' }))}
+                placeholder={providerOptions.length ? '请选择提供商' : '暂无可用提供商'}
+                className="w-full"
+              />
+            </div>
+            <div className="min-w-0">
+              <div className="text-sm font-medium text-macos-text mb-2">模型</div>
+              <Dropdown
+                value={compileModelConfig.model || selectedCompileProvider?.defaultModel || ''}
+                options={compileModelOptions}
+                onChange={(v) => setCompileModelConfig((c) => ({ ...c, model: v }))}
+                placeholder={compileModelOptions.length ? '请选择模型' : '该提供商暂无模型'}
+                className="w-full"
+              />
+            </div>
+          </div>
+
+          <div className="mt-4 flex justify-end">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={handleSaveCompileConfig}
+              disabled={savingCompileConfig}
+              className="bg-[#E5E7EB] border border-gray-300 text-gray-700 hover:bg-gray-200 hover:border-gray-400 rounded-lg px-4 py-2 text-sm"
+            >
+              {savingCompileConfig ? '保存中...' : '保存'}
             </Button>
           </div>
         </div>

@@ -8,7 +8,7 @@ export type PageType = 'project' | 'agents' | 'workflows' | 'nodes' | 'resources
 export type WorkflowSubPage = 'nodes' | 'workflows' | 'instances' | 'settings'
 
 // 知识区域二级导航子页面
-export type KnowledgeSubPage = 'library' | 'graph' | 'catalog' | 'review' | 'settings'
+export type KnowledgeSubPage = 'source' | 'compile' | 'library' | 'graph' | 'catalog' | 'review' | 'settings'
 
 // 任务区域二级导航子页面
 export type TaskSubPage = 'library'
