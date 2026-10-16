@@ -22,6 +22,8 @@ interface MarkdownEditorProps extends Omit<TextareaHTMLAttributes<HTMLTextAreaEl
   excludePath?: string  // 排除特定路径（如 ".claude/agents/xxx.md" 或 ".pi/agents/xxx.md"）
   value?: string
   onChange?: (e: React.ChangeEvent<HTMLTextAreaElement>) => void
+  /** 编辑器填满父容器高度（父链需有确定高度，如 flex-1 min-h-0）；默认 auto 高度 */
+  fill?: boolean
 }
 
 export const MarkdownEditor: FC<MarkdownEditorProps> = ({
@@ -35,6 +37,7 @@ export const MarkdownEditor: FC<MarkdownEditorProps> = ({
   disabled,
   placeholder,
   rows = 4,
+  fill = false,
 }) => {
   // @ 引用相关状态
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -653,7 +656,7 @@ export const MarkdownEditor: FC<MarkdownEditorProps> = ({
   }, [])
 
   return (
-    <div className="w-full">
+    <div className={`w-full ${fill ? 'h-full flex flex-col' : ''}`}>
       {label && (
         <label className="block text-sm font-medium text-macos-text mb-1.5">
           {label}
@@ -664,6 +667,7 @@ export const MarkdownEditor: FC<MarkdownEditorProps> = ({
         className={`
           w-full rounded-lg overflow-hidden
           transition-[box-shadow] duration-200
+          ${fill ? 'flex-1 min-h-0 flex flex-col' : ''}
           ${error ? 'ring-2 ring-red-300' : ''}
           ${disabled ? 'cursor-not-allowed opacity-60' : ''}
           ${className}
@@ -676,6 +680,8 @@ export const MarkdownEditor: FC<MarkdownEditorProps> = ({
           placeholder={placeholder}
           onCreateEditor={handleCreateEditor}
           basicSetup={false}
+          className={fill ? 'flex-1 min-h-0' : undefined}
+          height={fill ? '100%' : undefined}
         />
       </div>
       {error && <p className="mt-1 text-xs text-macos-error">{error}</p>}

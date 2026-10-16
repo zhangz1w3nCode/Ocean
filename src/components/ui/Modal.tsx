@@ -13,6 +13,8 @@ interface ModalProps {
   headerLeft?: ReactNode
   layoutKey?: string
   persistLayout?: boolean
+  /** 高度自适应内容（无持久化布局且未最大化时生效；超出视口高度上限则内容区滚动） */
+  autoHeight?: boolean
 }
 
 type ResizeDirection = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw'
@@ -48,6 +50,10 @@ const resizeCursors: Record<ResizeDirection, string> = {
 // 持久化弹窗布局（按 key 隔离，预览↔编辑切换时保持用户的调整，不同弹窗互不影响）
 const persistedLayoutMap = new Map<string, { pos: { x: number; y: number }; dim: { width: number; height: number } }>()
 
+// 用户手动调整过高度的弹窗（resize/maximize）：autoHeight 弹窗一旦手动调高则固定高度，
+// 不能用 persistedLayoutMap 判断——它在每次打开时都会自动写入初始布局，无法区分用户意图
+const userAdjustedHeights = new Set<string>()
+
 // 导出 get/set 供其他组件（如 WorkflowEditorModal）共享同一 Map
 export const getLayout = (key: string) => persistedLayoutMap.get(key) ?? null
 export const setLayout = (key: string, layout: { pos: { x: number; y: number }; dim: { width: number; height: number } }) => {
@@ -69,6 +75,7 @@ export const Modal: FC<ModalProps> = ({
   headerLeft,
   layoutKey,
   persistLayout = true,
+  autoHeight = false,
 }) => {
   const _layoutKey = layoutKey || title
   const shouldPersist = persistLayout !== false
@@ -81,9 +88,11 @@ export const Modal: FC<ModalProps> = ({
     const h = shouldPersist
       ? Math.min(sizeHeights[size], Math.round(window.innerHeight * 0.7))
       : Math.max(250, Math.min(400, Math.round(window.innerHeight * 0.32)))
+    // 自适应高度的实际高度未知，顶部对齐避免内容高于估算值时溢出屏幕底部
+    const y = autoHeight ? 40 : Math.max(16, Math.round((window.innerHeight - h) / 2))
     return {
       x: Math.max(16, Math.round((window.innerWidth - w) / 2)),
-      y: Math.max(16, Math.round((window.innerHeight - h) / 2)),
+      y,
     }
   })
   const [dimensions, setDimensions] = useState(() => {
@@ -169,9 +178,11 @@ export const Modal: FC<ModalProps> = ({
           ? Math.min(sizeHeights[size], Math.round(window.innerHeight * 0.7))
           : Math.max(250, Math.min(400, Math.round(window.innerHeight * 0.32)))
         setDimensions({ width: w, height: h })
+        // 自适应高度的实际高度未知，顶部对齐避免内容高于估算值时溢出屏幕底部
+        const y = autoHeight ? 40 : Math.max(16, Math.round((window.innerHeight - h) / 2))
         setPosition({
           x: Math.max(16, Math.round((window.innerWidth - w) / 2)),
-          y: Math.max(16, Math.round((window.innerHeight - h) / 2)),
+          y,
         })
       }
     }
@@ -286,6 +297,7 @@ export const Modal: FC<ModalProps> = ({
 
       const handleUp = () => {
         setIsResizing(false)
+        userAdjustedHeights.add(_layoutKey)
         resizeData.current = null
         document.body.style.cursor = prevCursor
         document.body.style.userSelect = prevUserSelect
@@ -310,6 +322,7 @@ export const Modal: FC<ModalProps> = ({
       }
       setIsMaximized(false)
     } else {
+      userAdjustedHeights.add(_layoutKey)
       prevLayout.current = { pos: { ...position }, dim: { ...dimensions } }
       const margin = 32
       setPosition({ x: Math.round(margin / 2), y: 40 })
@@ -343,7 +356,9 @@ export const Modal: FC<ModalProps> = ({
               transition={{ duration: 0.15 }}
               style={{
                 ...(shouldPersist
-                  ? { position: 'absolute', left: position.x, top: position.y, width: dimensions.width, height: dimensions.height }
+                  ? (autoHeight && !isMaximized && !userAdjustedHeights.has(_layoutKey)
+                      ? { position: 'absolute', left: position.x, top: position.y, width: dimensions.width, height: 'auto', maxHeight: 'calc(100vh - 64px)' }
+                      : { position: 'absolute', left: position.x, top: position.y, width: dimensions.width, height: dimensions.height })
                   : { maxWidth: '600px', maxHeight: '350px' }
                 ),
               }}
@@ -369,8 +384,8 @@ export const Modal: FC<ModalProps> = ({
                 </button>
               </div>
 
-              {/* 内容 */}
-              <div className="px-6 py-5 flex-1 min-h-0 flex flex-col overflow-hidden select-text">
+              {/* 内容 — 自适应高度模式下超出弹窗上限时整体滚动，否则固定高度靠子元素自滚动 */}
+              <div className={`px-6 py-5 flex-1 min-h-0 flex flex-col select-text ${autoHeight ? 'overflow-y-auto' : 'overflow-hidden'}`}>
                 {children}
               </div>
 

@@ -9,6 +9,7 @@ import { KnowledgeLayout } from '../knowledge'
 import { SkillsPage } from '../../pages/SkillsPage'
 import { SettingsPage } from '../../pages/SettingsPage'
 import { WorkflowEditorModal, WorkflowLayout } from '../workflow'
+import { TaskLayout } from '../tasks'
 
 // 空白页面组件（用于 project 类型，实际项目选择页面在 App.tsx 中处理）
 const EmptyPage: FC = () => null
@@ -22,6 +23,7 @@ const pageComponents: Record<PageType, FC> = {
   knowledges: KnowledgeLayout,
   skills: SkillsPage,
   settings: SettingsPage,
+  tasks: TaskLayout,
 }
 
 export const MainContent: FC = () => {
