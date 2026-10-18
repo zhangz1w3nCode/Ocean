@@ -1,4 +1,5 @@
 import { describe, it, expect, afterEach, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
 import { installWebApi, methodToChannel } from './webApiShim'
 
 afterEach(() => { vi.unstubAllGlobals() })
@@ -94,13 +95,32 @@ describe('installWebApi', () => {
     expect((w as unknown as { __OCEAN_WEB__?: boolean }).__OCEAN_WEB__).toBe(true)
   })
 
-  it('注入的 api 覆盖 preload 的全部 82 个 invoke 方法与 2 个事件方法', () => {
+  it('注入的 api 与 preload 方法全集同步（网页端故意排除的除外）', () => {
     const w = stubWindow()
     vi.stubGlobal('fetch', vi.fn(async () => ({ json: async () => ({}) })))
     vi.stubGlobal('EventSource', class { onmessage = null; constructor(_u: string) {} })
     installWebApi()
     const keys = Object.keys(w.electronAPI as object)
-    expect(keys.length).toBe(86)
+
+    // 期望集合从 preload 源码推导，避免硬编码计数随方法增删过期（82→86→91 已两次过时）。
+    // 提取锚点：electronAPI 对象内的两空格缩进方法定义行。
+    const preloadSrc = readFileSync(new URL('../electron/preload.dev.cjs', import.meta.url), 'utf-8')
+    const block = preloadSrc.slice(preloadSrc.indexOf('const electronAPI = {'), preloadSrc.indexOf('window.electronAPI = electronAPI'))
+    const preloadMethods = [...block.matchAll(/^  ([A-Za-z0-9_]+): \(/gm)].map(m => m[1])
+    // 提取失败的防火墙：锚点方法必须在
+    expect(preloadMethods).toContain('getAppVersion')
+    expect(preloadMethods).toContain('saveTaskContext')
+
+    // 网页端故意不注入的 preload 方法（新增排除项必须在此登记并注明原因）：
+    // - webServerStatus/Start/Stop：http.cjs 的 HTTP_DENIED_CHANNELS，网页端禁止递归拉起子进程
+    // - saveLlmReviewConfig/loadLlmReviewConfig：网页端走 localStorage 降级（见 storage.ts）
+    const WEB_EXCLUDED = new Set([
+      'webServerStatus', 'webServerStart', 'webServerStop',
+      'saveLlmReviewConfig', 'loadLlmReviewConfig',
+    ])
+    const expected = preloadMethods.filter(m => !WEB_EXCLUDED.has(m))
+
+    expect([...keys].sort()).toEqual([...expected].sort())
     expect(keys).toContain('onInstanceDetailDelta')
     expect(keys).toContain('onAgentLoopEvent')
     expect(keys).toContain('checkCliInstalled')

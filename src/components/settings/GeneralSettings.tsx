@@ -18,7 +18,7 @@ const SKILL_NAME = 'ocean-cli'
 
 const SKILL_CONTENT = `---
 name: ocean-cli
-description: Ocean CLI 工具。通过 ocean 命令完成完整的自循环：创建资产、编排工作流、实例化执行、查看详情、优化迭代。触发词：执行工作流、跑工作流、ocean 命令、资产管理、创建节点
+description: Ocean CLI 工具。通过 ocean 命令完成完整的自循环：创建资产、编排工作流、实例化执行、查看详情、优化迭代，以及任务库管理。触发词：执行工作流、跑工作流、ocean 命令、资产管理、创建节点、任务库、任务管理
 ---
 
 # ocean-cli
@@ -49,6 +49,20 @@ description: Ocean CLI 工具。通过 ocean 命令完成完整的自循环：�
 | \`ocean resource\` | list/read/create/update/delete | 资源 CRUD |
 | \`ocean agent\` | list/read/create/update/delete | 智能体 CRUD |
 | \`ocean skill\` | list/read/create/update/delete | 技能 CRUD |
+
+### 任务管理
+
+任务存于项目根 \`.tasks/\`（与桌面端任务库同一份存储与状态机；\`.tasks/{YYYY-MM-DD}/\` 日期目录不视为任务）。
+
+| 命令 | 作用 |
+|------|------|
+| \`ocean task list\` | 列出任务（按更新时间倒序；\`--status\` 精确过滤，\`--keyword\` 对名称/处理人/仓库/标签/状态子串匹配，与桌面端同语义） |
+| \`ocean task search <keyword>\` | 全文检索任务正文与上下文正文（\`--top N\`/\`--context N\`/\`--status\`；命中带位置与行号） |
+| \`ocean task read <name>\` | 读取任务（元信息 + 正文 + 上下文主题 + 事件数） |
+| \`ocean task create <name>\` | 创建任务（初始状态「等待处理」） |
+| \`ocean task update <name>\` | 更新任务（含状态推进；未提供的字段保留原值） |
+| \`ocean task context list/read/save <name>\` | 任务上下文（save 同名覆盖） |
+| \`ocean task trace <name>\` | 处理时间线事件流（同一轮更新内字段变更事件在状态变更事件之前） |
 
 ### 工作流图编辑
 
@@ -87,10 +101,14 @@ description: Ocean CLI 工具。通过 ocean 命令完成完整的自循环：�
 ## 关键约定
 
 - 全局 flag: \`--root <path>\` 覆盖项目根
-- 内容输入三选一: \`--content "短内容"\` / \`--content-file <path>\` / stdin（例外：ocean knowledge create/update 不适用）
+- 内容输入三选一: \`--content "短内容"\` / \`--content-file <path>\` / stdin（例外：ocean knowledge 与 ocean task 不适用）
 - ocean knowledge create: \`--summary\` 与 \`--tags\` 必填不可为空；正文仅能用 \`--content "$(cat 文件)"\` 传入；正文开头不得包含 YAML frontmatter
 - ocean knowledge update: \`--content\`/\`--summary\`/\`--tags\` 三项均可选（缺省保留原值），至少一项有效；正文仅 \`--content "$(cat 文件)"\` 且开头不得含 YAML frontmatter；update 后 status 回退 pending
 - ocean knowledge domain: domain 即知识所在文件夹（相对 .knowledges），create/update 知识时自动写入 YAML 头 domain 字段；\`domain list\` 树形表格展示全部 domain 层级（名称列含树形前缀，不含知识卡片，JSON 为完整路径数组）、\`domain list <name>\` 仅列其直接子 domain（表格显示名称本身，JSON 为完整路径数组，不递归）、\`domain create <name>\` 建文件夹、\`domain search <keyword>\` 匹配名称、\`domain update <old> <new>\` 重命名并同步下属知识 domain 字段
+- ocean task create/update/context save: 任务内容与上下文内容仅能用 \`--content "$(cat 文件)"\` 传入（禁用 --content-file / stdin，正文开头不得包含 YAML frontmatter）
+- ocean task update: \`--content\`/\`--handler\`/\`--repo\`/\`--tags\`/\`--related\` 未提供则保留原值；显式清空用 \`--no-handler\`/\`--no-repo\`/\`--no-tags\`/\`--no-related\`（数组 flag 逗号分隔，如 \`--repo Ocean,pi-agent\`）
+- ocean task 状态机（仅前进，终态锁定）: 等待处理 → 处理中 → 已完成|已取消；等待处理也可直接进终态；等待处理 → 处理中 必须已有处理人（本次 \`--handler\` 指定即自动流转，无需再加 \`--status\`）
+- ocean task 检索分工: \`list --keyword\` 只搜摘要字段（同桌面端），正文/上下文正文检索用 \`search\`
 - \`ocean workflow doctor\` 检查 10 项完整性（非空/起始/结束/出边/入边/孤立/分支/可达/边引用/文件引用）
 - asset/skill 目录随 assetRoot（.pi 或 .claude）自动变化，agent 不需手动判断
 `
