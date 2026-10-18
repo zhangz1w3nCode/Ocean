@@ -1,5 +1,5 @@
 import { describe, it, expect, afterAll } from 'vitest'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createRequire } from 'node:module'
@@ -21,7 +21,7 @@ afterAll(() => {
 })
 
 describe('registry 在打包版（electron 不可解析）环境下', () => {
-  it('仍能加载 launch.cjs 并注册全部 84 个 handler', () => {
+  it('仍能加载 launch.cjs 并注册全部 handler（数量与源码一致）', () => {
     Module._resolveFilename = function (request: string, ...rest: unknown[]) {
       if (request === 'electron') {
         const err = new Error("Cannot find module 'electron'")
@@ -33,7 +33,10 @@ describe('registry 在打包版（electron 不可解析）环境下', () => {
 
     // 旧实现（用 require.resolve('electron') 定位 require.cache 键）在此处会直接抛错
     const { handlers } = req('./registry.cjs')
-    expect(handlers.size).toBe(84)
+    // 期望值从源码推导，避免硬编码计数随 channel 增删过期
+    const launchSrc = readFileSync(new URL('../launch.cjs', import.meta.url), 'utf-8')
+    expect(handlers.size).toBe((launchSrc.match(/ipcMain\.handle\(/g) || []).length)
     expect(handlers.has('set-project-path')).toBe(true)
+    expect(handlers.has('create-task')).toBe(true)
   })
 })

@@ -1,6 +1,7 @@
 // 浏览器端 window.electronAPI 适配层。
 // 桌面端由 electron/preload.dev.cjs 注入 electronAPI；网页端由本模块注入同形实现：
-// 82 个 invoke 方法走 HTTP，2 个事件订阅（instance-detail-delta / agent-loop-event）共用一条 SSE。
+// INVOKE_METHODS 全集走 HTTP，2 个事件订阅（instance-detail-delta / agent-loop-event）共用一条 SSE。
+// 集合需与 preload 方法保持同步（同步性由 webApiShim.test 从源码推导校验）。
 
 type PushCallback = (payload: unknown) => void
 
@@ -11,7 +12,7 @@ function apiBase(): string {
   return typeof window !== 'undefined' ? window.location.origin : ''
 }
 
-// 方法名 → IPC channel 名。84 个 preload 方法中 77 个满足 camelCase→kebab-case，
+// 方法名 → IPC channel 名。preload 方法中绝大多数满足 camelCase→kebab-case，
 // 以下 5 个是例外（与 electron/launch.cjs 的 ipcMain.handle 注册名逐一核对）
 const CHANNEL_OVERRIDES: Record<string, string> = {
   callLLMApi: 'call-llm-api',
@@ -24,7 +25,8 @@ const CHANNEL_OVERRIDES: Record<string, string> = {
 export const methodToChannel = (method: string): string =>
   CHANNEL_OVERRIDES[method] ?? method.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase()
 
-// preload.dev.cjs 的 84 个 invoke 方法全集（顺序与 preload 保持一致，便于比对）
+// preload.dev.cjs 的 invoke 方法全集（顺序与 preload 保持一致，便于比对）
+// 注意：webServer×3 与 llmReviewConfig×2 不在此列（网页端故意排除，原因见 webApiShim.test）
 const INVOKE_METHODS = [
   'getAppVersion',
   'saveWorkflowFile', 'loadWorkflowFile', 'deleteWorkflowFile', 'loadAllWorkflowFiles',

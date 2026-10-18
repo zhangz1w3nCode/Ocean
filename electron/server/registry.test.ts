@@ -15,21 +15,26 @@ process.env.OCEAN_NO_DIALOG = '1'
 const req = createRequire(import.meta.url)
 const { handlers, ready } = req('./registry.cjs')
 
+// 期望值从 launch.cjs 源码推导：handler 注册数应等于 ipcMain.handle 调用数。
+// 硬编码计数会随 channel 增删过期（84 在任务模块合入后已过期为 91）。
+const launchSrc = readFileSync(new URL('../launch.cjs', import.meta.url), 'utf-8')
+const handleCallCount = (launchSrc.match(/ipcMain\.handle\(/g) || []).length
+
 const call = (ch: string, ...args: unknown[]) => handlers.get(ch)!(null, ...args)
 
 afterAll(() => { rmSync(tmp, { recursive: true, force: true }) })
 
 describe('handler 注册表', () => {
-  it('launch.cjs 的 84 个 handler 全部注册', () => {
-    expect(handlers.size).toBe(84)
-    for (const ch of ['set-project-path', 'save-workflow-file', 'run-agent-loop', 'subscribe-instance-detail']) {
+  it('launch.cjs 的 handler 全部注册（数量与源码一致）', () => {
+    expect(handlers.size).toBe(handleCallCount)
+    for (const ch of ['set-project-path', 'save-workflow-file', 'run-agent-loop', 'subscribe-instance-detail', 'create-task']) {
       expect(handlers.has(ch)).toBe(true)
     }
   })
 
   it('ready resolve 后 handler 表仍然完整', async () => {
     await ready
-    expect(handlers.size).toBe(84)
+    expect(handlers.size).toBe(handleCallCount)
   })
 
   it('纯 node 下完成 项目设置→保存→读取 真实落盘回路', async () => {
