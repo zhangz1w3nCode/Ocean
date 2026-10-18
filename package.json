@@ -1,6 +1,6 @@
 {
   "name": "ocean",
-  "version": "0.0.17",
+  "version": "0.0.18",
   "description": "Ocean",
   "main": "electron/launch.cjs",
   "type": "module",
