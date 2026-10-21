@@ -12,16 +12,18 @@ import type { Limits } from '../core/state'
 import * as nodeCrud from '../core/node'
 import * as knowledgeCrud from '../core/knowledge'
 import type { DomainNode } from '../core/knowledge'
-import * as resourceCrud from '../core/resource'
-import * as agentCrud from '../core/agent'
 import * as skillCrud from '../core/skill'
 import * as wfGraph from '../core/workflow'
 import Table from 'cli-table3'
 import { handleTask, printTaskHelp } from '../source/cli/task'
+import { handleResource, printResourceHelp } from '../source/cli/resource'
+import { handleAgent, printAgentHelp } from '../source/cli/agent'
 import {
   parseArgs,
   getLimit,
   UsageError,
+  readContent,
+  stripFrontmatter,
   rawOut,
   displayWidth,
   out,
@@ -33,38 +35,6 @@ import {
   setHelpJsonBuffer,
   getHelpJsonBuffer,
 } from '../source/cli/common'
-
-// ---------------------------------------------------------------------------
-// Argument parser
-// ---------------------------------------------------------------------------
-
-function readContent(flags: Record<string, string | boolean>): string {
-  const content = typeof flags.content === 'string' ? flags.content : undefined
-  const contentFile = typeof flags['content-file'] === 'string' ? flags['content-file'] : undefined
-  if (contentFile) {
-    try {
-      return require('fs').readFileSync(contentFile, 'utf-8')
-    } catch (e: any) {
-      throw new Error(`读取内容文件失败 ${contentFile}: ${e.message}`)
-    }
-  }
-  if (content != null) return content
-  // read stdin
-  return require('fs').readFileSync(0, 'utf-8')
-}
-
-function stripFrontmatter(text: string): string {
-  if (text.startsWith('---')) {
-    const end = text.indexOf('\n---', 3)
-    if (end !== -1) {
-      const after = text.indexOf('\n', end + 4)
-      if (after !== -1) {
-        return text.substring(after + 1).trim()
-      }
-    }
-  }
-  return text
-}
 
 // 无表头单列表格，用于包裹树形展示（左对齐保留缩进，行间无分隔线）
 function printDomainBox(lines: string[]): void {
@@ -411,47 +381,10 @@ domain 说明:
   domain list <name> 仅列出其直接子 domain 名称`)
       break
     case 'resource':
-      out(`ocean resource — 资源 CRUD
-
-用法: ocean resource <subcommand> <name> [--flags...]
-
-子命令:
-  list                          列出所有资源
-  read <name>                  读取资源内容
-  create <name>                创建资源
-  update <name>                更新资源
-  delete <name>                删除资源
-
-常用 flag:
-  --type <type>                资源类型
-  --description <text>         资源描述
-  --content "文本"             短内容直接传
-  --content-file <path>         长内容指向文件
-  stdin                        管道输入（三选一）`)
+      printResourceHelp()
       break
     case 'agent':
-      out(`ocean agent — 智能体 CRUD
-
-用法: ocean agent <subcommand> <name> [--flags...]
-
-子命令:
-  list                          列出所有智能体
-  read <name>                  读取智能体内容
-  create <name>                创建智能体
-  update <name>                更新智能体
-  delete <name>                删除智能体
-
-常用 flag:
-  --description <text>         智能体描述
-  --model <model>              模型名称
-  --color <color>              颜色标识
-  --tools <tools>              工具列表
-  --system-prompt-mode <mode>  系统提示模式
-  --inherit-project-context    继承项目上下文
-  --inherit-skills             继承技能
-  --content "文本"             短内容直接传
-  --content-file <path>         长内容指向文件
-  stdin                        管道输入（三选一）`)
+      printAgentHelp()
       break
     case 'skill':
       out(`ocean skill — 技能 CRUD
@@ -1145,116 +1078,6 @@ function handleKnowledge(root: string, args: ReturnType<typeof parseArgs>): void
         return
       }
       throw new UsageError(`未知的 knowledge 子命令: ${cmd}\n运行 'ocean knowledge --help' 查看详细用法。`)
-  }
-}
-
-// ---------------------------------------------------------------------------
-// resource CRUD
-// ---------------------------------------------------------------------------
-
-function handleResource(root: string, args: ReturnType<typeof parseArgs>): void {
-  const cmd = args.subcommand
-  switch (cmd) {
-    case 'list':
-      if (args.flags.json) printJson(resourceCrud.list(root))
-      else printList(resourceCrud.list(root), '资源')
-      break
-    case 'read': {
-      const name = args.positional[0]
-      args.flags.json ? printJson({ content: stripFrontmatter(resourceCrud.read(root, name)) }) : out(stripFrontmatter(resourceCrud.read(root, name)))
-      break
-    }
-    case 'create': {
-      const name = args.positional[0]
-      const content = readContent(args.flags)
-      const type = typeof args.flags.type === 'string' ? args.flags.type : undefined
-      const description = typeof args.flags.description === 'string' ? args.flags.description : undefined
-      resourceCrud.create(root, name, content, { type, description })
-      args.flags.json ? printJson({ action: 'created', name }) : printAction('created', { name })
-      break
-    }
-    case 'update': {
-      const name = args.positional[0]
-      const content = readContent(args.flags)
-      const type = typeof args.flags.type === 'string' ? args.flags.type : undefined
-      const description = typeof args.flags.description === 'string' ? args.flags.description : undefined
-      resourceCrud.update(root, name, content, { type, description })
-      args.flags.json ? printJson({ action: 'updated', name }) : printAction('updated', { name })
-      break
-    }
-    case 'delete': {
-      const name = args.positional[0]
-      resourceCrud.del(root, name)
-      args.flags.json ? printJson({ action: 'deleted', name }) : printAction('deleted', { name })
-      break
-    }
-    default:
-      if (!cmd) {
-        printHelp('resource')
-        return
-      }
-      throw new UsageError(`未知的 resource 子命令: ${cmd}\n运行 'ocean resource --help' 查看详细用法。`)
-  }
-}
-
-// ---------------------------------------------------------------------------
-// agent CRUD
-// ---------------------------------------------------------------------------
-
-function handleAgent(root: string, args: ReturnType<typeof parseArgs>): void {
-  const cmd = args.subcommand
-  switch (cmd) {
-    case 'list':
-      if (args.flags.json) printJson(agentCrud.list(root))
-      else printList(agentCrud.list(root), '智能体')
-      break
-    case 'read': {
-      const name = args.positional[0]
-      args.flags.json ? printJson({ content: stripFrontmatter(agentCrud.read(root, name)) }) : out(stripFrontmatter(agentCrud.read(root, name)))
-      break
-    }
-    case 'create': {
-      const name = args.positional[0]
-      const content = readContent(args.flags)
-      agentCrud.create(root, name, content, {
-        description: typeof args.flags.description === 'string' ? args.flags.description : undefined,
-        model: typeof args.flags.model === 'string' ? args.flags.model : undefined,
-        color: typeof args.flags.color === 'string' ? args.flags.color : undefined,
-        tools: typeof args.flags.tools === 'string' ? args.flags.tools : undefined,
-        systemPromptMode: typeof args.flags['system-prompt-mode'] === 'string' ? args.flags['system-prompt-mode'] : undefined,
-        inheritProjectContext: args.flags['inherit-project-context'] === true,
-        inheritSkills: args.flags['inherit-skills'] === true,
-      })
-      args.flags.json ? printJson({ action: 'created', name }) : printAction('created', { name })
-      break
-    }
-    case 'update': {
-      const name = args.positional[0]
-      const content = readContent(args.flags)
-      agentCrud.update(root, name, content, {
-        description: typeof args.flags.description === 'string' ? args.flags.description : undefined,
-        model: typeof args.flags.model === 'string' ? args.flags.model : undefined,
-        color: typeof args.flags.color === 'string' ? args.flags.color : undefined,
-        tools: typeof args.flags.tools === 'string' ? args.flags.tools : undefined,
-        systemPromptMode: typeof args.flags['system-prompt-mode'] === 'string' ? args.flags['system-prompt-mode'] : undefined,
-        inheritProjectContext: args.flags['inherit-project-context'] === true ? true : undefined,
-        inheritSkills: args.flags['inherit-skills'] === true ? true : undefined,
-      })
-      args.flags.json ? printJson({ action: 'updated', name }) : printAction('updated', { name })
-      break
-    }
-    case 'delete': {
-      const name = args.positional[0]
-      agentCrud.del(root, name)
-      args.flags.json ? printJson({ action: 'deleted', name }) : printAction('deleted', { name })
-      break
-    }
-    default:
-      if (!cmd) {
-        printHelp('agent')
-        return
-      }
-      throw new UsageError(`未知的 agent 子命令: ${cmd}\n运行 'ocean agent --help' 查看详细用法。`)
   }
 }
 

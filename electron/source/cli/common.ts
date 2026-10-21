@@ -1,7 +1,42 @@
 // CLI 适配层的各种公共操作：参数解析、输出格式化（表格/JSON/带框文本）、用法错误类型、
-// help JSON 捕获缓冲。source/cli/{domain}.ts 与 bin/ocean.ts 共用这一层。
+// help JSON 捕获缓冲、内容输入与 frontmatter 剥离。source/cli/{domain}.ts 与 bin/ocean.ts 共用这一层。
 
 import Table from 'cli-table3'
+import * as fs from 'node:fs'
+
+// ---------------------------------------------------------------------------
+// 内容输入与 frontmatter 剥离（由 bin/ocean.ts 等价迁入，行为不变）
+// ---------------------------------------------------------------------------
+
+// --content / --content-file / stdin 三选一读取正文
+export function readContent(flags: Record<string, string | boolean>): string {
+  const content = typeof flags.content === 'string' ? flags.content : undefined
+  const contentFile = typeof flags['content-file'] === 'string' ? flags['content-file'] : undefined
+  if (contentFile) {
+    try {
+      return fs.readFileSync(contentFile, 'utf-8')
+    } catch (e: any) {
+      throw new Error(`读取内容文件失败 ${contentFile}: ${e.message}`)
+    }
+  }
+  if (content != null) return content
+  // read stdin
+  return fs.readFileSync(0, 'utf-8')
+}
+
+// 剥掉 YAML frontmatter，返回正文
+export function stripFrontmatter(text: string): string {
+  if (text.startsWith('---')) {
+    const end = text.indexOf('\n---', 3)
+    if (end !== -1) {
+      const after = text.indexOf('\n', end + 4)
+      if (after !== -1) {
+        return text.substring(after + 1).trim()
+      }
+    }
+  }
+  return text
+}
 
 // ---------------------------------------------------------------------------
 // 参数解析

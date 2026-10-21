@@ -102,24 +102,6 @@ const getNodesDir = () => {
   return dataDir
 }
 
-// 资源文件存储目录（项目根 .resources，跨资产来源共享，不随 assetRoot 变化）
-const getResourcesDir = () => {
-  const dataDir = path.join(getProjectRoot(), '.resources')
-  if (!fs.existsSync(dataDir)) {
-    fs.mkdirSync(dataDir, { recursive: true })
-  }
-  return dataDir
-}
-
-// 工具文件存储目录（agents）
-const getAgentsDir = () => {
-  const dataDir = path.join(getProjectRoot(), getAssetDir(), 'agents')
-  if (!fs.existsSync(dataDir)) {
-    fs.mkdirSync(dataDir, { recursive: true })
-  }
-  return dataDir
-}
-
 // 知识库文件存储目录（项目根 .knowledges，跨资产来源共享，不随 assetRoot 变化）
 const getKnowledgesDir = () => {
   const dataDir = path.join(getProjectRoot(), '.knowledges')
@@ -901,137 +883,6 @@ ipcMain.handle('delete-local-node', (_, workflowName, nodeName) => {
   } catch (error) {
     console.error('删除局部节点文件失败:', error)
     return { success: false, error: String(error) }
-  }
-})
-
-// ===== 资源文件相关 IPC =====
-
-// 保存资源文件（Markdown格式，以名称命名）
-ipcMain.handle('save-resource-file', (_, name, content) => {
-  try {
-    const resourcesDir = getResourcesDir()
-    // 文件名使用 名称.md 格式
-    const fileName = `${name}.md`
-    const filePath = path.join(resourcesDir, fileName)
-    fs.writeFileSync(filePath, content, 'utf-8')
-    return { success: true }
-  } catch (error) {
-    console.error('保存资源文件失败:', error)
-    return { success: false, error: String(error) }
-  }
-})
-
-// 加载单个资源文件内容
-ipcMain.handle('load-resource-file', (_, name) => {
-  try {
-    const resourcesDir = getResourcesDir()
-    const filePath = path.join(resourcesDir, `${name}.md`)
-    if (!fs.existsSync(filePath)) {
-      return { success: true, content: null, mtime: null }
-    }
-    const content = fs.readFileSync(filePath, 'utf-8')
-    const stats = fs.statSync(filePath)
-    return { success: true, content, mtime: stats.mtime.toISOString() }
-  } catch (error) {
-    console.error('加载资源文件失败:', error)
-    return { success: false, error: String(error), content: null, mtime: null }
-  }
-})
-
-// 删除单个资源文件
-ipcMain.handle('delete-resource-file', (_, name) => {
-  try {
-    const resourcesDir = getResourcesDir()
-    const filePath = path.join(resourcesDir, `${name}.md`)
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath)
-    }
-    return { success: true }
-  } catch (error) {
-    console.error('删除资源文件失败:', error)
-    return { success: false, error: String(error) }
-  }
-})
-
-// 加载所有资源文件列表（返回所有 .md 文件名）
-ipcMain.handle('load-all-resource-files', () => {
-  try {
-    const resourcesDir = getResourcesDir()
-    if (!fs.existsSync(resourcesDir)) {
-      return { success: true, files: [] }
-    }
-    const files = fs.readdirSync(resourcesDir)
-      .filter(file => file.endsWith('.md'))
-      .map(file => file) // 返回完整文件名，如 "节点命名规范.md"
-    return { success: true, files }
-  } catch (error) {
-    console.error('加载资源文件列表失败:', error)
-    return { success: false, error: String(error), files: [] }
-  }
-})
-
-// ===== 智能体文件相关 IPC =====
-
-// 保存智能体文件（Markdown格式，以名称命名）
-ipcMain.handle('save-agent-file', (_, name, content) => {
-  try {
-    const agentsDir = getAgentsDir()
-    const fileName = `${name}.md`
-    const filePath = path.join(agentsDir, fileName)
-    fs.writeFileSync(filePath, content, 'utf-8')
-    return { success: true }
-  } catch (error) {
-    console.error('保存智能体文件失败:', error)
-    return { success: false, error: String(error) }
-  }
-})
-
-// 加载单个智能体文件内容
-ipcMain.handle('load-agent-file', (_, name) => {
-  try {
-    const agentsDir = getAgentsDir()
-    const filePath = path.join(agentsDir, `${name}.md`)
-    if (!fs.existsSync(filePath)) {
-      return { success: true, content: null, mtime: null }
-    }
-    const content = fs.readFileSync(filePath, 'utf-8')
-    const stats = fs.statSync(filePath)
-    return { success: true, content, mtime: stats.mtime.toISOString() }
-  } catch (error) {
-    console.error('加载智能体文件失败:', error)
-    return { success: false, error: String(error), content: null, mtime: null }
-  }
-})
-
-// 删除单个智能体文件
-ipcMain.handle('delete-agent-file', (_, name) => {
-  try {
-    const agentsDir = getAgentsDir()
-    const filePath = path.join(agentsDir, `${name}.md`)
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath)
-    }
-    return { success: true }
-  } catch (error) {
-    console.error('删除智能体文件失败:', error)
-    return { success: false, error: String(error) }
-  }
-})
-
-// 加载所有智能体文件列表（返回所有 .md 文件名）
-ipcMain.handle('load-all-agent-files', () => {
-  try {
-    const agentsDir = getAgentsDir()
-    if (!fs.existsSync(agentsDir)) {
-      return { success: true, files: [] }
-    }
-    const files = fs.readdirSync(agentsDir)
-      .filter(file => file.endsWith('.md'))
-      .map(file => file)
-    return { success: true, files }
-  } catch (error) {
-    console.error('加载智能体文件列表失败:', error)
-    return { success: false, error: String(error), files: [] }
   }
 })
 
@@ -3282,7 +3133,9 @@ ipcMain.handle('list-skill-resources', (_, skillName, resourceType) => {
   }
 })
 
-// ==================== 任务管理 ====================
-// 实现在 electron/core/task（TS），IPC 壳在 source/desktop/task.ts（编译产物），
-// 两端与 CLI 共用同一份 core 源码。
+// ==================== 任务 / 资源 / 智能体 ====================
+// 实现在 electron/core/{task,resource,agent}（TS），IPC 壳在 source/desktop/{task,resource,agent}.ts
+// （编译产物），两端与 CLI 共用同一份 core 源码。
 require('./dist/source/desktop/task.js').registerTaskHandlers({ getProjectRoot })
+require('./dist/source/desktop/resource.js').registerResourceHandlers({ getProjectRoot })
+require('./dist/source/desktop/agent.js').registerAgentHandlers({ getProjectRoot })
