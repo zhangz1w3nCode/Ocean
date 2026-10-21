@@ -14,7 +14,7 @@
     "preview": "vite preview",
     "web:build": "pnpm build",
     "web:serve": "node electron/server/index.cjs",
-    "web:dev": "concurrently \"cross-env VITE_OCEAN_API=http://127.0.0.1:8787 vite --port 5273\" \"node electron/server/index.cjs\""
+    "web:dev": "concurrently -n vite,ts,web \"cross-env VITE_OCEAN_API=http://127.0.0.1:8787 vite --port 5273\" \"tsc -p electron/tsconfig.json --watch --preserveWatchOutput\" \"node electron/server/index.cjs\""
   },
   "build": {
     "appId": "com.ocean.app",

@@ -15,81 +15,28 @@ import type { DomainNode } from '../core/knowledge'
 import * as resourceCrud from '../core/resource'
 import * as agentCrud from '../core/agent'
 import * as skillCrud from '../core/skill'
-import * as taskCrud from '../core/task'
 import * as wfGraph from '../core/workflow'
 import Table from 'cli-table3'
+import { handleTask, printTaskHelp } from '../source/cli/task'
+import {
+  parseArgs,
+  getLimit,
+  UsageError,
+  rawOut,
+  displayWidth,
+  out,
+  TABLE_CHARS,
+  printDataTable,
+  printList,
+  printJson,
+  printAction,
+  setHelpJsonBuffer,
+  getHelpJsonBuffer,
+} from '../source/cli/common'
 
 // ---------------------------------------------------------------------------
 // Argument parser
 // ---------------------------------------------------------------------------
-
-function parseArgs(argv: string[]): {
-  root?: string
-  namespace: string
-  subcommand: string
-  positional: string[]
-  flags: Record<string, string | boolean>
-  help: boolean
-  version: boolean
-} {
-  const args = argv.slice(2)
-  let root: string | undefined
-  const positional: string[] = []
-  const flags: Record<string, string | boolean> = {}
-  let help = false
-  let version = false
-
-  let namespace = ''
-  let subcommand = ''
-
-  for (let j = 0; j < args.length; j++) {
-    const arg = args[j]
-    if (arg === '--root') {
-      root = args[++j]
-    } else if (arg.startsWith('--root=')) {
-      root = arg.substring(7)
-    } else if (arg === '--help' || arg === '-h') {
-      help = true
-    } else if (arg === '--version' || arg === '-v') {
-      version = true
-    } else if (arg.startsWith('--')) {
-      const key = arg.substring(2)
-      const next = args[j + 1]
-      if (next && !next.startsWith('--')) {
-        flags[key] = next
-        j++
-      } else {
-        flags[key] = true
-      }
-    } else {
-      if (!namespace) {
-        namespace = arg
-      } else if (!subcommand) {
-        subcommand = arg
-      } else {
-        positional.push(arg)
-      }
-    }
-  }
-
-  // help/version 子命令形式: ocean help [namespace], ocean version
-  if (namespace === 'help' || namespace === '-h') {
-    help = true
-    namespace = subcommand
-    subcommand = ''
-  } else if (namespace === 'version' || namespace === '-v') {
-    version = true
-    namespace = ''
-  }
-
-  return { root, namespace, subcommand, positional, flags, help, version }
-}
-
-function getLimit(flags: Record<string, string | boolean>, key: string, fallback: number): number {
-  const val = flags[key]
-  if (typeof val === 'string') return parseInt(val, 10)
-  return fallback
-}
 
 function readContent(flags: Record<string, string | boolean>): string {
   const content = typeof flags.content === 'string' ? flags.content : undefined
@@ -106,31 +53,6 @@ function readContent(flags: Record<string, string | boolean>): string {
   return require('fs').readFileSync(0, 'utf-8')
 }
 
-function rawOut(s: string): void {
-  process.stdout.write(s + '\n')
-}
-
-function displayWidth(s: string): number {
-  return [...s].reduce((w, c) => {
-    const code = c.charCodeAt(0)
-    if (code < 0x80) return w + 1
-    if ((code >= 0x1100 && code <= 0x115F) ||
-        (code >= 0x2E80 && code <= 0x303E) ||
-        (code >= 0x3040 && code <= 0x33BF) ||
-        (code >= 0x3400 && code <= 0x4DBF) ||
-        (code >= 0x4E00 && code <= 0x9FFF) ||
-        (code >= 0xA000 && code <= 0xA4CF) ||
-        (code >= 0xAC00 && code <= 0xD7A3) ||
-        (code >= 0xF900 && code <= 0xFAFF) ||
-        (code >= 0xFE30 && code <= 0xFE4F) ||
-        (code >= 0xFF00 && code <= 0xFF60) ||
-        (code >= 0xFFE0 && code <= 0xFFE6)) {
-      return w + 2
-    }
-    return w + 1
-  }, 0)
-}
-
 function stripFrontmatter(text: string): string {
   if (text.startsWith('---')) {
     const end = text.indexOf('\n---', 3)
@@ -142,86 +64,6 @@ function stripFrontmatter(text: string): string {
     }
   }
   return text
-}
-
-let _helpJsonBuf: string[] | null = null
-
-function out(s: string): void {
-  if (_helpJsonBuf !== null) { _helpJsonBuf.push(s); return }
-  const maxBoxW = Math.min((process.stdout.columns || 120) - 4, 70)
-  const wrapped: string[] = []
-  for (const line of s.split('\n')) {
-    if (displayWidth(line) <= maxBoxW) {
-      wrapped.push(line)
-    } else {
-      let cur = ''
-      let curW = 0
-      for (const c of [...line]) {
-        const cw = displayWidth(c)
-        if (curW + cw > maxBoxW) {
-          wrapped.push(cur)
-          cur = c
-          curW = cw
-        } else {
-          cur += c
-          curW += cw
-        }
-      }
-      if (cur) wrapped.push(cur)
-    }
-  }
-  const widths = wrapped.map(l => displayWidth(l))
-  const maxW = Math.max(...widths, 0)
-  const h = '\u2501'.repeat(maxW + 2)
-  rawOut('\u250f' + h + '\u2513')
-  for (let i = 0; i < wrapped.length; i++) {
-    const pad = ' '.repeat(maxW - widths[i])
-    rawOut('\u2503 ' + wrapped[i] + pad + ' \u2503')
-  }
-  rawOut('\u2517' + h + '\u251b')
-}
-
-const TABLE_CHARS = {
-  'top': '\u2501', 'top-mid': '\u2533', 'top-left': '\u250f', 'top-right': '\u2513',
-  'bottom': '\u2500', 'bottom-mid': '\u2534', 'bottom-left': '\u2514', 'bottom-right': '\u2518',
-  'left': '\u2502', 'right': '\u2502', 'mid': '\u2501', 'mid-mid': '\u2547',
-  'left-mid': '\u2521', 'right-mid': '\u2529', 'middle': '\u2502',
-}
-
-function printDataTable(headers: string[], rows: string[][]): void {
-  if (rows.length === 0) {
-    out('（无数据）')
-    return
-  }
-  const table = new Table({
-    head: headers.map(h => ({ content: '\x1b[1m' + h + '\x1b[0m', hAlign: 'center' as const })) as any[],
-    style: { head: ['cyan'] },
-    colAligns: headers.map(() => 'center' as const),
-    chars: TABLE_CHARS,
-  })
-  for (const row of rows) {
-    table.push(row)
-  }
-  const lines = table.toString().split('\n')
-  let separatorSeen = false
-  const filtered = lines.filter(line => {
-    if (line.includes('\u2521')) {
-      if (!separatorSeen) {
-        separatorSeen = true
-        return true
-      }
-      return false
-    }
-    return true
-  })
-  if (filtered.length > 2) {
-    filtered[1] = filtered[1].replace(/\u2502/g, '\u2503')
-  }
-  rawOut(filtered.join('\n'))
-}
-
-function printList(items: string[], header: string): void {
-  printDataTable([header], items.map(item => [item]))
 }
 
 // 无表头单列表格，用于包裹树形展示（左对齐保留缩进，行间无分隔线）
@@ -267,53 +109,6 @@ function markdownTableToJson(text: string): any[] {
   })
 }
 
-function printJson(data: any): void {
-  rawOut(JSON.stringify(data, null, 2))
-}
-
-function printAction(action: string, fields: Record<string, string>): void {
-  const keys = Object.keys(fields)
-  const table = new Table({
-    head: [{ content: '\x1b[1mAction\x1b[0m', hAlign: 'center' as const }, ...keys.map(k => ({ content: '\x1b[1m' + k + '\x1b[0m', hAlign: 'center' as const }))] as any[],
-    style: { head: ['green'] },
-    colAligns: ['center', ...keys.map(() => 'center' as const)],
-    chars: {
-      'top': '\u2501', 'top-mid': '\u2533', 'top-left': '\u250f', 'top-right': '\u2513',
-      'bottom': '\u2500', 'bottom-mid': '\u2534', 'bottom-left': '\u2514', 'bottom-right': '\u2518',
-      'left': '\u2502', 'right': '\u2502', 'mid': '\u2501', 'mid-mid': '\u2547',
-      'left-mid': '\u2521', 'right-mid': '\u2529', 'middle': '\u2502',
-    },
-  })
-  table.push([action, ...keys.map(k => fields[k])])
-  const lines = table.toString().split('\n')
-  let separatorSeen = false
-  const filtered = lines.filter(line => {
-    if (line.includes('\u2521')) {
-      if (!separatorSeen) {
-        separatorSeen = true
-        return true
-      }
-      return false
-    }
-    return true
-  })
-  if (filtered.length > 2) {
-    filtered[1] = filtered[1].replace(/\u2502/g, '\u2503')
-  }
-  rawOut(filtered.join('\n'))
-}
-
-// ---------------------------------------------------------------------------
-// Usage Error (exit 2 for usage errors, exit 1 for runtime errors)
-// ---------------------------------------------------------------------------
-
-class UsageError extends Error {
-  constructor(message: string) {
-    super(message)
-    this.name = 'UsageError'
-  }
-}
-
 function err(e: any): void {
   const code = e instanceof UsageError ? 2 : 1
   const lines = e.message.split('\n')
@@ -354,7 +149,7 @@ function printVersion(): void {
 
 function printHelp(namespace?: string, subcommand?: string, json: boolean = false): void {
   if (json) {
-    _helpJsonBuf = []
+    setHelpJsonBuffer([])
   }
   if (!namespace) {
     out(`ocean — Ocean 命令行工具
@@ -677,150 +472,7 @@ domain 说明:
   stdin                        管道输入（三选一）`)
       break
     case 'task':
-      if (subcommand) {
-        const common = `
-通用 flag:
-  --json                       JSON 格式输出
-  --root <path>                覆盖项目根目录`
-        switch (subcommand) {
-          case 'list':
-            out(`ocean task list — 列出任务
-
-用法: ocean task list [--flags...]
-
-flag:
-  --status <状态>             按状态精确过滤（等待处理|处理中|已完成|已取消）
-  --keyword <kw>              对 名称/处理人/关联仓库/标签/状态 做子串匹配（不区分大小写）${common}`)
-            break
-          case 'read':
-            out(`ocean task read — 读取任务
-
-用法: ocean task read <name> [--flags...]
-
-参数:
-  <name>                      任务名称（必填）
-
-输出：元信息 + 任务内容 + 上下文主题（完整 detail 请用 --json）${common}`)
-            break
-          case 'create':
-            out(`ocean task create — 创建任务
-
-用法: ocean task create <name> [--flags...]
-
-参数:
-  <name>                      任务名称（必填，作目录名，不能含 / \\ .. 且 ≤100 字符）
-
-flag:
-  --content <text>            任务内容（必填，仅此一种；禁用 --content-file / stdin）
-                                正文开头不得包含 YAML frontmatter
-  --handler <name>             处理人（选填）
-  --repo <r1,r2>              关联仓库（逗号分隔）
-  --tags <t1,t2>               标签（逗号分隔）
-  --related <n1,n2>            关联任务（逗号分隔，仅收录已存在的任务）
-  --context <text>             初始上下文内容（写入名为「初始上下文」的上下文文件）
-
-初始状态固定为「等待处理」（与桌面端一致）${common}`)
-            break
-          case 'update':
-            out(`ocean task update — 更新任务
-
-用法: ocean task update <name> [--flags...]
-
-参数:
-  <name>                      任务名称（必填）
-
-flag（未提供的字段保留原值）:
-  --content <text>            任务内容（仅此一种，禁用 --content-file / stdin；
-                                不传则保留原正文，正文开头不得包含 YAML frontmatter）
-  --handler <name>             处理人
-  --repo <r1,r2>              关联仓库（逗号分隔）
-  --tags <t1,t2>               标签（逗号分隔）
-  --related <n1,n2>            关联任务（逗号分隔）
-  --status <状态>             推进状态（等待处理|处理中|已完成|已取消）
-
-清空某字段用显式开关：--no-handler / --no-repo / --no-tags / --no-related
-（不能传空字符串：解析器会把 --flag 后紧跟的 -- 开头内容视为另一个 flag）
-
-状态机（仅前进，终态锁定）:
-  等待处理 → 处理中 → 已完成 | 已取消
-  等待处理 → 已完成 | 已取消（允许直接进终态）
-  「等待处理 → 处理中」必须已有处理人：本次同时 --handler 指定即自动流转，无需再加 --status${common}`)
-            break
-          case 'context':
-            out(`ocean task context — 任务上下文
-
-用法: ocean task context <list|read|save> <name> [--flags...]
-
-子命令:
-  list <name>                  列出全部上下文主题
-  read <name> --topic <t>     读取指定上下文内容
-  save <name> --topic <t>      新增/更新上下文（同名覆盖）
-
-save 的内容传入（仅此一种，禁用 --content-file / stdin）:
-  --content <text>             上下文正文（长内容可 --content "$(cat 文件)"，开头不得含 YAML frontmatter）${common}`)
-            break
-          case 'trace':
-            out(`ocean task trace — 处理时间线
-
-用法: ocean task trace <name> [--flags...]
-
-参数:
-  <name>                      任务名称（必填）
-
-输出：trace.jsonl 事件流（同一次变更内字段变更事件在前、状态变更事件在后）${common}`)
-            break
-          case 'search':
-            out(`ocean task search — 全文检索
-
-用法: ocean task search <keyword> [--flags...]
-
-参数:
-  <keyword>                   检索关键词（必填，不区分大小写）
-
-检索范围：任务正文 + 每个任务上下文正文
-（与 list --keyword 的分工：list 只过摘要字段——名称/处理人/仓库/标签/状态，
-与桌面端任务库一致；search 负表正文维度）
-
-输出：命中的任务 + 位置（任务内容 / 上下文主题）+ 行号 + 前后上下文行，不返回全文
-
-flag:
-  --top N                      返回条数（默认 5，按命中数倒序）
-  --context N                  命中上下文行数（默认 2）
-  --status <状态>             仅检索该状态的任务${common}`)
-            break
-          default:
-            out(`未知的 task 子命令: ${subcommand}
-运行 'ocean task --help' 查看可用子命令。`)
-        }
-        break
-      }
-      out(`ocean task — 任务库 CRUD
-
-用法: ocean task <subcommand> [positional...] [--flags...]
-
-数据与语义：任务存在当前项目根目录的 .tasks/ 下，与桌面端同一份存储、同一个状态机
-（.tasks/{name}/TASK.md + context/*.md + trace/trace.jsonl；.tasks/{YYYY-MM-DD}/ 日期目录不视为任务）
-
-子命令:
-  list                          列出任务（按更新时间倒序）
-  read <name>                  读取任务
-  create <name>                创建任务
-  update <name>                更新任务（含状态推进）
-  search <keyword>             全文检索（任务正文 + 上下文正文）
-  context list/read/save        任务上下文
-  trace <name>                  处理时间线事件流
-
-状态机：等待处理 → 处理中 → 已完成 | 已取消（等待处理可直接进终态；终态锁定；
-等待处理→处理中需先有处理人）
-
-常用 flag:
-  --status <状态>              过滤 / 推进状态
-  --keyword <kw>               列表关键词
-  --content <text>             内容（仅此一种，禁用 --content-file / stdin）
-  --json                        JSON 格式输出
-  --root <path>                覆盖项目根目录
-
-运行 'ocean task <subcommand> --help' 查看子命令详情。`)
+      printTaskHelp(subcommand)
       break
     case 'config':
       out(`ocean config — 配置管理
@@ -854,9 +506,9 @@ async function main(): Promise<void> {
   // help 检查（ocean --help, ocean -h, ocean help [namespace], ocean <ns> --help）
   if (args.help) {
     printHelp(args.namespace, args.subcommand, !!args.flags.json)
-    if (_helpJsonBuf !== null) {
-      printJson({ namespace: args.namespace || null, subcommand: args.subcommand || null, help: _helpJsonBuf.join('\n') })
-      _helpJsonBuf = null
+    if (getHelpJsonBuffer() !== null) {
+      printJson({ namespace: args.namespace || null, subcommand: args.subcommand || null, help: (getHelpJsonBuffer() as string[]).join('\n') })
+      setHelpJsonBuffer(null)
     }
     return
   }
@@ -1499,253 +1151,6 @@ function handleKnowledge(root: string, args: ReturnType<typeof parseArgs>): void
 // ---------------------------------------------------------------------------
 // resource CRUD
 // ---------------------------------------------------------------------------
-
-function handleTask(root: string, args: ReturnType<typeof parseArgs>): void {
-  const cmd = args.subcommand
-  const json = args.flags.json === true
-
-  // 标量 flag：值为布尔说明 flag 后面跟的是下一个 --flag（或值缺失），必须报错而不是静默忽略
-  const strFlag = (key: string): string | undefined => {
-    const v = args.flags[key]
-    if (v === true) throw new UsageError(`--${key} 缺少值（紧跟其后的 -- 开头内容会被当成另一个 flag）`)
-    return typeof v === 'string' ? v : undefined
-  }
-  // 逗号分隔数组 flag
-  const listFlag = (key: string): string[] | undefined => {
-    const v = strFlag(key)
-    return v === undefined ? undefined : v.split(',').map(s => s.trim()).filter(Boolean)
-  }
-  // 显式清空：--no-handler / --no-repo / --no-tags / --no-related
-  const cleared = (key: string): boolean => {
-    const v = args.flags[`no-${key}`]
-    if (typeof v === 'string') throw new UsageError(`--no-${key} 是开关，不接受值；要设值请用 --${key} <值>`)
-    return v !== undefined
-  }
-
-  // 内容只允许 --content 参数传入（与 ocean knowledge 的约定一致）：
-  // 禁用 --content-file 与 stdin，防止把整份文件（很可能自带 YAML frontmatter）灌进正文，
-  // 破坏 TASK.md / 上下文文档原有的头。长内容用 --content "$(cat 文件)"。
-  const taskContent = (label: string): string | undefined => {
-    if (args.flags['content-file'] !== undefined) {
-      throw new UsageError(`${label}不支持 --content-file，只能用 --content 传入（长内容可 --content "$(cat 文件)"）`)
-    }
-    const v = args.flags.content
-    if (v === true) {
-      // 正文以 --- 开头时，parseArgs 会把它当成下一个 flag（ocean knowledge 同样如此），
-      // 因此这里必须把「frontmatter 开头」作为最常见成因写进文案
-      throw new UsageError(`--content 缺少值，或正文以 -- 开头（如 YAML frontmatter 的 ---）——请剥掉 frontmatter 只传正文；长内容可 --content "$(cat 文件)"`)
-    }
-    if (typeof v !== 'string') return undefined
-    if (v.trimStart().startsWith('---')) {
-      throw new UsageError(`${label}开头不能包含 YAML frontmatter（检测到以 --- 开头）：只传正文，YAML 头由系统维护`)
-    }
-    return v
-  }
-
-  // 状态 flag：取值先校验，避免无效值静默当作未提供
-  const statusFlag = (): string | undefined => {
-    const status = strFlag('status')
-    if (status !== undefined && !taskCrud.TASK_STATUSES.includes(status)) {
-      throw new UsageError(`无效的状态：${status}，可选：${taskCrud.TASK_STATUSES.join(' | ')}`)
-    }
-    return status
-  }
-
-  const taskName = (): string => {
-    const name = cmd === 'context' ? args.positional[1] : args.positional[0]
-    if (!name) throw new UsageError(`缺少任务名称: ocean task ${cmd === 'context' ? `${args.positional[0]} <name>` : `${cmd} <name>`}`)
-    return name
-  }
-
-  switch (cmd) {
-    case 'list': {
-      const tasks = taskCrud.filterTasks(taskCrud.listTasks(root), statusFlag(), strFlag('keyword'))
-      if (json) {
-        printJson(tasks)
-      } else {
-        printDataTable(
-          ['任务', '状态', '处理人', '关联仓库', '标签', '更新时间'],
-          tasks.map(t => [t.name, t.status, t.handler || '-', t.repo.join(',') || '-', t.tags.join(',') || '-', t.updatedAt || '-']),
-        )
-      }
-      break
-    }
-
-    case 'read': {
-      const name = taskName()
-      const detail = taskCrud.readTaskDetail(root, name)
-      if (json) {
-        printJson(detail)
-        break
-      }
-      const t = detail.task
-      printDataTable(['字段', '值'], [
-        ['名称', t.name],
-        ['状态', t.status],
-        ['处理人', t.handler || '-'],
-        ['关联仓库', t.repo.join(', ') || '-'],
-        ['标签', t.tags.join(', ') || '-'],
-        ['关联任务', t.relatedTasks.join(', ') || '-'],
-        ['创建时间', t.createdAt || '-'],
-        ['更新时间', t.updatedAt || '-'],
-        ['上下文', detail.contexts.map(c => c.name).join(', ') || '-'],
-        ['事件数', String(detail.trace.length)],
-      ])
-      out(t.content ? t.content.trim() : '（无任务内容）')
-      break
-    }
-
-    case 'create': {
-      const name = taskName()
-      const content = taskContent('任务内容')
-      if (content === undefined || content.trim() === '') {
-        throw new UsageError('创建任务必须通过 --content 传入任务内容（长内容可 --content "$(cat 文件)"），不支持 --content-file / stdin')
-      }
-      const payload: taskCrud.TaskWritePayload = { name, content }
-      const handler = strFlag('handler')
-      if (handler !== undefined) payload.handler = handler
-      const repo = listFlag('repo')
-      if (repo) payload.repo = repo
-      const tags = listFlag('tags')
-      if (tags) payload.tags = tags
-      const related = listFlag('related')
-      if (related) payload.relatedTasks = related
-      const context = strFlag('context')
-      if (context !== undefined) payload.context = context
-      const task = taskCrud.createTask(root, payload)
-      if (json) printJson({ action: 'created', task })
-      else printAction('created', { name: task.name, status: task.status })
-      break
-    }
-
-    case 'update': {
-      const name = taskName()
-      const status = statusFlag()
-      // 先取原值：store 的 update 是全量覆写语义，CLI 未显式提供的字段必须回填，否则会被清空
-      const current = taskCrud.readTaskDetail(root, name).task
-      const content = taskContent('任务内容')
-      if (content !== undefined && content.trim() === '') {
-        throw new UsageError('任务内容不能为空；只改其它字段时请不要传 --content')
-      }
-      const handlerFlag = strFlag('handler')
-      const repoFlag = listFlag('repo')
-      const tagsFlag = listFlag('tags')
-      const relatedFlag = listFlag('related')
-      const payload: taskCrud.TaskWritePayload = {
-        name,
-        content: content !== undefined ? content : current.content,
-        handler: cleared('handler') ? '' : (handlerFlag !== undefined ? handlerFlag : current.handler),
-        repo: cleared('repo') ? [] : (repoFlag !== undefined ? repoFlag : current.repo),
-        tags: cleared('tags') ? [] : (tagsFlag !== undefined ? tagsFlag : current.tags),
-        relatedTasks: cleared('related') ? [] : (relatedFlag !== undefined ? relatedFlag : current.relatedTasks),
-      }
-      if (status !== undefined) payload.status = status
-      const task = taskCrud.updateTask(root, payload)
-      if (json) printJson({ action: 'updated', task })
-      else printAction('updated', { name: task.name, status: task.status, handler: task.handler || '-' })
-      break
-    }
-
-    case 'search': {
-      const keyword = args.positional[0]
-      if (!keyword) throw new UsageError('用法: ocean task search <keyword> [--top N] [--context N] [--status <状态>]')
-      const status = statusFlag()
-      const results = taskCrud.searchTasks(root, keyword, {
-        top: getLimit(args.flags, 'top', 5),
-        context: getLimit(args.flags, 'context', 2),
-        status,
-      })
-      if (json) {
-        printJson(results)
-      } else if (results.length === 0) {
-        rawOut(`未命中：${keyword}（只检索任务正文与上下文正文，摘要字段请用 ocean task list --keyword）`)
-      } else {
-        const lines: string[] = []
-        for (const r of results) {
-          const meta = [
-            r.status,
-            r.handler ? `处理人: ${r.handler}` : '',
-            r.repo.length ? `仓库: ${r.repo.join(', ')}` : '',
-            r.tags.length ? `标签: ${r.tags.join(', ')}` : '',
-          ].filter(Boolean).join('  |  ')
-          lines.push(`# ${r.name}  (${meta})`)
-          for (const m of r.matches) {
-            lines.push(`  ── ${m.where} · 第 ${m.line} 行`)
-            for (const b of m.before) lines.push(`      ${b}`)
-            lines.push(`    > ${m.text}`)
-            for (const a of m.after) lines.push(`      ${a}`)
-          }
-          lines.push('')
-        }
-        rawOut(lines.join('\n'))
-      }
-      break
-    }
-
-    case 'context': {
-      const sub = args.positional[0] || ''
-      if (sub !== 'list' && sub !== 'read' && sub !== 'save') {
-        throw new UsageError(`未知的 context 子命令: ${sub || '(未提供)'}\n用法: ocean task context list/read/save <name>`)
-      }
-      const name = taskName()
-      switch (sub) {
-        case 'list': {
-          const contexts = taskCrud.readTaskDetail(root, name).contexts
-          if (json) printJson(contexts)
-          else if (contexts.length === 0) rawOut('（无上下文）')
-          else printDataTable(['主题', '更新时间'], contexts.map(c => [c.name, c.updatedAt || '-']))
-          break
-        }
-        case 'read': {
-          const topic = strFlag('topic')
-          if (!topic) throw new UsageError('读取上下文需要 --topic <主题>（ocean task context list <name> 可查主题）')
-          const item = taskCrud.readTaskDetail(root, name).contexts.find(c => c.name === topic)
-          if (!item) throw new Error(`上下文不存在: ${topic}`)
-          json ? printJson(item) : out(item.content.trim() || '（空上下文）')
-          break
-        }
-        case 'save': {
-          const topic = strFlag('topic')
-          if (!topic) throw new UsageError('保存上下文需要 --topic <主题>')
-          const content = taskContent('上下文内容')
-          if (content === undefined || content.trim() === '') {
-            throw new UsageError('保存上下文必须通过 --content 传入内容（长内容可 --content "$(cat 文件)"），不支持 --content-file / stdin')
-          }
-          const isUpdate = taskCrud.saveTaskContext(root, { taskName: name, contextName: topic, content })
-          if (json) printJson({ action: isUpdate ? 'updated' : 'created', task: name, topic })
-          else printAction(isUpdate ? 'updated' : 'created', { task: name, topic })
-          break
-        }
-        default:
-          throw new UsageError(`未知的 context 子命令: ${sub}\n用法: ocean task context list/read/save <name>`)
-      }
-      break
-    }
-
-    case 'trace': {
-      const name = taskName()
-      const events = taskCrud.readTaskDetail(root, name).trace
-      if (json) {
-        printJson(events)
-      } else if (events.length === 0) {
-        rawOut('（无事件）')
-      } else {
-        printDataTable(
-          ['时间', '事件', '说明'],
-          events.map(e => [e.ts || '-', e.type || '-', e.message || '-']),
-        )
-      }
-      break
-    }
-
-    default:
-      if (!cmd) {
-        printHelp('task')
-        return
-      }
-      throw new UsageError(`未知的 task 子命令: ${cmd}\n运行 'ocean task --help' 查看详细用法。`)
-  }
-}
 
 function handleResource(root: string, args: ReturnType<typeof parseArgs>): void {
   const cmd = args.subcommand

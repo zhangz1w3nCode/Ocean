@@ -1,5 +1,5 @@
 import { describe, it, expect, afterAll } from 'vitest'
-import { mkdtempSync, mkdirSync, rmSync, existsSync, readFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, rmSync, existsSync, readFileSync, readdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createRequire } from 'node:module'
@@ -15,10 +15,18 @@ process.env.OCEAN_NO_DIALOG = '1'
 const req = createRequire(import.meta.url)
 const { handlers, ready } = req('./registry.cjs')
 
-// 期望值从 launch.cjs 源码推导：handler 注册数应等于 ipcMain.handle 调用数。
-// 硬编码计数会随 channel 增删过期（84 在任务模块合入后已过期为 91）。
+// 期望值从源码推导：launch.cjs 内联注册数 + source/desktop/*.ts 模块注册数
+//（launch.cjs require 编译产物注册）。硬编码计数会随 channel 增删过期。
 const launchSrc = readFileSync(new URL('../launch.cjs', import.meta.url), 'utf-8')
-const handleCallCount = (launchSrc.match(/ipcMain\.handle\(/g) || []).length
+const desktopDir = new URL('../source/desktop/', import.meta.url)
+const handleCallCount =
+  (launchSrc.match(/ipcMain\.handle\(/g) || []).length +
+  readdirSync(desktopDir)
+    .filter(f => f.endsWith('.ts'))
+    .reduce((sum, f) => {
+      const src = readFileSync(new URL(f, desktopDir), 'utf-8')
+      return sum + (src.match(/ipcMain\.handle\(/g) || []).length
+    }, 0)
 
 const call = (ch: string, ...args: unknown[]) => handlers.get(ch)!(null, ...args)
 
