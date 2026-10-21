@@ -49,3 +49,23 @@ export {
   delAgent,
 } from './agent/operate'
 export type { AgentWriteOpts } from './agent/operate'
+
+export {
+  createSkillDirectory,
+  saveSkillFile,
+  readSkillFile,
+  deleteSkillDirectory,
+  listSkillDirectories,
+  saveSkillResource,
+  readSkillResource,
+  deleteSkillResource,
+  listSkillResourceFiles,
+  saveSkillTemplateFile,
+  readSkillTemplateFile,
+  listSkills,
+  readSkill,
+  createSkill,
+  updateSkill,
+  delSkill,
+} from './skill/operate'
+export type { SkillDirectoryInput } from './skill/operate'

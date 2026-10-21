@@ -12,12 +12,12 @@ import type { Limits } from '../core/state'
 import * as nodeCrud from '../core/node'
 import * as knowledgeCrud from '../core/knowledge'
 import type { DomainNode } from '../core/knowledge'
-import * as skillCrud from '../core/skill'
 import * as wfGraph from '../core/workflow'
 import Table from 'cli-table3'
 import { handleTask, printTaskHelp } from '../source/cli/task'
 import { handleResource, printResourceHelp } from '../source/cli/resource'
 import { handleAgent, printAgentHelp } from '../source/cli/agent'
+import { handleSkill, printSkillHelp } from '../source/cli/skill'
 import {
   parseArgs,
   getLimit,
@@ -387,22 +387,7 @@ domain 说明:
       printAgentHelp()
       break
     case 'skill':
-      out(`ocean skill — 技能 CRUD
-
-用法: ocean skill <subcommand> <name> [--flags...]
-
-子命令:
-  list                          列出所有技能
-  read <name>                  读取技能内容
-  create <name>                创建技能
-  update <name>                更新技能
-  delete <name>                删除技能
-
-常用 flag:
-  --description <text>         技能描述
-  --content "文本"             短内容直接传
-  --content-file <path>         长内容指向文件
-  stdin                        管道输入（三选一）`)
+      printSkillHelp()
       break
     case 'task':
       printTaskHelp(subcommand)
@@ -1078,52 +1063,6 @@ function handleKnowledge(root: string, args: ReturnType<typeof parseArgs>): void
         return
       }
       throw new UsageError(`未知的 knowledge 子命令: ${cmd}\n运行 'ocean knowledge --help' 查看详细用法。`)
-  }
-}
-
-// ---------------------------------------------------------------------------
-// skill CRUD
-// ---------------------------------------------------------------------------
-
-function handleSkill(root: string, args: ReturnType<typeof parseArgs>): void {
-  const cmd = args.subcommand
-  switch (cmd) {
-    case 'list':
-      if (args.flags.json) printJson(skillCrud.list(root))
-      else printList(skillCrud.list(root), '技能')
-      break
-    case 'read': {
-      const name = args.positional[0]
-      args.flags.json ? printJson({ content: stripFrontmatter(skillCrud.read(root, name)) }) : out(stripFrontmatter(skillCrud.read(root, name)))
-      break
-    }
-    case 'create': {
-      const name = args.positional[0]
-      const content = readContent(args.flags)
-      const description = args.flags.description as string
-      skillCrud.create(root, name, content, description)
-      args.flags.json ? printJson({ action: 'created', name }) : printAction('created', { name })
-      break
-    }
-    case 'update': {
-      const name = args.positional[0]
-      const content = readContent(args.flags)
-      skillCrud.update(root, name, content)
-      args.flags.json ? printJson({ action: 'updated', name }) : printAction('updated', { name })
-      break
-    }
-    case 'delete': {
-      const name = args.positional[0]
-      skillCrud.del(root, name)
-      args.flags.json ? printJson({ action: 'deleted', name }) : printAction('deleted', { name })
-      break
-    }
-    default:
-      if (!cmd) {
-        printHelp('skill')
-        return
-      }
-      throw new UsageError(`未知的 skill 子命令: ${cmd}\n运行 'ocean skill --help' 查看详细用法。`)
   }
 }
 
