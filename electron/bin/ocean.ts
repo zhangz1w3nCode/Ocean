@@ -10,14 +10,13 @@ import { defaultLimits } from '../core/state'
 import type { Limits } from '../core/state'
 
 import * as nodeCrud from '../core/node'
-import * as knowledgeCrud from '../core/knowledge'
-import type { DomainNode } from '../core/knowledge'
 import * as wfGraph from '../core/workflow'
 import Table from 'cli-table3'
 import { handleTask, printTaskHelp } from '../source/cli/task'
 import { handleResource, printResourceHelp } from '../source/cli/resource'
 import { handleAgent, printAgentHelp } from '../source/cli/agent'
 import { handleSkill, printSkillHelp } from '../source/cli/skill'
+import { handleKnowledge, printKnowledgeHelp } from '../source/cli/knowledge'
 import {
   parseArgs,
   getLimit,
@@ -37,15 +36,7 @@ import {
 } from '../source/cli/common'
 
 // 无表头单列表格，用于包裹树形展示（左对齐保留缩进，行间无分隔线）
-function printDomainBox(lines: string[]): void {
-  const table = new Table({
-    colAligns: ['left' as const],
-    chars: { ...TABLE_CHARS, mid: '', 'mid-mid': '', 'left-mid': '', 'right-mid': '' },
-  })
-  for (const line of lines) table.push([line])
-  rawOut(table.toString())
-}
-
+// （domain 树形版本已随 knowledge 域迁至 source/cli/knowledge.ts 的 printDomainBox）
 function printMarkdownTable(text: string): void {
   const trimmed = text.trim()
   if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
@@ -341,44 +332,7 @@ flag:
   stdin                        管道输入（三选一）`)
       break
     case 'knowledge':
-      out(`ocean knowledge — 知识 CRUD
-
-用法: ocean knowledge <subcommand> <path> [--flags...]
-
-子命令:
-  list                          列出所有知识
-  read <path>                  读取知识内容
-  create <path>                创建知识
-  update <path>                更新知识
-  delete <path>                删除知识
-  search <keyword>             检索已审核知识（仅 status=validated，不返回原文）
-  domain list [name]            列出 domain 结构
-  domain create <name>          创建 domain
-  domain search <keyword>       按 keyword 匹配 domain 名称
-  domain update <old> <new>     重命名 domain（同步刷新知识字段）
-
-常用 flag:
-  --summary <text>              知识摘要（create 必填）
-  --tags <tag1,tag2>           标签（逗号分隔，create 必填）
-
-create 内容传入（仅此一种，禁用 --content-file / stdin）:
-  --content "文本"             正文；长内容 "$(cat 文件)"
-                                正文开头不得包含 YAML frontmatter
-
-update: 三项均可选（缺省保留原值），至少一项有效:
-  --content "文本"             同 create 约束，缺省保留原正文
-  --summary / --tags           缺省保留原值
-  禁用 --content-file / stdin
-
-search flag:
-  --top N                       返回条数（默认 5）
-  --context N                   命中上下文行数（默认 2）
-
-domain 说明:
-  domain = 知识所在文件夹（相对 .knowledges）；create/update 知识时
-  自动写入 YAML 头的 domain 字段，顶层知识无 domain
-  domain list 全景树形展示全部 domain（不含知识卡片）
-  domain list <name> 仅列出其直接子 domain 名称`)
+      printKnowledgeHelp()
       break
     case 'resource':
       printResourceHelp()
@@ -857,212 +811,6 @@ function handleNode(root: string, args: ReturnType<typeof parseArgs>): void {
         return
       }
       throw new UsageError(`未知的 node 子命令: ${cmd}\n运行 'ocean node --help' 查看详细用法。`)
-  }
-}
-
-// ---------------------------------------------------------------------------
-// knowledge CRUD
-// ---------------------------------------------------------------------------
-
-function domainBasename(p: string): string {
-  const parts = p.split('/')
-  return parts[parts.length - 1]
-}
-
-// 树形展示 domain 层级（不含知识卡片），返回名称列各行（带层级前缀）
-// 根行（knowledges）顶格，顶层 domain 起用树形符号
-function domainTreeLines(nodes: DomainNode[]): string[] {
-  const lines: string[] = ['knowledges']
-  const root: DomainNode = { domain: '', knowledges: [], subdomains: nodes }
-  domainBranchLines(root, '', lines)
-  return lines
-}
-
-function domainBranchLines(node: DomainNode, prefix: string, lines: string[]): void {
-  const children = node.subdomains
-  children.forEach((child, i) => {
-    const isLast = i === children.length - 1
-    const branch = isLast ? '└── ' : '├── '
-    lines.push(`${prefix}${branch}${domainBasename(child.domain)}`)
-    domainBranchLines(child, prefix + (isLast ? '    ' : '│   '), lines)
-  })
-}
-
-// 收集树中全部 domain 完整路径（深度优先）
-function collectDomainPaths(nodes: DomainNode[], paths: string[] = []): string[] {
-  for (const node of nodes) {
-    paths.push(node.domain)
-    collectDomainPaths(node.subdomains, paths)
-  }
-  return paths
-}
-
-function handleKnowledge(root: string, args: ReturnType<typeof parseArgs>): void {
-  const cmd = args.subcommand
-  switch (cmd) {
-    case 'list':
-      if (args.flags.json) printJson(knowledgeCrud.list(root))
-      else printList(knowledgeCrud.list(root), '知识')
-      break
-    case 'read': {
-      const relPath = args.positional[0]
-      args.flags.json ? printJson({ content: stripFrontmatter(knowledgeCrud.read(root, relPath)) }) : out(stripFrontmatter(knowledgeCrud.read(root, relPath)))
-      break
-    }
-    case 'create': {
-      const relPath = args.positional[0]
-      if (args.flags.content === true) {
-        throw new UsageError('创建知识的 --content 值缺失或以 -- 开头无法解析。若正文以 --- 开头（YAML frontmatter），请剥掉 frontmatter 后传入纯正文；长内容可 --content "$(cat 文件)"')
-      }
-      const content = typeof args.flags.content === 'string' ? args.flags.content : undefined
-      if (content === undefined || content.trim() === '') {
-        throw new UsageError('创建知识必须通过 --content 传入正文（长内容可 --content "$(cat file.md)"），不支持 --content-file / stdin')
-      }
-      if (content.trimStart().startsWith('---')) {
-        throw new UsageError('知识正文开头不能包含 YAML frontmatter（检测到以 --- 开头）。请传入纯正文，name/summary/tags/status 由系统自动生成')
-      }
-      const summary = typeof args.flags.summary === 'string' ? args.flags.summary : undefined
-      if (!summary || summary.trim() === '') {
-        throw new UsageError('创建知识时 --summary <text> 为必填参数，不可为空')
-      }
-      const tagsStr = typeof args.flags.tags === 'string' ? args.flags.tags : undefined
-      if (tagsStr === undefined || tagsStr.trim() === '') {
-        throw new UsageError('创建知识时 --tags <tag1,tag2> 为必填参数，不可为空')
-      }
-      const tags = tagsStr.split(',').map(t => t.trim())
-      knowledgeCrud.create(root, relPath, content, { summary, tags })
-      args.flags.json ? printJson({ action: 'created', path: relPath }) : printAction('created', { path: relPath })
-      break
-    }
-    case 'update': {
-      const relPath = args.positional[0]
-      if (args.flags.content === true) {
-        throw new UsageError('更新知识的 --content 值缺失或以 -- 开头无法解析。若正文以 --- 开头（YAML frontmatter），请剥掉 frontmatter 后传入纯正文；长内容可 --content "$(cat 文件)"')
-      }
-      if (args.flags['content-file'] !== undefined) {
-        throw new UsageError('更新知识不支持 --content-file，正文仅能通过 --content 传入（长内容可 --content "$(cat 文件)"）')
-      }
-      const contentFlag = typeof args.flags.content === 'string' ? args.flags.content : undefined
-      const content = contentFlag !== undefined && contentFlag.trim() !== '' ? contentFlag : undefined
-      if (content !== undefined && content.trimStart().startsWith('---')) {
-        throw new UsageError('知识正文开头不能包含 YAML frontmatter（检测到以 --- 开头）。请传入纯正文，name/summary/tags/status 由系统自动生成')
-      }
-      const summaryFlag = typeof args.flags.summary === 'string' ? args.flags.summary : undefined
-      const summary = summaryFlag !== undefined && summaryFlag.trim() !== '' ? summaryFlag : undefined
-      const tagsFlag = typeof args.flags.tags === 'string' ? args.flags.tags : undefined
-      const tags = tagsFlag !== undefined && tagsFlag.trim() !== '' ? tagsFlag.split(',').map(t => t.trim()) : undefined
-      if (content === undefined && summary === undefined && tags === undefined) {
-        throw new UsageError('更新知识至少需要提供 --content / --summary / --tags 中的一项有效参数（不可全为空，stdin 输入会被忽略）')
-      }
-      let body: string
-      if (content !== undefined) {
-        body = content
-      } else {
-        try {
-          body = stripFrontmatter(knowledgeCrud.read(root, relPath))
-        } catch (e: any) {
-          if (e && e.code === 'ENOENT') throw new UsageError(`知识不存在: ${relPath}`)
-          throw e
-        }
-      }
-      knowledgeCrud.update(root, relPath, body, { summary, tags })
-      args.flags.json ? printJson({ action: 'updated', path: relPath }) : printAction('updated', { path: relPath })
-      break
-    }
-    case 'delete': {
-      const relPath = args.positional[0]
-      knowledgeCrud.del(root, relPath)
-      args.flags.json ? printJson({ action: 'deleted', path: relPath }) : printAction('deleted', { path: relPath })
-      break
-    }
-    case 'domain': {
-      const sub = args.positional[0] || ''
-      switch (sub) {
-        case 'list': {
-          const name = args.positional[1]
-          if (name === undefined) {
-            const tree = knowledgeCrud.listDomainTree(root)
-            if (args.flags.json) printJson(collectDomainPaths(tree))
-            else if (tree.length === 0) rawOut('（无 domain）')
-            else printDomainBox(domainTreeLines(tree))
-          } else {
-            const node = knowledgeCrud.listDomainSubtree(root, name)
-            if (args.flags.json) printJson(node.subdomains.map(s => s.domain))
-            else {
-              const subNames = node.subdomains.map(s => domainBasename(s.domain))
-              if (subNames.length === 0) rawOut(`domain ${name} 下暂无子领域`)
-              else printList(subNames, '子领域')
-            }
-          }
-          break
-        }
-        case 'create': {
-          const name = args.positional[1]
-          if (!name) throw new UsageError('用法: ocean knowledge domain create <name>')
-          knowledgeCrud.createDomain(root, name)
-          args.flags.json ? printJson({ action: 'created', domain: name }) : printAction('created', { domain: name })
-          break
-        }
-        case 'search': {
-          const keyword = args.positional[1]
-          if (!keyword) throw new UsageError('用法: ocean knowledge domain search <keyword>')
-          const results = knowledgeCrud.searchDomains(root, keyword)
-          if (args.flags.json) printJson(results)
-          else if (results.length === 0) rawOut('未找到匹配的 domain')
-          else printDataTable(['domain', '知识数'], results.map(r => [r.domain, String(r.count)]))
-          break
-        }
-        case 'update': {
-          const oldName = args.positional[1]
-          const newName = args.positional[2]
-          if (!oldName || !newName) throw new UsageError('用法: ocean knowledge domain update <old> <new>')
-          knowledgeCrud.updateDomain(root, oldName, newName)
-          args.flags.json ? printJson({ action: 'updated', from: oldName, to: newName }) : printAction('updated', { from: oldName, to: newName })
-          break
-        }
-        default:
-          throw new UsageError(`未知的 domain 子命令: ${sub}\n用法: ocean knowledge domain list/create/search/update`)
-      }
-      break
-    }
-    case 'search': {
-      const keyword = args.positional[0]
-      if (!keyword) throw new UsageError('用法: ocean knowledge search <keyword> [--top N] [--context N]')
-      const top = getLimit(args.flags, 'top', 5)
-      const context = getLimit(args.flags, 'context', 2)
-      const results = knowledgeCrud.search(root, keyword, { top, context })
-      if (args.flags.json) {
-        printJson(results)
-      } else if (results.length === 0) {
-        rawOut('未找到匹配的已审核知识（仅检索 status=validated）')
-      } else {
-        const lines: string[] = []
-        for (const r of results) {
-          const meta = Object.entries(r.metadata)
-            .filter(([k]) => k !== 'name' && k !== 'summary')
-            .map(([k, v]) => `${k}: ${v}`)
-            .join('  |  ')
-          lines.push(`# ${r.name}  (${r.path})`)
-          if (meta) lines.push(meta)
-          if (r.summary) lines.push(`summary: ${r.summary}`)
-          for (const m of r.matches) {
-            for (const b of m.before) lines.push(`    ${b}`)
-            lines.push(`  > (L${m.line}) ${m.text}`)
-            for (const a of m.after) lines.push(`    ${a}`)
-            lines.push('')
-          }
-          lines.push('')
-        }
-        rawOut(lines.join('\n'))
-      }
-      break
-    }
-    default:
-      if (!cmd) {
-        printHelp('knowledge')
-        return
-      }
-      throw new UsageError(`未知的 knowledge 子命令: ${cmd}\n运行 'ocean knowledge --help' 查看详细用法。`)
   }
 }
 
