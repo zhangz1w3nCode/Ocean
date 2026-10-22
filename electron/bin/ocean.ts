@@ -9,7 +9,6 @@ import { genId } from '../core/state'
 import { defaultLimits } from '../core/state'
 import type { Limits } from '../core/state'
 
-import * as nodeCrud from '../core/node'
 import * as wfGraph from '../core/workflow'
 import Table from 'cli-table3'
 import { handleTask, printTaskHelp } from '../source/cli/task'
@@ -17,6 +16,7 @@ import { handleResource, printResourceHelp } from '../source/cli/resource'
 import { handleAgent, printAgentHelp } from '../source/cli/agent'
 import { handleSkill, printSkillHelp } from '../source/cli/skill'
 import { handleKnowledge, printKnowledgeHelp } from '../source/cli/knowledge'
+import { handleNode, printNodeHelp } from '../source/cli/node'
 import {
   parseArgs,
   getLimit,
@@ -313,23 +313,7 @@ flag:
   --root <path>                覆盖项目根目录`)
       break
     case 'node':
-      out(`ocean node — 节点 CRUD
-
-用法: ocean node <subcommand> <name> [--flags...]
-
-子命令:
-  list                          列出所有节点
-  read <name>                  读取节点内容
-  create <name>                创建节点
-  update <name>                更新节点
-  delete <name>                删除节点
-
-常用 flag:
-  --type <type>                节点类型
-  --description <text>         节点描述
-  --content "文本"             短内容直接传
-  --content-file <path>         长内容指向文件
-  stdin                        管道输入（三选一）`)
+      printNodeHelp()
       break
     case 'knowledge':
       printKnowledgeHelp()
@@ -762,55 +746,6 @@ async function handleWorkflow(root: string, args: ReturnType<typeof parseArgs>):
         return
       }
       throw new UsageError(`未知的 workflow 子命令: ${cmd}\n运行 'ocean workflow --help' 查看详细用法。`)
-  }
-}
-
-// ---------------------------------------------------------------------------
-// node CRUD
-// ---------------------------------------------------------------------------
-
-function handleNode(root: string, args: ReturnType<typeof parseArgs>): void {
-  const cmd = args.subcommand
-  switch (cmd) {
-    case 'list':
-      if (args.flags.json) printJson(nodeCrud.list(root))
-      else printList(nodeCrud.list(root), '节点')
-      break
-    case 'read': {
-      const name = args.positional[0]
-      args.flags.json ? printJson({ content: stripFrontmatter(nodeCrud.read(root, name)) }) : out(stripFrontmatter(nodeCrud.read(root, name)))
-      break
-    }
-    case 'create': {
-      const name = args.positional[0]
-      const content = readContent(args.flags)
-      const type = typeof args.flags.type === 'string' ? args.flags.type : undefined
-      const description = typeof args.flags.description === 'string' ? args.flags.description : undefined
-      nodeCrud.create(root, name, content, { type, description })
-      args.flags.json ? printJson({ action: 'created', name }) : printAction('created', { name })
-      break
-    }
-    case 'update': {
-      const name = args.positional[0]
-      const content = readContent(args.flags)
-      const type = typeof args.flags.type === 'string' ? args.flags.type : undefined
-      const description = typeof args.flags.description === 'string' ? args.flags.description : undefined
-      nodeCrud.update(root, name, content, { type, description })
-      args.flags.json ? printJson({ action: 'updated', name }) : printAction('updated', { name })
-      break
-    }
-    case 'delete': {
-      const name = args.positional[0]
-      nodeCrud.del(root, name)
-      args.flags.json ? printJson({ action: 'deleted', name }) : printAction('deleted', { name })
-      break
-    }
-    default:
-      if (!cmd) {
-        printHelp('node')
-        return
-      }
-      throw new UsageError(`未知的 node 子命令: ${cmd}\n运行 'ocean node --help' 查看详细用法。`)
   }
 }
 

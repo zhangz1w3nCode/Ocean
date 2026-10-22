@@ -93,16 +93,6 @@ const getWorkflowsDir = () => {
   return dataDir
 }
 
-// 节点数据存储目录（项目根 .nodes，跨资产来源共享，不随 assetRoot 变化）
-const getNodesDir = () => {
-  const dataDir = path.join(getProjectRoot(), '.nodes')
-  if (!fs.existsSync(dataDir)) {
-    fs.mkdirSync(dataDir, { recursive: true })
-  }
-  return dataDir
-}
-
-
 // 获取工作流文件路径（详情）
 const getWorkflowFilePath = (id) => {
   return path.join(getWorkflowsDir(), `${id}.json`)
@@ -111,11 +101,6 @@ const getWorkflowFilePath = (id) => {
 // 获取所有工作流列表文件路径
 const getAllWorkflowsFilePath = () => {
   return path.join(getWorkflowsDir(), 'workflows.json')
-}
-
-// 获取节点定义文件路径
-const getNodeDefinitionsFilePath = () => {
-  return path.join(getNodesDir(), 'definitions.json')
 }
 
 function createWindow() {
@@ -719,144 +704,6 @@ ipcMain.handle('subscribe-instance-detail', (_event, workflowName, instanceId) =
 ipcMain.handle('unsubscribe-instance-detail', () => {
   stopInstanceWatcher()
   return { success: true }
-})
-
-
-// 保存节点文件（Markdown格式，以名称命名）
-ipcMain.handle('save-node-file', (_, name, content) => {
-  try {
-    const nodesDir = getNodesDir()
-    const fileName = `${name}.md`
-    const filePath = path.join(nodesDir, fileName)
-    fs.writeFileSync(filePath, content, 'utf-8')
-    return { success: true }
-  } catch (error) {
-    console.error('保存节点文件失败:', error)
-    return { success: false, error: String(error) }
-  }
-})
-
-// 加载单个节点文件内容
-ipcMain.handle('load-node-file', (_, name) => {
-  try {
-    const nodesDir = getNodesDir()
-    const filePath = path.join(nodesDir, `${name}.md`)
-    if (!fs.existsSync(filePath)) {
-      return { success: true, content: null, mtime: null }
-    }
-    const content = fs.readFileSync(filePath, 'utf-8')
-    const stats = fs.statSync(filePath)
-    return { success: true, content, mtime: stats.mtime.toISOString() }
-  } catch (error) {
-    console.error('加载节点文件失败:', error)
-    return { success: false, error: String(error), content: null, mtime: null }
-  }
-})
-
-// 删除单个节点文件
-ipcMain.handle('delete-node-file', (_, name) => {
-  try {
-    const nodesDir = getNodesDir()
-    const filePath = path.join(nodesDir, `${name}.md`)
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath)
-    }
-    return { success: true }
-  } catch (error) {
-    console.error('删除节点文件失败:', error)
-    return { success: false, error: String(error) }
-  }
-})
-
-// 加载所有节点文件列表（返回所有 .md 文件名）
-ipcMain.handle('load-all-node-files', () => {
-  try {
-    const nodesDir = getNodesDir()
-    if (!fs.existsSync(nodesDir)) {
-      return { success: true, files: [] }
-    }
-    const files = fs.readdirSync(nodesDir)
-      .filter(file => file.endsWith('.md'))
-      .map(file => file)
-    return { success: true, files }
-  } catch (error) {
-    console.error('加载节点文件列表失败:', error)
-    return { success: false, error: String(error), files: [] }
-  }
-})
-
-// ===== 局部节点文件相关 IPC（存储在工作流的nodes目录下）=====
-
-// 获取工作流局部节点目录路径
-const getWorkflowLocalNodesPath = (workflowName) => {
-  return path.join(getWorkflowFolderPath(workflowName), 'nodes')
-}
-
-// 保存局部节点文件
-ipcMain.handle('save-local-node', (_, workflowName, nodeName, content) => {
-  try {
-    const nodesDir = getWorkflowLocalNodesPath(workflowName)
-    // 确保nodes目录存在
-    if (!fs.existsSync(nodesDir)) {
-      fs.mkdirSync(nodesDir, { recursive: true })
-    }
-    const fileName = `${nodeName}.md`
-    const filePath = path.join(nodesDir, fileName)
-    fs.writeFileSync(filePath, content, 'utf-8')
-    return { success: true }
-  } catch (error) {
-    console.error('保存局部节点文件失败:', error)
-    return { success: false, error: String(error) }
-  }
-})
-
-// 加载局部节点文件
-ipcMain.handle('load-local-node', (_, workflowName, nodeName) => {
-  try {
-    const nodesDir = getWorkflowLocalNodesPath(workflowName)
-    const filePath = path.join(nodesDir, `${nodeName}.md`)
-    if (!fs.existsSync(filePath)) {
-      return { success: true, content: null, mtime: null }
-    }
-    const content = fs.readFileSync(filePath, 'utf-8')
-    const stats = fs.statSync(filePath)
-    return { success: true, content, mtime: stats.mtime.toISOString() }
-  } catch (error) {
-    console.error('加载局部节点文件失败:', error)
-    return { success: false, error: String(error), content: null, mtime: null }
-  }
-})
-
-// 加载所有局部节点文件列表
-ipcMain.handle('load-all-local-nodes', (_, workflowName) => {
-  try {
-    const nodesDir = getWorkflowLocalNodesPath(workflowName)
-    if (!fs.existsSync(nodesDir)) {
-      return { success: true, files: [] }
-    }
-    const files = fs.readdirSync(nodesDir)
-      .filter(file => file.endsWith('.md'))
-      .map(file => file)
-    return { success: true, files }
-  } catch (error) {
-    console.error('加载局部节点文件列表失败:', error)
-    return { success: false, error: String(error), files: [] }
-  }
-})
-
-// 删除局部节点文件
-ipcMain.handle('delete-local-node', (_, workflowName, nodeName) => {
-  try {
-    const nodesDir = getWorkflowLocalNodesPath(workflowName)
-    const filePath = path.join(nodesDir, `${nodeName}.md`)
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath)
-    }
-    return { success: true }
-  } catch (error) {
-    console.error('删除局部节点文件失败:', error)
-    return { success: false, error: String(error) }
-  }
 })
 
 // ===== 项目相关 IPC =====
@@ -2287,12 +2134,13 @@ ipcMain.handle('abort-agent-loop', async () => {
   return { success: false, message: '没有正在执行的 Agent Loop' }
 })
 
-// ==================== 任务 / 资源 / 智能体 / 技能 / 知识 ====================
-// 实现在 electron/core/{task,resource,agent,skill,knowledge}（TS），IPC 壳在
-// source/desktop/{task,resource,agent,skill,knowledge}.ts（编译产物），两端与 CLI 共用同一份 core 源码。
+// ==================== 任务 / 资源 / 智能体 / 技能 / 知识 / 节点 ====================
+// 实现在 electron/core/{task,resource,agent,skill,knowledge,node}（TS），IPC 壳在
+// source/desktop/{task,resource,agent,skill,knowledge,node}.ts（编译产物），两端与 CLI 共用同一份 core 源码。
 // knowledge 壳额外拿到 getRawProjectPath（复刻 graph-config 的「未设置项目返回错误」契约）。
 require('./dist/source/desktop/task.js').registerTaskHandlers({ getProjectRoot })
 require('./dist/source/desktop/resource.js').registerResourceHandlers({ getProjectRoot })
 require('./dist/source/desktop/agent.js').registerAgentHandlers({ getProjectRoot })
 require('./dist/source/desktop/skill.js').registerSkillHandlers({ getProjectRoot })
 require('./dist/source/desktop/knowledge.js').registerKnowledgeHandlers({ getProjectRoot, getRawProjectPath: () => currentProjectPath })
+require('./dist/source/desktop/node.js').registerNodeHandlers({ getProjectRoot })

@@ -111,3 +111,20 @@ export type {
   KnowledgeSearchResult,
   KnowledgeSearchOpts,
 } from './knowledge/operate'
+
+export {
+  saveNodeFile,
+  readNodeFile,
+  deleteNodeFile,
+  listNodeFiles,
+  saveLocalNode,
+  readLocalNode,
+  deleteLocalNode,
+  listLocalNodes,
+  listNodes,
+  readNode,
+  createNode,
+  updateNode,
+  delNode,
+} from './node/operate'
+export type { NodeWriteOpts } from './node/operate'
