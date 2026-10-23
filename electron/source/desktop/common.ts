@@ -10,4 +10,9 @@ export interface DesktopCtx {
   * 仅为复刻旧内联 handler 的「未设置项目返回错误」契约（如 knowledge graph-config）而设；
   * 已有域（task/resource/agent/skill）不感知，可不提供 */
   getRawProjectPath?(): string | null
+
+  /** 主进程 → 渲染进程推送通道（事件订阅类 channel 的增量推送，如 instance-detail-delta）。
+  * 仅为 workflow 域实例 watcher 推送而设；真实 Electron 下即 mainWindow.webContents.send，
+  * stub（网页端）环境下由 pushEmitter 承接并经 http.cjs 转 SSE；未提供时推送 no-op */
+  sendToRenderer?(channel: string, payload: any): void
 }
