@@ -170,3 +170,49 @@ export type {
   InstanceWatcherHandle,
   InstanceDetailDelta,
 } from './workflow/operate'
+
+// ===== 基础设施域（app / llm / agentic，无 CLI 对应物，GUI 专属） =====
+
+export {
+  readAppConfig,
+  writeAppConfig,
+  readGeneralSettings,
+  writeGeneralSettings,
+  initProjectDirs,
+  projectIdentity,
+  syncProjectState,
+  readAssetRoot,
+  writeAssetRoot,
+} from './app/operate'
+
+export {
+  testLlmConnection,
+  testExecutablePath,
+  checkCliInstalled,
+  installCli,
+  callLlmApi,
+  readLlmConfig,
+  writeLlmConfig,
+  readAgenticConfig,
+  writeAgenticConfig,
+  readLlmReviewConfig,
+  writeLlmReviewConfig,
+} from './llm/operate'
+export type { LlmProviderConfig, InstallCliOpts } from './llm/operate'
+
+export {
+  executeAgenticTool,
+  runAgentLoop,
+} from './agentic/operate'
+export type {
+  AgentToolFactory,
+  AgentToolLike,
+  AgentToolResult,
+  AgentToolResultContent,
+  AgenticToolParams,
+  AgentLoopConfig,
+  AgentLoopHooks,
+  AgentLoopEvent,
+  AgentLoopResult,
+  AgenticToolConfigInput,
+} from './agentic/operate'

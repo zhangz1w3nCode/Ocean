@@ -12,7 +12,7 @@
 //   正文为智能体提示词。GUI 链路由前端组装完整 Markdown（以 rawFrontmatter 为基底合并，
 //   保留未知字段）后整文件写入。
 //
-// assetRoot 解析与 core/executor.ts resolveAssetDir / launch.cjs getAssetRoot 同源：
+// assetRoot 解析与 core/executor.ts resolveAssetDir / core/app resolveAssetDirName 同源：
 // 读 {root}/.ocean/asset-root.json（assetRoot === 'pi' → .pi，否则 .claude）。
 
 import * as fs from 'node:fs'
@@ -35,7 +35,7 @@ type Failed = { success: false; error: string }
 // 内部辅助：路径 / frontmatter
 // ---------------------------------------------------------------------------
 
-// 读 {root}/.ocean/asset-root.json（与 executor.ts resolveAssetDir、launch.cjs getAssetRoot 同一语义）
+// 读 {root}/.ocean/asset-root.json（与 executor.ts resolveAssetDir、core/app resolveAssetDirName 同一语义）
 function resolveAssetDir(root: string): string {
   try {
     const configPath = path.join(root, '.ocean', 'asset-root.json')

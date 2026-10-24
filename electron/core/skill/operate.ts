@@ -17,7 +17,7 @@
 // 技能模板文件（GUI-only，无 CLI 对应命令）固定存 {root}/.ocean/template/skill/{type}.json，
 // 不随 assetRoot 变化；内容 { content, updatedAt } JSON。
 //
-// assetRoot 解析与 core/executor.ts resolveAssetDir / launch.cjs getAssetRoot 同源：
+// assetRoot 解析与 core/executor.ts resolveAssetDir / core/app resolveAssetDirName 同源：
 // 读 {root}/.ocean/asset-root.json（assetRoot === 'pi' → .pi，否则 .claude）。
 
 import * as fs from 'node:fs'
@@ -38,7 +38,7 @@ type Failed = { success: false; error: string }
 // 内部辅助：路径 / frontmatter
 // ---------------------------------------------------------------------------
 
-// 读 {root}/.ocean/asset-root.json（与 executor.ts resolveAssetDir、launch.cjs getAssetRoot 同一语义）
+// 读 {root}/.ocean/asset-root.json（与 executor.ts resolveAssetDir、core/app resolveAssetDirName 同一语义）
 function resolveAssetDir(root: string): string {
   try {
     const configPath = path.join(root, '.ocean', 'asset-root.json')

@@ -211,7 +211,7 @@ describe('GUI 语义组（launch.cjs workflow IPC 契约复刻）', () => {
     fs.writeFileSync(path.join(instDir, 'status.json'), JSON.stringify({ status: 'completed', step: 4, completed: ['a', 'b'] }))
     await sleep(600)
     expect(deltas.length).toBeGreaterThanOrEqual(1)
-    const procDelta = deltas.at(-1)
+    const procDelta = deltas[deltas.length - 1]
     expect(Object.keys(procDelta).sort()).toEqual(['completedNodes', 'currentName', 'wfLoopCount', 'wfRetryCount', 'wfStatus', 'wfStep'])
     expect(procDelta.wfStatus).toBe('completed')
     expect(procDelta.wfStep).toBe(4)
@@ -219,12 +219,12 @@ describe('GUI 语义组（launch.cjs workflow IPC 契约复刻）', () => {
     // trace.jsonl → trace 两字段增量
     fs.writeFileSync(path.join(instDir, 'trace', 'trace.jsonl'), JSON.stringify({ ts: 't2', node: 'a', invoke: 'i', status: 'completed' }))
     await sleep(600)
-    expect(Object.keys(deltas.at(-1)).sort()).toEqual(['trace', 'traceLog'])
+    expect(Object.keys(deltas[deltas.length - 1]).sort()).toEqual(['trace', 'traceLog'])
 
     // 未识别文件（顶层新文件）→ 全量兜底（含六组字段）
     fs.writeFileSync(path.join(instDir, 'random.bin'), 'x')
     await sleep(600)
-    const full = deltas.at(-1)
+    const full = deltas[deltas.length - 1]
     expect(['completedNodes', 'traceLog', 'artifacts', 'contextMd', 'instanceMd', 'flowData'].every(k => k in full)).toBe(true)
 
     // stop 后不再推送
