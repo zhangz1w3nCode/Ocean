@@ -114,9 +114,17 @@ describe('installWebApi', () => {
     // 网页端故意不注入的 preload 方法（新增排除项必须在此登记并注明原因）：
     // - webServerStatus/Start/Stop：http.cjs 的 HTTP_DENIED_CHANNELS，网页端禁止递归拉起子进程
     // - saveLlmReviewConfig/loadLlmReviewConfig：网页端走 localStorage 降级（见 storage.ts）
+    // - harness* 全部 + onHarnessSessionEvent：harness 会话为桌面端专属（ipc.cjs 在 stub 环境自禁用，
+    //   网页端不提供 spawn pi 子进程能力，页面层检测 window.__OCEAN_WEB__ 降级）
     const WEB_EXCLUDED = new Set([
       'webServerStatus', 'webServerStart', 'webServerStop',
       'saveLlmReviewConfig', 'loadLlmReviewConfig',
+      'harnessDetect', 'harnessListWorktrees', 'harnessListBranches', 'harnessListSessions', 'harnessWorktreeCreate',
+      'harnessSessionStart', 'harnessSessionOpen', 'harnessSessionSend',
+      'harnessSessionCommand', 'harnessSessionAbort', 'harnessSessionStop',
+      'harnessSessionDelete', 'harnessSessionExtensionResponse', 'harnessSessionInfo',
+      'harnessSessionListActive',
+      'onHarnessSessionEvent',
     ])
     // 网页端保留但桌面端已摘除 IPC 的方法（task 域迁移 renderer 直连后 preload 不再暴露；
     // 网页端任务页不在保真范围，这些方法成为 web-only 死代码，保留仅避免 shim 大改）：

@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import { saveAppConfig } from '../utils/storage'
 import type { AppConfig } from '../types'
 
-export type PageType = 'project' | 'agents' | 'workflows' | 'nodes' | 'resources' | 'knowledges' | 'skills' | 'settings' | 'tasks' | 'codebases'
+export type PageType = 'project' | 'agents' | 'workflows' | 'nodes' | 'resources' | 'knowledges' | 'skills' | 'settings' | 'tasks' | 'codebases' | 'harnesses'
 
 // 工作流区域二级导航子页面
 export type WorkflowSubPage = 'nodes' | 'workflows' | 'instances' | 'settings'
@@ -16,8 +16,11 @@ export type TaskSubPage = 'library'
 // 代码库区域二级导航子页面
 export type CodebaseSubPage = 'manage' | 'settings'
 
+// Harness 区域二级导航子页面
+export type HarnessSubPage = 'schedule' | 'settings'
+
 // 默认导航顺序
-const DEFAULT_NAV_ORDER: PageType[] = ['agents', 'skills', 'knowledges', 'workflows', 'tasks', 'codebases', 'resources', 'settings']
+const DEFAULT_NAV_ORDER: PageType[] = ['agents', 'skills', 'knowledges', 'workflows', 'tasks', 'harnesses', 'codebases', 'resources', 'settings']
 
 interface AppState {
   currentPage: PageType
@@ -51,6 +54,10 @@ interface AppState {
   // 代码库二级导航
   codebaseSubPage: CodebaseSubPage
   setCodebaseSubPage: (page: CodebaseSubPage) => void
+
+  // Harness 二级导航
+  harnessSubPage: HarnessSubPage
+  setHarnessSubPage: (page: HarnessSubPage) => void
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -138,4 +145,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   // 代码库二级导航 - 默认展示管理页
   codebaseSubPage: 'manage',
   setCodebaseSubPage: (page) => set({ codebaseSubPage: page }),
+
+  // Harness 二级导航 - 默认展示调度
+  harnessSubPage: 'schedule',
+  setHarnessSubPage: (page) => set({ harnessSubPage: page }),
 }))

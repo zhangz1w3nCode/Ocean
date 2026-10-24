@@ -11,6 +11,7 @@ import { SettingsPage } from '../../pages/SettingsPage'
 import { WorkflowEditorModal, WorkflowLayout } from '../workflow'
 import { TaskLayout } from '../tasks'
 import { CodebasesLayout } from '../codebases'
+import { HarnessLayout } from '../harness'
 
 // 空白页面组件（用于 project 类型，实际项目选择页面在 App.tsx 中处理）
 const EmptyPage: FC = () => null
@@ -26,6 +27,7 @@ const pageComponents: Record<PageType, FC> = {
   settings: SettingsPage,
   tasks: TaskLayout,
   codebases: CodebasesLayout,
+  harnesses: HarnessLayout,
 }
 
 export const MainContent: FC = () => {

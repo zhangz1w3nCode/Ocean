@@ -544,3 +544,43 @@ export interface CodebaseSearchHit {
   before: string[]
   after: string[]
 }
+
+// ===== Harness 会话 =====
+
+// git worktree 条目（git worktree list --porcelain 解析结果）
+export interface HarnessWorktree {
+  path: string
+  branch: string | null
+  isMain: boolean
+  detached: boolean
+  prunable: boolean
+  bare: boolean
+}
+
+// pi 会话文件摘要（~/.pi/agent/sessions/--<path>--/ 扫描结果）
+export interface HarnessSessionSummary {
+  file: string
+  valid?: boolean
+  id: string | null
+  name: string | null
+  timestamp: string | null
+  cwd: string | null
+  mtime: number
+  lastMessage: { role: string; text: string } | null
+  firstUserText: string | null
+}
+
+// harness-session-event 事件载荷（按 sessionId 路由）
+export interface HarnessEventPayload {
+  sessionId: string
+  event: { type: string } & Record<string, unknown>
+}
+
+// pi RPC 命令（prompt/steer/abort/compact/get_state/... 透传结构）
+export interface HarnessCommand {
+  type: string
+  message?: string
+  images?: { type: 'image'; data: string; mimeType: string }[]
+  streamingBehavior?: 'steer' | 'followUp'
+  [key: string]: unknown
+}

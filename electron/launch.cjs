@@ -3281,3 +3281,16 @@ ipcMain.handle('list-skill-resources', (_, skillName, resourceType) => {
     return { success: false, error: String(error), files: [] }
   }
 })
+
+// ==================== Harness 会话 ====================
+// 实现抽到 electron/harness/（sessionManager.cjs 纯 Node 核心 + ipc.cjs IPC 薄壳），与任务域同款薄壳模式。
+// 网页端子进程（registry stub 环境）内 ipc.cjs 自动禁用，harness 为桌面端专属。
+// 阶段二（refactor/api-core-unification 合入 main 后）平移为 dist/source/desktop/harness.js，仅换本行 require 路径。
+require('./harness/ipc.cjs').registerHarnessHandlers({
+  getProjectRoot,
+  sendToRenderer: (channel, payload) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send(channel, payload)
+    }
+  },
+})
