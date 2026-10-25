@@ -91,6 +91,7 @@ describe('项目初始化与切换', () => {
   it('initProjectDirs 建目录结构（claude 默认：.claude/agents + 5 共享域 + .ocean）', () => {
     const r = initProjectDirs(root)
     expect(r.success).toBe(true)
+    if (!r.success) throw new Error('unreachable')
     expect(r.projectId).toBe(projectIdOf(root))
     expect(r.projectName).toBe(path.basename(root))
     for (const d of ['.claude/agents', '.knowledges', '.resources', '.nodes', '.workflows', '.ocean']) {

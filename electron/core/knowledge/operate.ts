@@ -347,7 +347,9 @@ export function getKnowledgeGitStatus(root: string): { success: true; managed: b
 
 // knowledge-git-init：开启托管（git init 固定分支 + .gitignore + 全量基线提交）
 export function initKnowledgeGit(root: string): { success: true; branch?: string; hasCommits: boolean; alreadyManaged?: boolean } | Failed {
-  const dir = knowledgesDir(root)
+  // 旧实现 getKnowledgesDir() 无条件建目录后再 init：空项目可成功开启 git 托管
+  // （审查回归修复：恢复该副作用，保持与迁移前行为一致）
+  const dir = ensureKnowledgesDir(root)
   if (isKnowledgesGitManaged(root)) {
     const ensured = ensureKnowledgeBranch(root)
     if (!ensured.ok) return { success: false, error: ensured.error || '' }

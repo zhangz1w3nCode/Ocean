@@ -101,6 +101,19 @@ describe('GUI 语义组（launch.cjs knowledge IPC 契约复刻）', () => {
     })
   })
 
+  it('initKnowledgeGit 在 .knowledges 目录不存在时先建目录再 init（旧 getKnowledgesDir 无条件建目录副作用，审查回归修复锁定）', () => {
+    const bare = fs.mkdtempSync(path.join(os.tmpdir(), 'ocean-knowledge-bare-'))
+    try {
+      expect(fs.existsSync(path.join(bare, '.knowledges'))).toBe(false)
+      const r = initKnowledgeGit(bare)
+      expect(r.success).toBe(true)
+      if (r.success) expect(r.hasCommits).toBe(true)
+      expect(fs.existsSync(path.join(bare, '.knowledges', '.git'))).toBe(true)
+    } finally {
+      fs.rmSync(bare, { recursive: true, force: true })
+    }
+  })
+
   it('git 全链路：init 基线提交 → status → commit 默认消息 → log → show → baseline → rollback', () => {
     saveKnowledgeFile(root, 'k1', '---\nname: k1\nstatus: validated\n---\n正文 v1')
 

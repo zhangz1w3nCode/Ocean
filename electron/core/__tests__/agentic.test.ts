@@ -176,7 +176,7 @@ describe('runAgentLoop（mock LLM 全链路）', () => {
     expect(events[0].data).toEqual({ task: 'agentic-单测任务' })
     expect(events.find(e => e.type === 'tool_call')!.data).toEqual({ toolName: 'write', toolArgs: { path: 'loop-a.md', content: '由 loop 写入' } })
     expect(events.find(e => e.type === 'tool_result')!.data.toolSuccess).toBe(true)
-    expect(events.at(-1)!.data).toMatchObject({ success: true, result: '任务完成总结', totalTurns: 2, totalToolCalls: 1 })
+    expect(events[events.length - 1].data).toMatchObject({ success: true, result: '任务完成总结', totalTurns: 2, totalToolCalls: 1 })
 
     // LLM 请求体：第二轮消息历史含 tool 结果（role:tool + tool_call_id）
     expect(bodies[1].messages.some((m: any) => m.role === 'tool' && m.tool_call_id === 'tc-1' && m.content.includes('ok:'))).toBe(true)
@@ -210,7 +210,7 @@ describe('runAgentLoop（mock LLM 全链路）', () => {
     expect(r.error).toBe('用户中止')
     expect(r.totalTurns).toBeGreaterThanOrEqual(1)
     expect(events.map(e => e.type)).toContain('error')
-    expect(events.at(-1)!.type).toBe('agent_end')
+    expect(events[events.length - 1].type).toBe('agent_end')
     expect((events.find(e => e.type === 'error') as any).data.error).toBe('用户中止')
   })
 
