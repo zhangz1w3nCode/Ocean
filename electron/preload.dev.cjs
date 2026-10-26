@@ -177,6 +177,10 @@ const electronAPI = {
     ipcRenderer.invoke('harness-session-extension-response', sessionId, response),
   harnessSessionInfo: (sessionId) => ipcRenderer.invoke('harness-session-info', sessionId),
   harnessSessionListActive: () => ipcRenderer.invoke('harness-session-list-active'),
+  harnessSessionReadFile: (sessionId, relativePath) => ipcRenderer.invoke('harness-session-read-file', sessionId, relativePath),
+  harnessSessionListDir: (sessionId, relativePath) => ipcRenderer.invoke('harness-session-list-dir', sessionId, relativePath),
+  harnessGitStatus: (sessionId, baseBranch) => ipcRenderer.invoke('harness-git-status', sessionId, baseBranch),
+  harnessGitDiff: (sessionId, filePath, source, baseBranch) => ipcRenderer.invoke('harness-git-diff', sessionId, filePath, source, baseBranch),
   // Harness 会话事件监听（pi RPC 事件流，按会话 id 路由）
   onHarnessSessionEvent: (callback) => {
     const listener = (_event, data) => callback(data)

@@ -1,7 +1,7 @@
 import type { FC } from 'react'
 import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { ArrowDown, Loader2, Terminal } from 'lucide-react'
+import { ArrowDown, Loader2, Terminal, Quote, PanelRight } from 'lucide-react'
 import { useHarnessStore, type HarnessNode, type HarnessSessionRuntime } from '../../../stores/harnessStore'
 import { UserBubble, SteeringBubble, ReasoningRow, AssistantBlock, ToolCard, ApprovalCard, SystemRow } from './MessageNodes'
 
@@ -49,6 +49,8 @@ const NodeView: FC<{ node: HarnessNode; runtime: HarnessSessionRuntime }> = ({ n
 export const ChatFlow: FC = () => {
   const activeSessionId = useHarnessStore((s) => s.activeSessionId)
   const runtime = useHarnessStore((s) => (s.activeSessionId ? s.runtimes[s.activeSessionId] : undefined))
+  const fileViewerOpen = useHarnessStore((s) => s.fileViewerOpen)
+  const toggleFileViewer = useHarnessStore((s) => s.toggleFileViewer)
   const scrollRef = useRef<HTMLDivElement>(null)
   const [atBottom, setAtBottom] = useState(true)
 
@@ -75,11 +77,56 @@ export const ChatFlow: FC = () => {
     setAtBottom(el.scrollHeight - el.scrollTop - el.clientHeight < 80)
   }
 
+  // 消息选中文字 → 浮动「引用」气泡（对齐 DSH 选中引用交互，点击后以 markdown 引用插入输入框）
+  const [quoteBubble, setQuoteBubble] = useState<{ x: number; y: number; text: string } | null>(null)
+  const handlePointerUp = (e: React.PointerEvent) => {
+    if ((e.target as HTMLElement).closest?.('[data-quote-bubble]')) return
+    setTimeout(() => {
+      const container = scrollRef.current
+      if (!container) return
+      const sel = window.getSelection()
+      if (!sel || sel.isCollapsed || !sel.rangeCount) {
+        setQuoteBubble(null)
+        return
+      }
+      const selected = sel.toString().trim()
+      if (!selected || selected.length > 1000) {
+        setQuoteBubble(null)
+        return
+      }
+      const node = sel.anchorNode
+      const element = node ? (node.nodeType === 1 ? (node as HTMLElement) : node.parentElement) : null
+      if (!element || !container.contains(element)) {
+        setQuoteBubble(null)
+        return
+      }
+      const rect = sel.getRangeAt(0).getBoundingClientRect()
+      const containerRect = container.getBoundingClientRect()
+      if (rect.bottom < containerRect.top || rect.top > containerRect.bottom) {
+        setQuoteBubble(null)
+        return
+      }
+      setQuoteBubble({
+        x: Math.min(Math.max(rect.right - containerRect.left + container.scrollLeft, 8), container.clientWidth - 96),
+        y: Math.max(rect.top - containerRect.top + container.scrollTop - 32, 4),
+        text: selected,
+      })
+    })
+  }
+
   const empty = nodes.length === 0
   const connecting = runtime?.status === 'connecting'
 
+  const handleFlowClick = (e: React.MouseEvent) => {
+    const anchor = (e.target as HTMLElement).closest?.('a[data-file]')
+    if (!anchor || !runtime?.sessionId) return
+    e.preventDefault()
+    const file = anchor.getAttribute('data-file')
+    if (file) void useHarnessStore.getState().openFileViewer(runtime.sessionId, file)
+  }
+
   return (
-    <div className="flex-1 min-h-0 relative">
+    <div className="flex-1 min-h-0 min-w-0 relative">
       <AnimatePresence mode="wait">
         <motion.div
           key={sid ?? 'none'}
@@ -89,7 +136,16 @@ export const ChatFlow: FC = () => {
           transition={{ duration: 0.18, ease: 'easeOut' }}
           className="h-full"
         >
-          <div ref={scrollRef} onScroll={handleScroll} className="h-full overflow-y-auto">
+          <div
+            ref={scrollRef}
+            onScroll={() => {
+              handleScroll()
+              setQuoteBubble(null)
+            }}
+            onPointerUp={handlePointerUp}
+            onClick={handleFlowClick}
+            className="h-full overflow-y-auto overflow-x-hidden relative"
+          >
             {empty ? (
               <div className="h-full flex items-center justify-center">
                 {runtime && connecting ? (
@@ -99,7 +155,7 @@ export const ChatFlow: FC = () => {
                 )}
               </div>
             ) : (
-              <div className="max-w-3xl mx-auto px-4 py-4 space-y-3">
+              <div className="px-[60px] py-4 space-y-3">
                 {nodes.map((node, i) => (
                   <motion.div
                     key={node.id}
@@ -113,9 +169,37 @@ export const ChatFlow: FC = () => {
                 {runtime && <RunningStatusBar runtime={runtime} />}
               </div>
             )}
+
+            {quoteBubble && (
+              <button
+                data-quote-bubble
+                style={{ left: quoteBubble.x, top: quoteBubble.y }}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  useHarnessStore.getState().setDraftQuote(quoteBubble.text.slice(0, 500))
+                  setQuoteBubble(null)
+                  window.getSelection()?.removeAllRanges()
+                }}
+                className="absolute z-10 flex items-center gap-1 px-2.5 py-1.5 rounded-full bg-white border border-macos-border shadow-md text-[11px] text-macos-text-secondary hover:text-macos-text transition-colors"
+              >
+                <Quote size={11} strokeWidth={1.5} />
+                引用
+              </button>
+            )}
           </div>
         </motion.div>
       </AnimatePresence>
+
+      {/* 右上角：文件预览展开按钮（面板打开时隐藏，关闭后重新出现） */}
+      {!fileViewerOpen && (
+        <button
+          onClick={toggleFileViewer}
+          className="absolute top-2.5 right-2.5 z-10 w-9 h-9 rounded-xl flex items-center justify-center transition-colors text-macos-text-secondary hover:bg-macos-bg hover:text-macos-text"
+          title="展开文件预览"
+        >
+          <PanelRight size={15} strokeWidth={1.5} />
+        </button>
+      )}
 
       {!atBottom && (
         <button

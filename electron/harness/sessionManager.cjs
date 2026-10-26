@@ -639,6 +639,188 @@ function listActiveSessions() {
   return ok({ sessions })
 }
 
+// 读取会话工作区内的文件（相对路径，限制在 worktree 内；供右侧文件预览）
+function readSessionFile(sessionId, relativePath) {
+  const handle = activeSessions.get(sessionId)
+  if (!handle) return fail(new Error(`会话不存在或已结束: ${sessionId}`))
+  const base = path.resolve(handle.worktreePath)
+  const target = path.resolve(base, String(relativePath || ''))
+  if (target !== base && !target.startsWith(base + path.sep)) {
+    return fail(new Error('路径越界：仅可读取会话工作区内的文件'))
+  }
+  try {
+    const stat = fs.statSync(target)
+    if (!stat.isFile()) return fail(new Error('目标不是文件'))
+    if (stat.size > 2 * 1024 * 1024) return fail(new Error('文件过大（>2MB）'))
+    const content = fs.readFileSync(target, 'utf8')
+    if (content.includes('\0')) return fail(new Error('二进制文件暂不支持预览'))
+    return ok({ content, path: target })
+  } catch (error) {
+    return fail(error)
+  }
+}
+
+// Git 变更概览：当前分支 vs 可配置基线分支（提交时间线/分支变更/工作区变更）
+function gitStatus(sessionId, baseBranch) {
+  const handle = activeSessions.get(sessionId)
+  if (!handle) return fail(new Error(`会话不存在或已结束: ${sessionId}`))
+  const cwd = handle.worktreePath
+  const env = buildSpawnEnv(null)
+  const base = String(baseBranch || 'main').trim()
+  const run = (args) => spawnSync('git', ['-C', cwd, ...args], { encoding: 'utf-8', timeout: 15000, env })
+  try {
+    const verify = run(['rev-parse', '--verify', base])
+    if (verify.status !== 0) return fail(new Error(`基线分支不存在: ${base}`))
+    const current = run(['rev-parse', '--abbrev-ref', 'HEAD'])
+    const counts = run(['rev-list', '--left-right', '--count', `${base}...HEAD`])
+    const log = run(['log', `${base}..HEAD`, '--oneline', '--no-decorate', '-n', 200])
+    const nameStatus = run(['diff', '--name-status', '--no-renames', `${base}...HEAD`])
+    const numstat = run(['diff', '--numstat', '--no-renames', `${base}...HEAD`])
+    const status = run(['status', '--porcelain'])
+    const wtNumstat = run(['diff', '--numstat', '--no-renames', 'HEAD'])
+    if (log.status !== 0 || nameStatus.status !== 0 || numstat.status !== 0 || status.status !== 0) {
+      return fail(new Error('git 信息读取失败'))
+    }
+    const numByPath = {}
+    for (const line of String(numstat.stdout || '').split('\n')) {
+      if (!line.trim()) continue
+      const parts = line.split('\t')
+      if (parts.length >= 3) {
+        numByPath[parts[2]] = {
+          additions: parts[0] === '-' ? null : Number(parts[0]),
+          deletions: parts[1] === '-' ? null : Number(parts[1]),
+        }
+      }
+    }
+    const branchFiles = []
+    for (const line of String(nameStatus.stdout || '').split('\n')) {
+      if (!line.trim()) continue
+      const parts = line.split('\t')
+      if (parts.length < 2) continue
+      const filePath = parts[parts.length - 1]
+      const n = numByPath[filePath] || {}
+      branchFiles.push({
+        path: filePath,
+        status: parts[0].slice(0, 1),
+        additions: n.additions ?? null,
+        deletions: n.deletions ?? null,
+      })
+    }
+    const wtNumByPath = {}
+    for (const line of String(wtNumstat.stdout || '').split('\n')) {
+      if (!line.trim()) continue
+      const parts = line.split('\t')
+      if (parts.length >= 3) {
+        wtNumByPath[parts[2]] = {
+          additions: parts[0] === '-' ? null : Number(parts[0]),
+          deletions: parts[1] === '-' ? null : Number(parts[1]),
+        }
+      }
+    }
+    const worktreeFiles = []
+    for (const rawLine of String(status.stdout || '').split('\n')) {
+      if (!rawLine.trim()) continue
+      const code = rawLine.slice(0, 2)
+      const filePath = rawLine.slice(3).trim().replace(/^"|"$/g, '')
+      let letter = '?'
+      if (code.startsWith('??')) letter = 'U'
+      else if (code[0] !== ' ') letter = code[0]
+      else letter = code[1]
+      const n = wtNumByPath[filePath] || {}
+      worktreeFiles.push({
+        path: filePath,
+        status: letter,
+        additions: n.additions ?? null,
+        deletions: n.deletions ?? null,
+      })
+    }
+    let ahead = 0
+    let behind = 0
+    if (counts.status === 0) {
+      const m = /(\d+)\D+(\d+)/.exec(String(counts.stdout || '').trim())
+      if (m) {
+        behind = Number(m[1])
+        ahead = Number(m[2])
+      }
+    }
+    const commits = String(log.stdout || '').split('\n').filter((l) => l.trim())
+    return ok({
+      base,
+      current: current.status === 0 ? String(current.stdout || '').trim() : null,
+      ahead,
+      behind,
+      commits,
+      branchFiles,
+      worktreeFiles,
+    })
+  } catch (error) {
+    return fail(error)
+  }
+}
+
+// 读取单个文件的 diff（分支变更 base...HEAD / 工作区变更 HEAD + 未跟踪文件）
+function gitDiffFile(sessionId, relativePath, source, baseBranch) {
+  const handle = activeSessions.get(sessionId)
+  if (!handle) return fail(new Error(`会话不存在或已结束: ${sessionId}`))
+  const cwd = handle.worktreePath
+  const env = buildSpawnEnv(null)
+  const file = String(relativePath || '').trim()
+  if (!file) return fail(new Error('缺少文件路径'))
+  const resolved = path.resolve(cwd, file)
+  if (resolved !== cwd && !resolved.startsWith(cwd + path.sep)) {
+    return fail(new Error('路径越界：仅可读取会话工作区内的文件'))
+  }
+  try {
+    if (source === 'worktree') {
+      const tracked = spawnSync('git', ['-C', cwd, 'diff', 'HEAD', '--', file], { encoding: 'utf-8', timeout: 15000, env })
+      if (tracked.status === 0 && String(tracked.stdout || '').trim()) {
+        return ok({ diff: String(tracked.stdout), path: file })
+      }
+      // 未跟踪文件：与空文件对比（exit code 1 属正常）
+      const untracked = spawnSync('git', ['-C', cwd, 'diff', '--no-index', '--', '/dev/null', resolved], { encoding: 'utf-8', timeout: 15000, env })
+      const text = String(untracked.stdout || '')
+      if (text.trim()) return ok({ diff: text, path: file })
+      return ok({ diff: '', path: file })
+    }
+    const base = String(baseBranch || 'main').trim()
+    const verify = spawnSync('git', ['-C', cwd, 'rev-parse', '--verify', base], { encoding: 'utf-8', timeout: 5000, env })
+    if (verify.status !== 0) return fail(new Error(`基线分支不存在: ${base}`))
+    const res = spawnSync('git', ['-C', cwd, 'diff', `${base}...HEAD`, '--', file], { encoding: 'utf-8', timeout: 15000, env })
+    if (res.status !== 0) return fail(new Error('git diff 失败'))
+    return ok({ diff: String(res.stdout || ''), path: file })
+  } catch (error) {
+    return fail(error)
+  }
+}
+
+// 列举会话工作区内的目录（供右侧文件浏览器树，目录优先排序）
+function listSessionDir(sessionId, relativePath) {
+  const handle = activeSessions.get(sessionId)
+  if (!handle) return fail(new Error(`会话不存在或已结束: ${sessionId}`))
+  const base = path.resolve(handle.worktreePath)
+  const target = path.resolve(base, String(relativePath || '.'))
+  if (target !== base && !target.startsWith(base + path.sep)) {
+    return fail(new Error('路径越界：仅可浏览会话工作区内的目录'))
+  }
+  try {
+    const stat = fs.statSync(target)
+    if (!stat.isDirectory()) return fail(new Error('目标不是目录'))
+    const dirents = fs.readdirSync(target, { withFileTypes: true })
+    const entries = []
+    for (const d of dirents) {
+      if (d.isFile()) entries.push({ name: d.name, type: 'file' })
+      else if (d.isDirectory()) entries.push({ name: d.name, type: 'directory' })
+    }
+    entries.sort((a, b) => {
+      if (a.type !== b.type) return a.type === 'directory' ? -1 : 1
+      return a.name.localeCompare(b.name, 'en', { numeric: true })
+    })
+    return ok({ entries, path: target })
+  } catch (error) {
+    return fail(error)
+  }
+}
+
 module.exports = {
   // 检测与目录
   detectAgent,
@@ -656,6 +838,10 @@ module.exports = {
   deleteSessionFile,
   getSessionInfo,
   listActiveSessions,
+  readSessionFile,
+  listSessionDir,
+  gitStatus,
+  gitDiffFile,
   onHarnessEvent,
   // 纯函数（单测入口）
   splitJsonlBuffer,

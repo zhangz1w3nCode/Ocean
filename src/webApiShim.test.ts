@@ -124,6 +124,10 @@ describe('installWebApi', () => {
       'harnessSessionCommand', 'harnessSessionAbort', 'harnessSessionStop',
       'harnessSessionDelete', 'harnessSessionExtensionResponse', 'harnessSessionInfo',
       'harnessSessionListActive',
+      'harnessSessionReadFile',
+      'harnessSessionListDir',
+      'harnessGitStatus',
+      'harnessGitDiff',
       'onHarnessSessionEvent',
     ])
     // 网页端保留但桌面端已摘除 IPC 的方法（task 域迁移 renderer 直连后 preload 不再暴露；

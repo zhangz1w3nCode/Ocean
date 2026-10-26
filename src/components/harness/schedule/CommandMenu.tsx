@@ -45,7 +45,7 @@ export const CommandMenu: FC<CommandMenuProps> = ({ commands, filter, activeInde
 
   return (
     <div
-      className="absolute bottom-full left-0 right-0 mb-2 max-h-72 overflow-y-auto rounded-xl border border-macos-border bg-white shadow-lg z-20 py-1"
+      className="absolute bottom-full left-[60px] right-[60px] mb-2 max-h-72 overflow-y-auto rounded-xl border border-macos-border bg-white shadow-lg z-20 py-1"
       onMouseDown={(e) => {
         // 防止 textarea blur 收起菜单；菜单外点击由 Composer 的容器监听关闭
         e.stopPropagation()

@@ -112,6 +112,26 @@ function registerHarnessHandlers(ctx) {
     'harness-session-list-active',
     wrap('列出活跃会话', () => harness.listActiveSessions())
   )
+
+  ipcMain.handle(
+    'harness-session-read-file',
+    wrap('读取工作区文件', (_e, sessionId, relativePath) => harness.readSessionFile(sessionId, relativePath))
+  )
+
+  ipcMain.handle(
+    'harness-session-list-dir',
+    wrap('列出工作区目录', (_e, sessionId, relativePath) => harness.listSessionDir(sessionId, relativePath))
+  )
+
+  ipcMain.handle(
+    'harness-git-status',
+    wrap('Git 变更概览', (_e, sessionId, baseBranch) => harness.gitStatus(sessionId, baseBranch))
+  )
+
+  ipcMain.handle(
+    'harness-git-diff',
+    wrap('Git 单文件 diff', (_e, sessionId, filePath, source, baseBranch) => harness.gitDiffFile(sessionId, filePath, source, baseBranch))
+  )
 }
 
 module.exports = { registerHarnessHandlers }

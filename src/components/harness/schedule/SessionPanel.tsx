@@ -79,7 +79,7 @@ const SessionRow: FC<{
   )
 }
 
-export const SessionPanel: FC = () => {
+export const SessionPanel: FC<{ width: number }> = ({ width }) => {
   const worktrees = useHarnessStore((s) => s.worktrees)
   const worktreesError = useHarnessStore((s) => s.worktreesError)
   const sessionsByWorktree = useHarnessStore((s) => s.sessionsByWorktree)
@@ -172,7 +172,7 @@ export const SessionPanel: FC = () => {
   }, [branches, currentBranch, wtBase])
 
   return (
-    <div className="w-60 shrink-0 h-full flex flex-col border-r border-macos-border bg-macos-bg/60">
+    <div style={{ width }} className="flex-shrink-0 h-full flex flex-col overflow-hidden">
       <div className="p-2 space-y-2 shrink-0">
         <div className="flex items-center gap-1.5 px-1">
           <Search size={12} strokeWidth={1.5} className="text-macos-text-tertiary shrink-0" />

@@ -188,6 +188,20 @@ declare global {
       harnessSessionExtensionResponse?: (sessionId: string, response: Record<string, unknown>) => Promise<{ success: boolean; error?: string }>
       harnessSessionInfo?: (sessionId: string) => Promise<{ success: boolean; worktreePath?: string; sessionFile?: string | null; exited?: boolean; pid?: number; error?: string }>
       harnessSessionListActive?: () => Promise<{ success: boolean; sessions?: { sessionId: string; worktreePath: string; sessionFile: string | null; pid: number }[]; error?: string }>
+      harnessSessionReadFile?: (sessionId: string, relativePath: string) => Promise<{ success: boolean; content?: string; path?: string; error?: string }>
+      harnessSessionListDir?: (sessionId: string, relativePath: string) => Promise<{ success: boolean; entries?: { name: string; type: 'file' | 'directory' }[]; path?: string; error?: string }>
+      harnessGitStatus?: (sessionId: string, baseBranch: string) => Promise<{
+        success: boolean
+        base?: string
+        current?: string | null
+        ahead?: number
+        behind?: number
+        commits?: string[]
+        branchFiles?: { path: string; status: string; additions: number | null; deletions: number | null }[]
+        worktreeFiles?: { path: string; status: string; additions: number | null; deletions: number | null }[]
+        error?: string
+      }>
+      harnessGitDiff?: (sessionId: string, filePath: string, source: 'branch' | 'worktree', baseBranch: string) => Promise<{ success: boolean; diff?: string; path?: string; error?: string }>
       onHarnessSessionEvent?: (callback: (payload: HarnessEventPayload) => void) => () => void
     }
   }

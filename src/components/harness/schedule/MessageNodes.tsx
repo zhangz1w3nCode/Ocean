@@ -4,9 +4,26 @@ import { ChevronDown, ChevronRight, Wrench, ShieldQuestion, Layers, RefreshCw, B
 import { MarkdownRenderer } from '../../ui/MarkdownRenderer/MarkdownRenderer'
 import { useHarnessStore, type ReasoningNode, type AssistantNode, type ToolNode, type ApprovalNode, type SystemNode, type HarnessImageAttachment, type HarnessSessionRuntime } from '../../../stores/harnessStore'
 
+// ---------- 文件路径链接化（点击在右侧预览） ----------
+
+const FILE_PATH_REGEX = /(^|[\s(（\["'「|])((?:[A-Za-z0-9_.-]+\/)+[A-Za-z0-9_.-]+\.[A-Za-z0-9]{1,8})/g
+
+const escapeHtml = (s: string): string =>
+  s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+
+export function linkifyFilePaths(text: string): string {
+  if (!text) return text
+  return text.replace(FILE_PATH_REGEX, (_m, prefix: string, p: string) => {
+    const safe = escapeHtml(p)
+    return `${prefix}<a href="#" data-file="${safe}" class="text-macos-accent hover:underline">${safe}</a>`
+  })
+}
+
 // ---------- 用户气泡 ----------
 
 export const UserBubble: FC<{ text: string; images?: HarnessImageAttachment[] }> = ({ text, images }) => {
+  // 命令消息（/skill:name 等）：命令词高亮，其余为普通文本（对齐 DSH 命令消息气泡）
+  const cmd = /^(\s*)(\/[A-Za-z0-9_.:-]+)/.exec(text)
   return (
     <div className="flex justify-end">
       <div className="max-w-[72%] space-y-1.5">
@@ -19,7 +36,14 @@ export const UserBubble: FC<{ text: string; images?: HarnessImageAttachment[] }>
         )}
         {text && (
           <div className="rounded-2xl px-4 py-2.5 bg-[#E8EAED] text-sm text-macos-text leading-relaxed break-words whitespace-pre-wrap">
-            {text}
+            {cmd ? (
+              <>
+                <span className="text-macos-accent font-medium">{cmd[2]}</span>
+                {text.slice(cmd[0].length)}
+              </>
+            ) : (
+              text
+            )}
           </div>
         )}
       </div>
@@ -70,7 +94,7 @@ export const ReasoningRow: FC<{ node: ReasoningNode }> = ({ node }) => {
 export const AssistantBlock: FC<{ node: AssistantNode }> = ({ node }) => {
   return (
     <div className="space-y-1">
-      <MarkdownRenderer content={node.text || (node.streaming ? '' : '（无文本输出）')} />
+      <MarkdownRenderer content={linkifyFilePaths(node.text) || (node.streaming ? '' : '（无文本输出）')} />
       {node.streaming && <span className="inline-block w-1.5 h-4 bg-macos-text/70 animate-pulse rounded-sm" />}
       {node.errorMessage && (
         <div className="text-xs text-macos-error">生成中断：{node.errorMessage}</div>
@@ -124,7 +148,10 @@ export const ToolCard: FC<{ node: ToolNode }> = ({ node }) => {
             </details>
           )}
           {output && (
-            <pre className={`p-2 bg-macos-bg rounded-md text-[11px] font-mono whitespace-pre-wrap break-all overflow-y-auto max-h-64 ${node.isError ? 'text-macos-error' : 'text-macos-text-secondary'}`}>{output}</pre>
+            <pre
+              dangerouslySetInnerHTML={{ __html: linkifyFilePaths(escapeHtml(output)) }}
+              className={`p-2 bg-macos-bg rounded-md text-[11px] font-mono whitespace-pre-wrap break-all overflow-y-auto max-h-64 ${node.isError ? 'text-macos-error' : 'text-macos-text-secondary'}`}
+            />
           )}
         </div>
       )}

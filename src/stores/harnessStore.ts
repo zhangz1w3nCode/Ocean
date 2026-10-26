@@ -109,13 +109,40 @@ export interface HarnessSessionRuntime {
   modelList: { id: string; name: string; provider: string }[]
   thinkingLevel: string | null
   availableThinkingLevels: string[]
-  stats: { totalTokens: number; cost: number; contextPercent: number | null } | null
+  stats: { totalTokens: number; cost: number; contextPercent: number | null; contextTokens: number | null; contextWindow: number | null } | null
   pendingApproval: ApprovalNode | null
   pendingSteering: string[]
   commands: HarnessCommandItem[]
   startedAt: number
   // 当前流式消息序号：message_start 递增；text/thinking 节点按序号隔离，避免跨消息拼接
   currentMsgSeq: number
+}
+
+// 右侧文件预览面板状态
+export interface FileViewerState {
+  sessionId: string
+  path: string
+  content: string
+  mode: 'content' | 'diff'
+  diffSource?: 'branch' | 'worktree'
+}
+
+// Git 变更概览（当前分支 vs 可配置基线分支）
+export interface GitChangeFile {
+  path: string
+  status: string
+  additions: number | null
+  deletions: number | null
+}
+
+export interface GitStatusData {
+  base: string
+  current: string | null
+  ahead: number
+  behind: number
+  commits: string[]
+  branchFiles: GitChangeFile[]
+  worktreeFiles: GitChangeFile[]
 }
 
 const DIALOG_METHODS = new Set(['select', 'confirm', 'input', 'editor'])
@@ -277,11 +304,13 @@ function applyEvent(rt: HarnessSessionRuntime, ev: Record<string, unknown>): voi
       if (rt.status === 'connecting') rt.status = 'ready'
     } else if (command === 'get_session_stats') {
       const tokens = (data.tokens ?? {}) as Record<string, unknown>
-      const contextUsage = (data.contextUsage ?? null) as { percent?: number | null } | null
+      const contextUsage = (data.contextUsage ?? null) as { percent?: number | null; tokens?: number | null; contextWindow?: number | null } | null
       rt.stats = {
         totalTokens: Number(tokens.total ?? 0),
         cost: Number(data.cost ?? 0),
         contextPercent: contextUsage ? (contextUsage.percent ?? null) : null,
+        contextTokens: contextUsage ? (contextUsage.tokens ?? null) : null,
+        contextWindow: contextUsage ? (contextUsage.contextWindow ?? null) : null,
       }
     } else if (command === 'get_commands') {
       rt.commands = ((data.commands ?? []) as HarnessCommandItem[]).map((c) => ({
@@ -556,6 +585,30 @@ interface HarnessStore {
   runtimes: Record<string, HarnessSessionRuntime>
   activeSessionId: string | null
   initialized: boolean
+  // 消息流选中文字引用：ChatFlow 写入，Composer 消费后清除
+  draftQuote: string | null
+  setDraftQuote: (text: string) => void
+  clearDraftQuote: () => void
+  // 右侧文件预览：点击消息流中的文件路径打开；open 独立控制（右上角按钮可主动展开/收起）
+  fileViewer: FileViewerState | null
+  fileViewerOpen: boolean
+  filePanelTab: 'git' | 'files' | 'preview'
+  setFilePanelTab: (tab: 'git' | 'files' | 'preview') => void
+  closePreviewTab: () => void
+  filesTabOpen: boolean
+  closeFilesTab: () => void
+  openFilesTab: () => void
+  gitBaseBranch: string
+  setGitBaseBranch: (branch: string) => void
+  gitStatus: GitStatusData | null
+  gitStatusLoading: boolean
+  gitStatusError: string | null
+  loadGitStatus: () => Promise<void>
+  openFileViewer: (sessionId: string, filePath: string) => Promise<void>
+  openFileDiff: (sessionId: string, filePath: string, source: 'branch' | 'worktree') => Promise<void>
+  toggleFileViewer: () => void
+  refreshFileViewer: () => Promise<string | null>
+  closeFileViewer: () => void
 
   init: () => void
   detect: () => Promise<void>
@@ -648,6 +701,109 @@ export const useHarnessStore = create<HarnessStore>((set, get) => {
     runtimes: {},
     activeSessionId: null,
     initialized: false,
+    draftQuote: null,
+    setDraftQuote: (text) => set({ draftQuote: text }),
+    clearDraftQuote: () => set({ draftQuote: null }),
+    fileViewer: null,
+    fileViewerOpen: false,
+    filePanelTab: 'git',
+    setFilePanelTab: (tab) => set({ filePanelTab: tab }),
+    closePreviewTab: () =>
+      set((s) => ({
+        fileViewer: null,
+        filePanelTab: s.filesTabOpen ? 'files' : 'git',
+      })),
+    filesTabOpen: true,
+    closeFilesTab: () =>
+      set((s) => ({
+        filesTabOpen: false,
+        filePanelTab: s.filePanelTab === 'files' ? 'git' : s.filePanelTab,
+      })),
+    openFilesTab: () => set({ filesTabOpen: true }),
+    gitBaseBranch: 'main',
+    setGitBaseBranch: (branch) => {
+      set({ gitBaseBranch: branch })
+      void get().loadGitStatus()
+    },
+    gitStatus: null,
+    gitStatusLoading: false,
+    gitStatusError: null,
+    loadGitStatus: async () => {
+      const sessionId = get().activeSessionId
+      if (!sessionId) {
+        set({ gitStatus: null, gitStatusError: '未选择会话' })
+        return
+      }
+      set({ gitStatusLoading: true, gitStatusError: null })
+      const res = await api()?.harnessGitStatus?.(sessionId, get().gitBaseBranch)
+      set({ gitStatusLoading: false })
+      if (!res || !res.success) {
+        set({ gitStatus: null, gitStatusError: (res?.error) ?? 'git 信息读取失败' })
+        return
+      }
+      set({
+        gitStatus: {
+          base: res.base ?? 'main',
+          current: res.current ?? null,
+          ahead: res.ahead ?? 0,
+          behind: res.behind ?? 0,
+          commits: res.commits ?? [],
+          branchFiles: res.branchFiles ?? [],
+          worktreeFiles: res.worktreeFiles ?? [],
+        },
+      })
+    },
+    openFileViewer: async (sessionId, filePath) => {
+      const res = await api()?.harnessSessionReadFile?.(sessionId, filePath)
+      if (!res || !res.success) {
+        set({ fileViewer: { sessionId, path: filePath, content: res?.error ?? '读取失败', mode: 'content' }, fileViewerOpen: true, filePanelTab: 'preview' })
+        return
+      }
+      set({ fileViewer: { sessionId, path: res.path ?? filePath, content: res.content ?? '', mode: 'content' }, fileViewerOpen: true, filePanelTab: 'preview' })
+    },
+
+    openFileDiff: async (sessionId, filePath, source) => {
+      const res = await api()?.harnessGitDiff?.(sessionId, filePath, source, get().gitBaseBranch)
+      if (!res || !res.success) {
+        set({ fileViewer: { sessionId, path: filePath, content: res?.error ?? '读取 diff 失败', mode: 'content' }, fileViewerOpen: true, filePanelTab: 'preview' })
+        return
+      }
+      set({
+        fileViewer: { sessionId, path: filePath, content: res.diff ?? '', mode: 'diff', diffSource: source },
+        fileViewerOpen: true,
+        filePanelTab: 'preview',
+      })
+    },
+    toggleFileViewer: () => {
+      const { fileViewerOpen, fileViewer } = get()
+      if (fileViewerOpen) {
+        set({ fileViewerOpen: false })
+        return
+      }
+      if (fileViewer && fileViewer.path) {
+        void get().refreshFileViewer()
+        set({ fileViewerOpen: true, filePanelTab: 'preview' })
+      } else {
+        // 默认落在钉死的 Git 变更 Tab
+        set({ fileViewerOpen: true, filePanelTab: 'git' })
+        void get().loadGitStatus()
+      }
+    },
+    refreshFileViewer: async () => {
+      const fv = get().fileViewer
+      if (!fv) return null
+      if (fv.mode === 'diff') {
+        const res = await api()?.harnessGitDiff?.(fv.sessionId, fv.path, fv.diffSource ?? 'branch', get().gitBaseBranch)
+        if (!res || !res.success) return res?.error ?? '读取 diff 失败'
+        set({ fileViewer: { ...fv, content: res.diff ?? '' } })
+        return null
+      }
+      const res = await api()?.harnessSessionReadFile?.(fv.sessionId, fv.path)
+      if (!res || !res.success) return res?.error ?? '读取失败'
+      set({ fileViewer: { ...fv, content: res.content ?? '' } })
+      return null
+    },
+    closeFileViewer: () => set({ fileViewerOpen: false }),
 
     init: () => {
       if (get().initialized) return
@@ -770,7 +926,15 @@ export const useHarnessStore = create<HarnessStore>((set, get) => {
         set({ detectError: res?.error ?? '会话打开失败' })
         return null
       }
-      const rt = emptyRuntime(res.sessionId, '')
+      // 从主进程取会话归属工作区（文件预览/后续操作的 cwd 依据）
+      let worktreePath = ''
+      try {
+        const info = await api()?.harnessSessionInfo?.(res.sessionId)
+        if (info && info.success) worktreePath = info.worktreePath ?? ''
+      } catch {
+        // 忽略 info 失败
+      }
+      const rt = emptyRuntime(res.sessionId, worktreePath)
       rt.sessionFile = sessionFile
       upsertRuntime(rt)
       // 水合历史消息 + 状态
