@@ -1,6 +1,6 @@
 import type { FC } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Send, Square, Trash2, Sparkles, ChevronDown, ImagePlus, Plus } from 'lucide-react'
+import { ArrowUp, Square, Trash2, Sparkles, ChevronDown, ImagePlus, Plus } from 'lucide-react'
 import { useHarnessStore, type HarnessImageAttachment } from '../../../stores/harnessStore'
 import { CommandMenu } from './CommandMenu'
 import { ModelMenu } from './ModelMenu'
@@ -293,12 +293,12 @@ export const Composer: FC = () => {
                 }
               }}
               disabled={disabled || (!isStreaming && text.trim().length === 0)}
-              className={`shrink-0 w-8 h-8 rounded-full grid place-items-center text-white transition-all ${
-                isStreaming ? 'bg-macos-error hover:opacity-90' : 'bg-macos-accent hover:opacity-90 disabled:opacity-40'
+              className={`shrink-0 w-9 h-9 rounded-xl grid place-items-center text-white transition-all ${
+                isStreaming ? 'bg-macos-error hover:opacity-90' : 'bg-macos-text hover:opacity-90 disabled:opacity-40'
               }`}
               title={isStreaming ? '停止当前回合' : '发送'}
             >
-              {isStreaming ? <Square size={11} strokeWidth={2} /> : <Send size={14} strokeWidth={1.8} className="-translate-y-px" />}
+              {isStreaming ? <Square size={12} strokeWidth={2.5} /> : <ArrowUp size={18} strokeWidth={2} />}
             </button>
           </div>
         </div>

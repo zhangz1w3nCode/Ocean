@@ -7,6 +7,8 @@ import { MarkdownRenderer } from '../../ui/MarkdownRenderer/MarkdownRenderer'
 import { FileBrowser } from './FileBrowser'
 import { GitChanges } from './GitChanges'
 import { DiffView } from './DiffView'
+import { CodeHighlight } from './CodeHighlight'
+import { MarkdownWithFrontmatter } from './MarkdownWithFrontmatter'
 
 const MAX_RENDER_CHARS = 200 * 1024
 
@@ -158,10 +160,10 @@ export const FileViewer: FC<{ width: number; onResizeStart: (e: React.MouseEvent
               <DiffView diff={content} mode={diffMode} />
             ) : isMarkdown ? (
               <div className="px-4 py-3">
-                <MarkdownRenderer content={content} />
+                <MarkdownWithFrontmatter content={content} />
               </div>
             ) : (
-              <pre className="px-4 py-3 text-[11px] font-mono text-macos-text-secondary whitespace-pre-wrap break-all leading-relaxed">{content}</pre>
+              <CodeHighlight code={content} filePath={fv?.path ?? ''} />
             )}
           </div>
         )}
