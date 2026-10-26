@@ -70,3 +70,4 @@ Thumbs.db
 .nodes/
 .workflows/
 docs/
+.agents/

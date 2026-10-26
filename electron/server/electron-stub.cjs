@@ -1,6 +1,6 @@
-// 纯 node 环境下伪造 electron 模块，让 launch.cjs 不经修改即可加载。
+// 纯 node 环境下伪造 electron 模块，让主进程入口（dist/source/main.js）不经修改即可加载。
 // 关键点：whenReady 必须 resolve，否则 createWindow 不执行、mainWindow 恒为 null，
-// launch.cjs:749/751/2371 的推送会静默 no-op（这些推送就是网页端的 SSE 数据源）。
+// 入口经 ctx.sendToRenderer 的推送（instance-detail-delta / agent-loop-event）会进事件流（网页端 SSE 数据源）。
 const path = require('path')
 const os = require('os')
 const { EventEmitter } = require('events')
@@ -14,7 +14,7 @@ pushEmitter.setMaxListeners(0)
 const userDataDir = process.env.OCEAN_USER_DATA
   || path.join(os.homedir(), 'Library', 'Application Support', 'ocean')
 
-// launch.cjs 在 require 时注册 whenReady().then(createWindow)，
+// 主入口在 require 时注册 whenReady().then(createWindow)，
 // 此 Promise 上的回调按注册顺序执行，因此 await ready 可保证 mainWindow 已赋值
 const ready = Promise.resolve()
 
@@ -38,7 +38,7 @@ const ipcMain = {
 class BrowserWindow {
   constructor() {
     this.webContents = {
-      // launch.cjs 的两处主动推送在这里变成事件流，由 HTTP 层转成 SSE
+      // 主入口经 sendToRenderer 的推送在这里变成事件流，由 HTTP 层转成 SSE
       send: (channel, payload) => pushEmitter.emit('push', { channel, payload }),
       openDevTools: () => {},
     }
