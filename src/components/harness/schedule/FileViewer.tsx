@@ -21,6 +21,7 @@ export const FileViewer: FC<{ width: number; onResizeStart: (e: React.MouseEvent
   const filesTabOpen = useHarnessStore((s) => s.filesTabOpen)
   const closeFilesTab = useHarnessStore((s) => s.closeFilesTab)
   const openFilesTab = useHarnessStore((s) => s.openFilesTab)
+  const diffMode = useHarnessStore((s) => s.diffMode)
   const refreshFileViewer = useHarnessStore((s) => s.refreshFileViewer)
   const closeFileViewer = useHarnessStore((s) => s.closeFileViewer)
   const [error, setError] = useState<string | null>(null)
@@ -154,7 +155,7 @@ export const FileViewer: FC<{ width: number; onResizeStart: (e: React.MouseEvent
                 <span>{error}</span>
               </div>
             ) : isDiff ? (
-              <DiffView diff={content} />
+              <DiffView diff={content} mode={diffMode} />
             ) : isMarkdown ? (
               <div className="px-4 py-3">
                 <MarkdownRenderer content={content} />

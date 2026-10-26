@@ -598,6 +598,10 @@ interface HarnessStore {
   filesTabOpen: boolean
   closeFilesTab: () => void
   openFilesTab: () => void
+  diffMode: 'inline' | 'split'
+  setDiffMode: (mode: 'inline' | 'split') => void
+  gitViewMode: 'tree' | 'list'
+  setGitViewMode: (mode: 'tree' | 'list') => void
   gitBaseBranch: string
   setGitBaseBranch: (branch: string) => void
   gitStatus: GitStatusData | null
@@ -720,6 +724,10 @@ export const useHarnessStore = create<HarnessStore>((set, get) => {
         filePanelTab: s.filePanelTab === 'files' ? 'git' : s.filePanelTab,
       })),
     openFilesTab: () => set({ filesTabOpen: true }),
+    diffMode: 'inline',
+    setDiffMode: (mode) => set({ diffMode: mode }),
+    gitViewMode: 'list',
+    setGitViewMode: (mode) => set({ gitViewMode: mode }),
     gitBaseBranch: 'main',
     setGitBaseBranch: (branch) => {
       set({ gitBaseBranch: branch })
