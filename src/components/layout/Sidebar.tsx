@@ -17,7 +17,7 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { Bot, FolderGit2, Folder, ArrowRightLeft, BookOpen, Settings, Wand2, ClipboardList, Code, Terminal } from 'lucide-react'
+import { Bot, FolderGit2, Folder, ArrowRightLeft, BookOpen, Settings, Wand2, ClipboardList, Code, MessagesSquare } from 'lucide-react'
 import { useAppStore, type PageType } from '../../stores/appStore'
 import { useProjectStore } from '../../stores/projectStore'
 
@@ -29,7 +29,7 @@ const navItemDefinitions: { id: PageType; label: string; icon: typeof Bot }[] = 
   { id: 'workflows', label: '工作流', icon: FolderGit2 },
   { id: 'tasks', label: '任务', icon: ClipboardList },
   { id: 'codebases', label: '代码库', icon: Code },
-  { id: 'harnesses', label: 'Harness', icon: Terminal },
+  { id: 'harnesses', label: 'Harness', icon: Bot },
   { id: 'resources', label: '资源文件', icon: Folder },
   { id: 'settings', label: '设置', icon: Settings },
 ]
