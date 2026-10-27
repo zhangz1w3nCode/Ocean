@@ -151,6 +151,10 @@ require('./desktop/llm.js').registerLlmHandlers({
   getProjectRoot,
   getRawProjectPath: () => currentProjectPath,
 })
+require('./desktop/setting.js').registerSettingHandlers({
+  getProjectRoot,
+  getRawProjectPath: () => currentProjectPath,
+})
 require('./desktop/agentic.js').registerAgenticHandlers({
   getProjectRoot,
   // agent-loop-event 推送（timestamp 附加在壳层，守卫在 sendToRenderer 实现）
