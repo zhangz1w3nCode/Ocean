@@ -12,7 +12,7 @@ import {
 let root: string
 
 beforeEach(() => {
-  root = fs.mkdtempSync(path.join(os.tmpdir(), 'ocean-llm-'))
+  root = fs.mkdtempSync(path.join(os.tmpdir(), 'ocean-setting-'))
 })
 
 afterEach(() => {
