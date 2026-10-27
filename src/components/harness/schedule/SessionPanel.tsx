@@ -16,7 +16,7 @@ function formatRelative(mtime: number): string {
 }
 
 function worktreeLabel(wt: HarnessWorktree): { title: string; branch: string | null } {
-  if (wt.isMain) return { title: '主工作树', branch: wt.branch }
+  if (wt.isMain) return { title: '主工作区', branch: wt.branch }
   const idx = wt.path.lastIndexOf('.worktrees/')
   const name = idx >= 0 ? wt.path.slice(idx + '.worktrees/'.length) : wt.path.split('/').pop() ?? wt.path
   return { title: name, branch: wt.branch }
@@ -53,13 +53,19 @@ const SessionRow: FC<{
       onClick={onClick}
     >
       <StatusDot runtime={runtime} />
-      <span className="flex-1 min-w-0 truncate">{title}</span>
-      <span className="text-macos-text-tertiary text-[10px] shrink-0">{meta}</span>
-      <div className="hidden group-hover:flex items-center gap-0.5 shrink-0">
+      <span className="flex-1 min-w-0 truncate pr-14">{title}</span>
+      <span className={`text-macos-text-tertiary text-[10px] shrink-0 transition-opacity ${
+        (onRename || onDelete) ? 'group-hover:opacity-0' : ''
+      }`}>{meta}</span>
+      <div
+        className={`absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5 transition-opacity ${
+          (onRename || onDelete) ? 'opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto' : 'hidden'
+        }`}
+      >
         {onRename && (
           <button
             onClick={(e) => { e.stopPropagation(); onRename() }}
-            className="p-1 rounded hover:bg-black/5 text-macos-text-tertiary hover:text-macos-text"
+            className="p-1 rounded hover:bg-black/8 text-macos-text-tertiary hover:text-macos-text bg-white/80 backdrop-blur-sm"
             title="重命名"
           >
             <Pencil size={12} strokeWidth={1.5} />
@@ -68,7 +74,7 @@ const SessionRow: FC<{
         {onDelete && (
           <button
             onClick={(e) => { e.stopPropagation(); onDelete() }}
-            className="p-1 rounded hover:bg-black/5 text-macos-text-tertiary hover:text-macos-error"
+            className="p-1 rounded hover:bg-black/8 text-macos-text-tertiary hover:text-macos-error bg-white/80 backdrop-blur-sm"
             title={deleteLabel}
           >
             <Trash2 size={12} strokeWidth={1.5} />

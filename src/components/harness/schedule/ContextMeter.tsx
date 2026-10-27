@@ -6,6 +6,8 @@ export interface ContextStats {
   contextPercent: number | null
   contextTokens: number | null
   contextWindow: number | null
+  cacheReadTokens: number | null
+  cacheHitRate: number | null
 }
 
 interface ContextMeterProps {
@@ -89,6 +91,12 @@ export const ContextMeter: FC<ContextMeterProps> = ({ stats, open, onToggle, onC
           </div>
           <div className="pt-2 border-t border-macos-border/60 text-[10px] text-macos-text-tertiary space-y-0.5">
             <div>会话累计 {stats ? stats.totalTokens.toLocaleString() : 0} tokens</div>
+            {stats && stats.cacheHitRate != null && (
+              <div>
+                缓存命中率 {Math.round(stats.cacheHitRate * 100)}%
+                {stats.cacheReadTokens != null && <span className="ml-1">（{fmtTokens(stats.cacheReadTokens)}）</span>}
+              </div>
+            )}
             {stats && stats.cost > 0 && <div>费用 ${stats.cost.toFixed(4)}</div>}
             <div>每轮回复完成后自动刷新</div>
           </div>

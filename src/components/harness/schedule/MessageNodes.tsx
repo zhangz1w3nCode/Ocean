@@ -118,6 +118,18 @@ const formatDuration = (startedAt: number, endedAt: number | null): string => {
   return `${(ms / 1000).toFixed(1)}s`
 }
 
+// 工具调用折叠态摘要：取第一个参数值截断展示（如 bash 的命令、read 的路径）
+const toolCallSummary = (node: ToolNode): string => {
+  if (!node.args) return ''
+  const values = Object.values(node.args)
+  for (const v of values) {
+    if (typeof v === 'string' && v.trim()) {
+      return v.length > 40 ? `${v.slice(0, 40)}…` : v
+    }
+  }
+  return ''
+}
+
 export const ToolCard: FC<{ node: ToolNode }> = ({ node }) => {
   const [open, setOpen] = useState(false)
   const statusText = node.status === 'running' ? 'Running' : node.isError ? 'Failed' : 'Done'
@@ -134,24 +146,29 @@ export const ToolCard: FC<{ node: ToolNode }> = ({ node }) => {
         <span className={`shrink-0 ${node.isError ? 'text-macos-error' : node.status === 'running' ? 'text-macos-warning animate-pulse' : 'text-macos-text-tertiary'}`}>
           {statusText}
         </span>
-        <span className="flex-1" />
+        <span className="text-macos-text-tertiary text-[10px] truncate flex-1 min-w-0">
+          {toolCallSummary(node)}
+        </span>
         <span className="text-[10px] text-macos-text-tertiary shrink-0">{formatDuration(node.startedAt, node.endedAt)}</span>
       </button>
       {open && (
-        <div className="px-3 pb-2.5 space-y-1.5 text-xs">
-          {node.args != null && (
-            <details>
-              <summary className="cursor-pointer text-macos-text-tertiary flex items-center gap-1 select-none">
-                <Braces size={11} strokeWidth={1.5} /> 参数
-              </summary>
-              <pre className="mt-1 p-2 bg-macos-bg rounded-md text-[11px] font-mono text-macos-text-secondary overflow-x-auto max-h-40 overflow-y-auto">{JSON.stringify(node.args, null, 2)}</pre>
-            </details>
+        <div className="px-3 pb-2.5 space-y-2 text-xs">
+          {node.args != null && Object.keys(node.args).length > 0 && (
+            <div>
+              <div className="text-[10px] font-medium text-macos-text-tertiary mb-1 flex items-center gap-1">
+                <Braces size={10} strokeWidth={1.5} /> 请求参数
+              </div>
+              <pre className="p-2 bg-macos-bg rounded-md text-[11px] font-mono text-macos-text-secondary overflow-x-auto max-h-40 overflow-y-auto">{JSON.stringify(node.args, null, 2)}</pre>
+            </div>
           )}
           {output && (
-            <pre
-              dangerouslySetInnerHTML={{ __html: linkifyFilePaths(escapeHtml(output)) }}
-              className={`p-2 bg-macos-bg rounded-md text-[11px] font-mono whitespace-pre-wrap break-all overflow-y-auto max-h-64 ${node.isError ? 'text-macos-error' : 'text-macos-text-secondary'}`}
-            />
+            <div>
+              <div className="text-[10px] font-medium text-macos-text-tertiary mb-1">响应</div>
+              <pre
+                dangerouslySetInnerHTML={{ __html: linkifyFilePaths(escapeHtml(output)) }}
+                className={`p-2 bg-macos-bg rounded-md text-[11px] font-mono whitespace-pre-wrap break-all overflow-y-auto max-h-64 ${node.isError ? 'text-macos-error' : 'text-macos-text-secondary'}`}
+              />
+            </div>
           )}
         </div>
       )}

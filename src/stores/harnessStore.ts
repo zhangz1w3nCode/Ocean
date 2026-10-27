@@ -109,7 +109,7 @@ export interface HarnessSessionRuntime {
   modelList: { id: string; name: string; provider: string }[]
   thinkingLevel: string | null
   availableThinkingLevels: string[]
-  stats: { totalTokens: number; cost: number; contextPercent: number | null; contextTokens: number | null; contextWindow: number | null } | null
+  stats: { totalTokens: number; cost: number; contextPercent: number | null; contextTokens: number | null; contextWindow: number | null; cacheReadTokens: number | null; cacheHitRate: number | null } | null
   pendingApproval: ApprovalNode | null
   pendingSteering: string[]
   commands: HarnessCommandItem[]
@@ -311,6 +311,13 @@ function applyEvent(rt: HarnessSessionRuntime, ev: Record<string, unknown>): voi
         contextPercent: contextUsage ? (contextUsage.percent ?? null) : null,
         contextTokens: contextUsage ? (contextUsage.tokens ?? null) : null,
         contextWindow: contextUsage ? (contextUsage.contextWindow ?? null) : null,
+        cacheReadTokens: Number(tokens.cacheRead ?? null) || null,
+        cacheHitRate: (() => {
+          const input = Number(tokens.input ?? 0)
+          const cacheRead = Number(tokens.cacheRead ?? 0)
+          if (input + cacheRead === 0) return null
+          return cacheRead / (input + cacheRead)
+        })(),
       }
     } else if (command === 'get_commands') {
       rt.commands = ((data.commands ?? []) as HarnessCommandItem[]).map((c) => ({
