@@ -35,6 +35,7 @@ export async function createCodebase(root: string, name: string, opts: CreateCod
   if (opts.type === 'url' && !isNonEmptyString(opts.url)) return bad('URL 添加方式必须提供仓库地址')
   if (opts.type === 'local' && !isNonEmptyString(opts.sourcePath)) return bad('本地添加方式必须提供源目录路径')
   if (opts.description != null && typeof opts.description !== 'string') return bad('描述必须是字符串')
+  if (opts.content != null && typeof opts.content !== 'string') return bad('README 内容必须是字符串')
   return codebaseCore.create(root, name, opts)
 }
 

@@ -172,6 +172,36 @@ describe('codebases core', () => {
     })
   })
 
+  describe('IO 异常收敛统一契约', () => {
+    it('create 收敛非法 root 的 IO 异常(不抛 rejection)', async () => {
+      // 用文件路径作 root：mkdirSync 将抛 ENOTDIR，应返回 success:false 而非 reject
+      const fileAsRoot = path.join(tmpDir, 'not-a-dir')
+      fs.writeFileSync(fileAsRoot, 'x', 'utf-8')
+      const r = await codebases.create(fileAsRoot, 'demo', { type: 'blank' })
+      expect(r.success).toBe(false)
+      if (!r.success) expect(r.error).toContain('IO 错误')
+    })
+
+    it('list 对非法 root 返回契约结果(不以 rejection 冒泡)', async () => {
+      const fileAsRoot = path.join(tmpDir, 'not-a-dir')
+      fs.writeFileSync(fileAsRoot, 'x', 'utf-8')
+      const r = await codebases.list(fileAsRoot)
+      expect(typeof r.success).toBe('boolean')
+    })
+
+    it('update 收敛只读目录的 IO 异常', async () => {
+      await codebases.create(tmpDir, 'demo', { type: 'blank' })
+      const rp = path.join(tmpDir, '.codebases', 'demo', 'README.md')
+      fs.chmodSync(rp, 0o444)
+      try {
+        const r = await codebases.update(tmpDir, 'demo', 'x')
+        expect(r.success).toBe(false)
+      } finally {
+        fs.chmodSync(rp, 0o644)
+      }
+    })
+  })
+
   describe('search', () => {
     it('finds matches with line numbers and context', async () => {
       const src = path.join(tmpDir, 's')

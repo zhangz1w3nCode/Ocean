@@ -691,7 +691,7 @@ flag:
   --content-file <path>        update 长内容指向文件
   stdin                        update 管道输入（三选一）
 
-存储: .codebases/{name}/（README.md + .codebase.json 元数据）`)
+存储: .codebases/{name}/（README.md）`)
       break
     case 'config':
       out(`ocean config — 配置管理

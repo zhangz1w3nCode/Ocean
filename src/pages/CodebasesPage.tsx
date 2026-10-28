@@ -50,23 +50,33 @@ export const CodebasesPage: FC<{ nested?: boolean }> = ({ nested = false }) => {
     setViewingCodebase(null)
   }
 
-  // 从详情进入编辑：先读取 README 内容
+  // 从详情进入编辑：先读取 README 内容（读失败阻断，防空内容覆盖原文件）
   const handleEditFromDetail = async () => {
     if (viewingCodebase) {
       const result = await readCodebase(viewingCodebase.name)
+      if (!result) {
+        setIsDetailOpen(false)
+        setViewingCodebase(null)
+        addToast('读取代码库 README 失败，已取消编辑', 'error')
+        return
+      }
       setIsDetailOpen(false)
       setModalMode('edit')
       setEditingName(viewingCodebase.name)
-      setEditingContent(result?.content || '')
+      setEditingContent(result.content)
       setIsModalOpen(true)
     }
   }
 
   const handleEditClick = async (codebase: CodebaseInfo) => {
     const result = await readCodebase(codebase.name)
+    if (!result) {
+      addToast('读取代码库 README 失败，已取消编辑', 'error')
+      return
+    }
     setModalMode('edit')
     setEditingName(codebase.name)
-    setEditingContent(result?.content || '')
+    setEditingContent(result.content)
     setIsModalOpen(true)
   }
 

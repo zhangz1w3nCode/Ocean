@@ -85,6 +85,8 @@ export async function handleCodebases(root: string, args: Args): Promise<void> {
       if (!keyword) throw new UsageError('用法: ocean codebases search <keyword> [--top N] [--context N]')
       const top = getNumberFlag(args.flags, 'top', 5)
       const context = getNumberFlag(args.flags, 'context', 2)
+      if (top < 1) throw new UsageError('--top 必须是正整数')
+      if (context < 0) throw new UsageError('--context 必须是非负整数')
       const r = unwrap(await codebaseCore.search(root, keyword, { top, context }))
       if (args.flags.json) {
         printJson(r.results)

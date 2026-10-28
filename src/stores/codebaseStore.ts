@@ -113,6 +113,10 @@ export const useCodebaseStore = create<CodebaseState>((set, get) => ({
       if (!r.success) return { success: false, error: r.error }
       await get().loadCodebases()
       return { success: true }
+    } catch (e: any) {
+      // 兕底：core 已收敛契约，此处防未知异常冒泡为 unhandled rejection
+      console.error('createCodebase 异常:', e)
+      return { success: false, error: e?.message || String(e) }
     } finally {
       set({ isBusy: false })
     }
@@ -121,19 +125,29 @@ export const useCodebaseStore = create<CodebaseState>((set, get) => ({
   updateCodebaseReadme: async (name, content) => {
     const m = loadDesktopModule()
     if (!m) return unavailable('更新代码库')
-    const r = await m.updateCodebase(projectRoot(), name, content)
-    if (!r.success) return { success: false, error: r.error }
-    await get().loadCodebases()
-    return { success: true }
+    try {
+      const r = await m.updateCodebase(projectRoot(), name, content)
+      if (!r.success) return { success: false, error: r.error }
+      await get().loadCodebases()
+      return { success: true }
+    } catch (e: any) {
+      console.error('updateCodebaseReadme 异常:', e)
+      return { success: false, error: e?.message || String(e) }
+    }
   },
 
   deleteCodebase: async (name) => {
     const m = loadDesktopModule()
     if (!m) return unavailable('删除代码库')
-    const r = await m.deleteCodebase(projectRoot(), name)
-    if (!r.success) return { success: false, error: r.error }
-    set({ codebases: get().codebases.filter(c => c.name !== name) })
-    return { success: true }
+    try {
+      const r = await m.deleteCodebase(projectRoot(), name)
+      if (!r.success) return { success: false, error: r.error }
+      set({ codebases: get().codebases.filter(c => c.name !== name) })
+      return { success: true }
+    } catch (e: any) {
+      console.error('deleteCodebase 异常:', e)
+      return { success: false, error: e?.message || String(e) }
+    }
   },
 
   readCodebase: async (name) => {
