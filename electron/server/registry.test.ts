@@ -1,5 +1,5 @@
 import { describe, it, expect, afterAll } from 'vitest'
-import { mkdtempSync, mkdirSync, rmSync, existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, rmSync, existsSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createRequire } from 'node:module'
@@ -7,50 +7,25 @@ import { createRequire } from 'node:module'
 const tmp = mkdtempSync(join(tmpdir(), 'ocean-registry-'))
 // 桩在模块加载时读 OCEAN_USER_DATA，必须在 require 之前设置
 process.env.OCEAN_USER_DATA = join(tmp, 'user-data')
-// set-project-path 会写 ~/.ocean/cli-root（core/app syncProjectState），重定向 HOME 避免污染真实 CLI 配置
+// set-project-path 会写 ~/.ocean/cli-root（launch.cjs:79），重定向 HOME 避免污染真实 CLI 配置
 process.env.HOME = tmp
 // 测试中禁止触发 osascript 真实弹框
 process.env.OCEAN_NO_DIALOG = '1'
 
 const req = createRequire(import.meta.url)
-const desktopDir = new URL('../source/desktop/', import.meta.url)
-
-// dist 新鲜度守卫：推导源（TS 源码）与被测物（dist 产物）是两份可能漂移的东西，
-// 缺失/过期时给出明确指引而非 MODULE_NOT_FOUND 或假红/假绿（审查 P1-4 修复）
-const mainEntry = new URL('../dist/source/main.js', import.meta.url)
-if (!existsSync(mainEntry)) {
-  throw new Error('缺少 dist 编译产物（electron/dist/source/main.js）：先执行 pnpm build:electron')
-}
-const newestSrcMtime = Math.max(
-  statSync(new URL('../source/main.ts', import.meta.url)).mtimeMs,
-  ...readdirSync(desktopDir)
-    .filter(f => f.endsWith('.ts'))
-    .map(f => statSync(new URL(f, desktopDir)).mtimeMs),
-)
-if (statSync(mainEntry).mtimeMs < newestSrcMtime) {
-  throw new Error('dist 产物过期（TS 源码新于编译产物）：重新执行 pnpm build:electron 后再跑测试')
-}
-
 const { handlers, ready } = req('./registry.cjs')
 
-// 期望值从源码推导：主入口 source/main.ts（纯入口，0 个）+ source/desktop/*.ts 模块注册数
-//（主入口 require 编译产物注册）。硬编码计数会随 channel 增删过期。
-const mainSrc = readFileSync(new URL('../source/main.ts', import.meta.url), 'utf-8')
-const handleCallCount =
-  (mainSrc.match(/ipcMain\.handle\(/g) || []).length +
-  readdirSync(desktopDir)
-    .filter(f => f.endsWith('.ts'))
-    .reduce((sum, f) => {
-      const src = readFileSync(new URL(f, desktopDir), 'utf-8')
-      return sum + (src.match(/ipcMain\.handle\(/g) || []).length
-    }, 0)
+// 期望值从 launch.cjs 源码推导：handler 注册数应等于 ipcMain.handle 调用数。
+// 硬编码计数会随 channel 增删过期（84 在任务模块合入后已过期为 91）。
+const launchSrc = readFileSync(new URL('../launch.cjs', import.meta.url), 'utf-8')
+const handleCallCount = (launchSrc.match(/ipcMain\.handle\(/g) || []).length
 
 const call = (ch: string, ...args: unknown[]) => handlers.get(ch)!(null, ...args)
 
 afterAll(() => { rmSync(tmp, { recursive: true, force: true }) })
 
 describe('handler 注册表', () => {
-  it('主入口（source/main.ts 产物）的 handler 全部注册（数量与源码一致）', () => {
+  it('launch.cjs 的 handler 全部注册（数量与源码一致）', () => {
     expect(handlers.size).toBe(handleCallCount)
     for (const ch of ['set-project-path', 'save-workflow-file', 'run-agent-loop', 'subscribe-instance-detail', 'create-task']) {
       expect(handlers.has(ch)).toBe(true)

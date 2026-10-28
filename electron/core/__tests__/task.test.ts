@@ -2,8 +2,8 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import * as os from 'node:os'
-import { TASK_STATUSES } from '../../core/common'
 import {
+  TASK_STATUSES,
   listTasks,
   readTaskDetail,
   createTask,
@@ -11,7 +11,11 @@ import {
   saveTaskContext,
   searchTasks,
   filterTasks,
-} from '../../source/cli/task'
+} from '../task'
+
+// 直接用 require（与 task.ts 本身一致）：electron/tsconfig 的 module 是 CommonJS，
+// 写成 import.meta.url + createRequire 会让 tsc -p electron/tsconfig.json 报 TS1343 并卡住 build:electron
+const taskStore = require('../taskStore.cjs')
 
 let root: string
 
@@ -28,8 +32,9 @@ afterEach(() => {
 const mk = (name: string, content = '正文', extra?: Record<string, unknown>) =>
   createTask(root, { name, content, ...extra })
 
-describe('core 契约与 CLI 适配层', () => {
-  it('状态常量为唯一约定值（core/task 唯一事实源）', () => {
+describe('CLI 适配层与共享 store 同源', () => {
+  it('task.ts 与 taskStore.cjs 暴露同一份状态常量', () => {
+    expect(TASK_STATUSES).toBe(taskStore.TASK_STATUSES)
     expect(TASK_STATUSES).toEqual(['等待处理', '处理中', '已完成', '已取消'])
   })
 

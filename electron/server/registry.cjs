@@ -1,6 +1,5 @@
-// 拦截 require('electron') 使其拿到桩模块，再加载主进程入口产物。
-// 入口已 TS 化（原 launch.cjs 已删除）：electron/source/main.ts 的编译产物
-// electron/dist/source/main.js，顶层的域模块注册会同步执行，把 handler 写进桩的 Map。
+// 拦截 require('electron') 使其拿到桩模块，再加载 launch.cjs。
+// launch.cjs 顶层的 ipcMain.handle 会同步执行，把 handler 写进桩的 Map。
 const Module = require('module')
 const stub = require('./electron-stub.cjs')
 
@@ -23,7 +22,7 @@ if (!Module.__oceanElectronPatched) {
   Module.__oceanElectronPatched = true
 }
 
-require('../dist/source/main.js')
+require('../launch.cjs')
 
 module.exports = {
   handlers: stub.handlers,
