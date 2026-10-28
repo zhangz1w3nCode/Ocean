@@ -187,6 +187,9 @@ export {
 
 export {
   testLlmConnection,
+  testExecutablePath,
+  checkCliInstalled,
+  installCli,
   callLlmApi,
   readLlmConfig,
   writeLlmConfig,
@@ -195,14 +198,7 @@ export {
   readLlmReviewConfig,
   writeLlmReviewConfig,
 } from './llm/operate'
-export type { LlmProviderConfig } from './llm/operate'
-
-export {
-  testExecutablePath,
-  checkCliInstalled,
-  installCli,
-} from './setting/operate'
-export type { InstallCliOpts } from './setting/operate'
+export type { LlmProviderConfig, InstallCliOpts } from './llm/operate'
 
 export {
   executeAgenticTool,

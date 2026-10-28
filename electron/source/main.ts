@@ -140,7 +140,7 @@ require('./desktop/workflow.js').registerWorkflowHandlers({
   sendToRenderer,
 })
 
-// ==================== 基础设施域注册（app / llm / setting / agentic） ====================
+// ==================== 基础设施域注册（app / llm / agentic） ====================
 require('./desktop/app.js').registerAppHandlers({
   getProjectRoot,
   getRawProjectPath: () => currentProjectPath,
@@ -148,10 +148,6 @@ require('./desktop/app.js').registerAppHandlers({
   getWindow: () => mainWindow,
 })
 require('./desktop/llm.js').registerLlmHandlers({
-  getProjectRoot,
-  getRawProjectPath: () => currentProjectPath,
-})
-require('./desktop/setting.js').registerSettingHandlers({
   getProjectRoot,
   getRawProjectPath: () => currentProjectPath,
 })
