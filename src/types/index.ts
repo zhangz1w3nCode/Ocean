@@ -185,7 +185,7 @@ export interface KnowledgeFile {
 }
 
 // 引用分类类型
-export type ReferenceCategory = 'agents' | 'nodes' | 'workflows' | 'resources' | 'knowledges' | 'skills'
+export type ReferenceCategory = 'agents' | 'nodes' | 'workflows' | 'resources' | 'knowledges' | 'skills' | 'codebases'
 
 // 引用项定义
 export interface ReferenceItem {
@@ -511,4 +511,36 @@ export interface UpdateTaskPayload {
   tags?: string[]
   relatedTasks?: string[]
   status?: TaskStatus
+}
+
+// ==================== 代码库 ====================
+
+// 代码库创建来源（与 electron/core/codebases.ts 契约一致）
+export type CodebaseSource = 'url' | 'blank' | 'local'
+
+// 代码库信息（名称=目录名，preview=README 内容预览）
+export interface CodebaseInfo {
+  name: string
+  preview: string
+}
+
+// 代码库创建入参（content 为空项目创建时直接写入 README 的初始内容）
+export interface CreateCodebasePayload {
+  type: CodebaseSource
+  url?: string
+  description?: string
+  content?: string
+  sourcePath?: string
+}
+
+// 统一返回契约：成功（携带数据）或失败（携带错误信息）
+export type CodebaseResult<T> = ({ success: true } & T) | { success: false; error: string }
+
+// 检索命中（行号+前后文）
+export interface CodebaseSearchHit {
+  name: string
+  line: number
+  text: string
+  before: string[]
+  after: string[]
 }
