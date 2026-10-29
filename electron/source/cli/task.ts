@@ -108,6 +108,14 @@ async function validateRelatedCodebases(root: string, names: string[]): Promise<
   }
 }
 
+// 关联任务自引用校验：任务不能关联自身（语义为「关联其他任务」）；
+// 核心层 updateTask 会静默剔除自身，但 CLI 自由输入面应显式报错拦截，避免用户误传而不自知
+function rejectSelfRelated(name: string, related: string[] | undefined): void {
+  if (related && related.includes(name)) {
+    throw new UsageError('禁止添加本身作为相关任务，请使用 ocean task list查看已有任务')
+  }
+}
+
 export async function handleTask(root: string, args: Args): Promise<void> {
   const cmd = args.subcommand
   const json = args.flags.json === true
@@ -167,7 +175,10 @@ export async function handleTask(root: string, args: Args): Promise<void> {
       const tags = listFlag('tags', args)
       if (tags) payload.tags = tags
       const related = listFlag('related', args)
-      if (related) payload.relatedTasks = related
+      if (related) {
+        rejectSelfRelated(name, related)
+        payload.relatedTasks = related
+      }
       const context = strFlag('context', args)
       if (context !== undefined) payload.context = context
       const task = unwrap(await taskCore.createTask(root, payload)).task
@@ -192,6 +203,9 @@ export async function handleTask(root: string, args: Args): Promise<void> {
       }
       const tagsFlag = listFlag('tags', args)
       const relatedFlag = listFlag('related', args)
+      if (relatedFlag !== undefined) {
+        rejectSelfRelated(name, relatedFlag)
+      }
       const payload: TaskWritePayload = {
         name,
         content: content !== undefined ? content : current.content,
