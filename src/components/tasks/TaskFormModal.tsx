@@ -4,6 +4,7 @@ import { Type, FileText, User, GitBranch, Tags, CircleDot, Edit3, Eye, Link2 } f
 import { Modal, Input, Button, ConfirmModal, Dropdown, MarkdownEditor, MarkdownRenderer } from '../ui'
 import { TagChipsInput } from './TagChipsInput'
 import { useToastStore } from '../../stores/toastStore'
+import { useCodebaseStore } from '../../stores/codebaseStore'
 import type { TaskSummary, TaskStatus, CreateTaskPayload, UpdateTaskPayload } from '../../types'
 
 interface TaskFormModalProps {
@@ -36,6 +37,11 @@ export const TaskFormModal: FC<TaskFormModalProps> = ({
   onConfirm,
 }) => {
   const { addToast } = useToastStore()
+  // 「关联仓库」可选项：当前项目 .codebases/ 下的代码库名称，打开表单时拉取
+  const codebases = useCodebaseStore(s => s.codebases)
+  useEffect(() => {
+    if (isOpen) void useCodebaseStore.getState().loadCodebases()
+  }, [isOpen])
   const [name, setName] = useState('')
   const [content, setContent] = useState('')
   const [handler, setHandler] = useState('')
@@ -260,9 +266,11 @@ export const TaskFormModal: FC<TaskFormModalProps> = ({
               items={repoList}
               onChange={setRepoList}
               addLabel="添加仓库"
-              placeholder="输入仓库"
+              placeholder="选择代码库"
               itemLabel="仓库"
               variant="gray"
+              options={codebases.map(c => c.name)}
+              emptyOptionHint="暂无可关联的代码库，可先在「代码库」页添加"
             />
           </div>
 
