@@ -27,7 +27,7 @@ afterAll(() => { rmSync(tmp, { recursive: true, force: true }) })
 describe('handler 注册表', () => {
   it('launch.cjs 的 handler 全部注册（数量与源码一致）', () => {
     expect(handlers.size).toBe(handleCallCount)
-    for (const ch of ['set-project-path', 'save-workflow-file', 'run-agent-loop', 'subscribe-instance-detail', 'create-task']) {
+    for (const ch of ['set-project-path', 'save-workflow-file', 'run-agent-loop', 'subscribe-instance-detail', 'get-app-version']) {
       expect(handlers.has(ch)).toBe(true)
     }
   })

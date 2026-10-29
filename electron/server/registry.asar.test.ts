@@ -37,6 +37,6 @@ describe('registry 在打包版（electron 不可解析）环境下', () => {
     const launchSrc = readFileSync(new URL('../launch.cjs', import.meta.url), 'utf-8')
     expect(handlers.size).toBe((launchSrc.match(/ipcMain\.handle\(/g) || []).length)
     expect(handlers.has('set-project-path')).toBe(true)
-    expect(handlers.has('create-task')).toBe(true)
+    expect(handlers.has('get-app-version')).toBe(true)
   })
 })

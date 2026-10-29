@@ -109,7 +109,7 @@ describe('installWebApi', () => {
     const preloadMethods = [...block.matchAll(/^  ([A-Za-z0-9_]+): \(/gm)].map(m => m[1])
     // 提取失败的防火墙：锚点方法必须在
     expect(preloadMethods).toContain('getAppVersion')
-    expect(preloadMethods).toContain('saveTaskContext')
+    expect(preloadMethods).toContain('setProjectPath')
 
     // 网页端故意不注入的 preload 方法（新增排除项必须在此登记并注明原因）：
     // - webServerStatus/Start/Stop：http.cjs 的 HTTP_DENIED_CHANNELS，网页端禁止递归拉起子进程
@@ -118,9 +118,14 @@ describe('installWebApi', () => {
       'webServerStatus', 'webServerStart', 'webServerStop',
       'saveLlmReviewConfig', 'loadLlmReviewConfig',
     ])
+    // 网页端保留但桌面端已摘除 IPC 的方法（task 域迁移 renderer 直连后 preload 不再暴露；
+    // 网页端任务页不在保真范围，这些方法成为 web-only 死代码，保留仅避免 shim 大改）：
+    const WEB_ONLY_LEGACY = new Set([
+      'listTasks', 'readTaskDetail', 'createTask', 'updateTask', 'saveTaskContext',
+    ])
     const expected = preloadMethods.filter(m => !WEB_EXCLUDED.has(m))
 
-    expect([...keys].sort()).toEqual([...expected].sort())
+    expect([...keys.filter(k => !WEB_ONLY_LEGACY.has(k))].sort()).toEqual([...expected].sort())
     expect(keys).toContain('onInstanceDetailDelta')
     expect(keys).toContain('onAgentLoopEvent')
     expect(keys).toContain('checkCliInstalled')

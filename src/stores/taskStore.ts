@@ -1,6 +1,70 @@
 import { create } from 'zustand'
 import type { TaskSummary, TaskDetail, CreateTaskPayload, UpdateTaskPayload } from '../types'
-import { isElectron } from '../utils/storage'
+import { useProjectStore } from './projectStore'
+
+// 任务域 renderer Node 直连：不经过 preload IPC，也不走 HTTP。
+// 链路：store → (window).require(dist/source/desktop/task.js) → core 统一契约。
+// （electron/source/desktop/task.ts 编译产物，core 内联为单文件）。
+
+// 桌面模块的扁平结果视图（与旧 electronAPI 声明同构，适配层实际返回判别联合，
+// 结构上可赋值给此形态）：store 内沿用可选字段消费方式，不改条件逻辑。
+type DesktopModule = {
+  listTasks: (root: string) => Promise<{ success: boolean; tasks?: TaskSummary[]; error?: string }>
+  readTaskDetail: (root: string, taskName: string) => Promise<{ success: boolean; detail?: TaskDetail; error?: string }>
+  createTask: (root: string, payload: CreateTaskPayload) => Promise<{ success: boolean; task?: TaskSummary; error?: string }>
+  updateTask: (root: string, payload: UpdateTaskPayload) => Promise<{ success: boolean; task?: TaskSummary; error?: string }>
+  saveTaskContext: (root: string, payload: { taskName: string; contextName: string; content: string }) => Promise<{ success: boolean; isUpdate?: boolean; error?: string }>
+}
+
+const MODULE_RELATIVE = ['electron', 'dist', 'source', 'desktop', 'task.js'].join('/')
+
+let moduleCache: DesktopModule | null = null
+
+// 产物路径探测：dev 为启动 cwd（项目根），生产为 asar 内 resourcesPath
+function resolveCandidates(): string[] {
+  const candidates: string[] = []
+  try {
+    const w = window as unknown as { process?: { cwd?: () => string; resourcesPath?: string } }
+    const proc = w.process
+    if (proc?.cwd) candidates.push(`${proc.cwd()}/${MODULE_RELATIVE}`)
+    if (proc?.resourcesPath) {
+      candidates.push(`${proc.resourcesPath}/app.asar/${MODULE_RELATIVE}`)
+      candidates.push(`${proc.resourcesPath}/${MODULE_RELATIVE}`)
+    }
+  } catch {
+    // 非 Node 环境由各 action 的空模块分支兑底
+  }
+  return candidates
+}
+
+function loadDesktopModule(): DesktopModule | null {
+  if (moduleCache) return moduleCache
+  try {
+    const w = window as unknown as { require?: NodeRequire }
+    const req = w.require
+    if (typeof req !== 'function') return null
+    for (const candidate of resolveCandidates()) {
+      let exists = false
+      try {
+        exists = req('fs').existsSync(candidate)
+      } catch {
+        exists = false
+      }
+      if (exists) {
+        moduleCache = req(candidate) as DesktopModule
+        return moduleCache
+      }
+    }
+  } catch {
+    return null
+  }
+  return null
+}
+
+// 项目根从 projectStore 读取；未选择项目时返回空串交由适配层拦截
+function projectRoot(): string {
+  return useProjectStore.getState().currentProject?.path || ''
+}
 
 interface TaskState {
   tasks: TaskSummary[]
@@ -42,12 +106,13 @@ export const useTaskStore = create<TaskState>((set, get) => ({
   listSortOrder: 'desc',
 
   loadTasks: async () => {
-    if (!isElectron()) {
+    const m = loadDesktopModule()
+    if (!m) {
       set({ isLoaded: true })
       return
     }
     try {
-      const result = await window.electronAPI!.listTasks()
+      const result = await m.listTasks(projectRoot())
       if (result.success) {
         set({ tasks: result.tasks || [], isLoaded: true })
       } else {
@@ -73,10 +138,11 @@ export const useTaskStore = create<TaskState>((set, get) => ({
   },
 
   loadTaskDetail: async (task) => {
-    if (!isElectron()) return
+    const m = loadDesktopModule()
+    if (!m) return
     if (!get().detail) set({ isLoadingDetail: true })
     try {
-      const result = await window.electronAPI!.readTaskDetail(task.name)
+      const result = await m.readTaskDetail(projectRoot(), task.name)
       if (result.success && result.detail) {
         set({ detail: result.detail, isLoadingDetail: false })
       } else {
@@ -129,9 +195,10 @@ export const useTaskStore = create<TaskState>((set, get) => ({
   },
 
   createTask: async (payload) => {
-    if (!isElectron()) return false
+    const m = loadDesktopModule()
+    if (!m) return false
     try {
-      const result = await window.electronAPI!.createTask(payload)
+      const result = await m.createTask(projectRoot(), payload)
       if (!result.success || !result.task) {
         console.error('创建任务失败:', result.error)
         return false
@@ -148,9 +215,10 @@ export const useTaskStore = create<TaskState>((set, get) => ({
   },
 
   updateTask: async (payload) => {
-    if (!isElectron()) return false
+    const m = loadDesktopModule()
+    if (!m) return false
     try {
-      const result = await window.electronAPI!.updateTask(payload)
+      const result = await m.updateTask(projectRoot(), payload)
       if (!result.success) {
         console.error('更新任务失败:', result.error)
         return false
@@ -177,9 +245,10 @@ export const useTaskStore = create<TaskState>((set, get) => ({
   },
 
   saveTaskContext: async (taskName, contextName, content) => {
-    if (!isElectron()) return false
+    const m = loadDesktopModule()
+    if (!m) return false
     try {
-      const result = await window.electronAPI!.saveTaskContext({ taskName, contextName, content })
+      const result = await m.saveTaskContext(projectRoot(), { taskName, contextName, content })
       if (!result.success) {
         console.error('保存任务上下文失败:', result.error)
         return false
