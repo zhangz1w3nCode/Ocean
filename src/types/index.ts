@@ -555,7 +555,9 @@ export interface HarnessRepoGroup {
   path: string
   /** 主仓库（当前项目根） */
   isMain: boolean
-  /** 该仓库的 git worktree 列表 */
+  /** 是否 git 仓库（false=单目录降级：会话可用，Git 能力降级为文件列表） */
+  isGit: boolean
+  /** 该仓库的 git worktree 列表（非 git 仓库仅含主目录一条） */
   worktrees: HarnessWorktree[]
 }
 

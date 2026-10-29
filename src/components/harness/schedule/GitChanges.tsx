@@ -1,6 +1,6 @@
 import type { FC } from 'react'
 import { useEffect, useMemo, useState } from 'react'
-import { GitBranch, RefreshCw, ChevronDown, ChevronRight, Loader2, GitCommitHorizontal, MoreHorizontal, List, FolderTree, Columns2, Rows3 } from 'lucide-react'
+import { GitBranch, RefreshCw, ChevronDown, ChevronRight, Loader2, GitCommitHorizontal, MoreHorizontal, List, FolderTree, Columns2, Rows3, Folder } from 'lucide-react'
 import { useHarnessStore, type GitChangeFile } from '../../../stores/harnessStore'
 
 const statusBadgeClass = (status: string): string => {
@@ -150,12 +150,21 @@ export const GitChanges: FC = () => {
   const gitStatusLoading = useHarnessStore((s) => s.gitStatusLoading)
   const gitStatusError = useHarnessStore((s) => s.gitStatusError)
   const loadGitStatus = useHarnessStore((s) => s.loadGitStatus)
+  const gitRepoPath = useHarnessStore((s) => s.gitRepoPath)
+  const setGitRepo = useHarnessStore((s) => s.setGitRepo)
+  const gitSourceBranch = useHarnessStore((s) => s.gitSourceBranch)
+  const setGitSourceBranch = useHarnessStore((s) => s.setGitSourceBranch)
+  const repos = useHarnessStore((s) => s.repos)
   const gitBaseBranch = useHarnessStore((s) => s.gitBaseBranch)
   const setGitBaseBranch = useHarnessStore((s) => s.setGitBaseBranch)
   const branches = useHarnessStore((s) => s.branches)
-  const loadBranches = useHarnessStore((s) => s.loadBranches)
+  const loadGitBranches = useHarnessStore((s) => s.loadGitBranches)
   const openFileDiff = useHarnessStore((s) => s.openFileDiff)
   const [baseOpen, setBaseOpen] = useState(false)
+  const [repoOpen, setRepoOpen] = useState(false)
+  const [srcOpen, setSrcOpen] = useState(false)
+  const [srcQuery, setSrcQuery] = useState('')
+  const [baseQuery, setBaseQuery] = useState('')
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
   const viewMode = useHarnessStore((s) => s.gitViewMode)
   const setViewMode = useHarnessStore((s) => s.setGitViewMode)
@@ -165,43 +174,159 @@ export const GitChanges: FC = () => {
 
   useEffect(() => {
     void loadGitStatus()
-    void loadBranches()
-  }, [loadGitStatus, loadBranches])
+    void loadGitBranches(useHarnessStore.getState().gitRepoPath || '')
+  }, [loadGitStatus, loadGitBranches])
+
+  // 当前选中仓库（gitRepoPath 为空 = 主仓库）
+  const selectedRepo = useMemo(
+    () => (gitRepoPath ? repos.find((r) => r.path === gitRepoPath) : repos.find((r) => r.isMain)) ?? null,
+    [repos, gitRepoPath]
+  )
+  const repoIsGit = selectedRepo?.isGit ?? true
 
   const toggle = (key: string) => setCollapsed((c) => ({ ...c, [key]: !c[key] }))
 
   const openDiff = (filePath: string, source: 'branch' | 'worktree') => {
-    const sessionId = useHarnessStore.getState().activeSessionId
-    if (sessionId) void openFileDiff(sessionId, filePath, source)
+    void openFileDiff(filePath, source)
   }
 
   const baseOptions = useMemo(() => {
-    const list = branches.filter((b) => b !== gitStatus?.current)
+    const list = branches.filter((b) => b !== gitStatus?.current && b !== gitSourceBranch)
     return gitBaseBranch && !list.includes(gitBaseBranch) ? [gitBaseBranch, ...list] : list
+  }, [branches, gitBaseBranch, gitStatus?.current, gitSourceBranch])
+
+  const sourceOptions = useMemo(() => {
+    const list = branches.filter((b) => b !== gitBaseBranch)
+    return gitStatus?.current && !list.includes(gitStatus.current) ? [gitStatus.current, ...list] : list
   }, [branches, gitBaseBranch, gitStatus?.current])
 
   return (
     <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-      {/* 分支对比栏 */}
+      {/* 仓库/分支对比栏 */}
       <div className="px-2.5 py-2 border-b border-macos-border/60 flex items-center gap-1.5 text-xs shrink-0">
-        <GitBranch size={12} strokeWidth={1.5} className="text-macos-text-tertiary shrink-0" />
-        <span className="font-medium text-macos-text truncate max-w-28" title={gitStatus?.current ?? ''}>
-          {gitStatus?.current ?? '…'}
-        </span>
-        <span className="text-macos-text-tertiary shrink-0">→</span>
+        {/* 仓库选择 */}
+        <div className="relative shrink-0">
+          <button
+            onClick={() => setRepoOpen((o) => !o)}
+            className="flex items-center gap-1 px-1.5 py-0.5 rounded-md text-macos-text hover:bg-macos-bg transition-colors max-w-36"
+            title="选择仓库"
+          >
+            <Folder size={12} strokeWidth={1.5} className="shrink-0 text-macos-text-tertiary" />
+            <span className="truncate font-medium">{selectedRepo ? `${selectedRepo.name}${selectedRepo.isMain ? ' *' : ''}` : '主仓库'}</span>
+            <ChevronDown size={10} strokeWidth={1.5} className="shrink-0" />
+          </button>
+          {repoOpen && (
+            <div className="absolute top-full mt-1 left-0 z-20 w-52 max-h-56 overflow-y-auto rounded-lg border border-macos-border bg-white shadow-lg py-1" onMouseDown={(e) => e.stopPropagation()}>
+              {repos.length === 0 && <div className="px-3 py-2 text-xs text-macos-text-tertiary">无仓库</div>}
+              {repos.map((r) => (
+                <button
+                  key={r.path}
+                  onClick={() => {
+                    setRepoOpen(false)
+                    if ((r.isMain ? '' : r.path) !== gitRepoPath) setGitRepo(r.isMain ? '' : r.path)
+                  }}
+                  className={`w-full text-left px-3 py-1.5 text-xs truncate transition-colors flex items-center gap-1.5 ${
+                    (r.isMain ? '' : r.path) === gitRepoPath ? 'bg-[#E8EAED] text-macos-text' : 'text-macos-text-secondary hover:bg-macos-bg'
+                  }`}
+                  title={r.path}
+                >
+                  <Folder size={11} strokeWidth={1.5} className="shrink-0 text-macos-text-tertiary" />
+                  <span className="truncate flex-1">{r.name}{r.isMain ? ' *' : ''}</span>
+                  {!r.isGit && <span className="shrink-0 text-[10px] text-macos-text-tertiary">非 git</span>}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        {repoIsGit && (
+          <>
+            {/* 来源分支选择 */}
+            <div className="relative shrink-0">
+              <button
+                onClick={() => { setSrcOpen((o) => !o); setSrcQuery('') }}
+                className="flex items-center gap-1 px-1.5 py-0.5 rounded-md text-macos-text-secondary hover:bg-macos-bg hover:text-macos-text transition-colors max-w-32"
+                title="选择来源分支（对比的 HEAD 侧）"
+              >
+                <GitBranch size={12} strokeWidth={1.5} className="shrink-0 text-macos-text-tertiary" />
+                <span className="truncate">{gitSourceBranch || gitStatus?.current || 'HEAD'}</span>
+                <ChevronDown size={10} strokeWidth={1.5} className="shrink-0" />
+              </button>
+              {srcOpen && (
+                <div className="absolute top-full mt-1 left-0 z-20 w-52 max-h-64 rounded-lg border border-macos-border bg-white shadow-lg py-1 overflow-hidden flex flex-col" onMouseDown={(e) => e.stopPropagation()}>
+                  <div className="px-2 py-1.5 border-b border-macos-border/40 shrink-0">
+                    <input
+                      autoFocus
+                      value={srcQuery}
+                      onChange={(e) => setSrcQuery(e.target.value)}
+                      placeholder="搜索分支…"
+                      className="w-full bg-transparent text-xs text-macos-text placeholder:text-macos-text-tertiary outline-none font-mono"
+                    />
+                  </div>
+                  <div className="overflow-y-auto">
+                  <button
+                    onClick={() => {
+                      setSrcOpen(false)
+                      if (gitSourceBranch !== '') setGitSourceBranch('')
+                    }}
+                    className={`w-full text-left px-3 py-1.5 text-xs truncate font-mono transition-colors ${
+                      gitSourceBranch === '' && !srcQuery ? 'bg-[#E8EAED] text-macos-text' : 'text-macos-text-secondary hover:bg-macos-bg'
+                    }`}
+                  >
+                    HEAD{gitStatus?.current ? `（${gitStatus.current}）` : ''}
+                  </button>
+                  {sourceOptions
+                    .filter((b) => !srcQuery || b.toLowerCase().includes(srcQuery.toLowerCase()))
+                    .map((b) => (
+                    <button
+                      key={b}
+                      onClick={() => {
+                        setSrcOpen(false)
+                        if (b !== gitSourceBranch) setGitSourceBranch(b)
+                      }}
+                      className={`w-full text-left px-3 py-1.5 text-xs truncate font-mono transition-colors ${
+                        b === gitSourceBranch ? 'bg-[#E8EAED] text-macos-text' : 'text-macos-text-secondary hover:bg-macos-bg'
+                      }`}
+                    >
+                      {b}
+                    </button>
+                  ))}
+                  {sourceOptions.filter((b) => !srcQuery || b.toLowerCase().includes(srcQuery.toLowerCase())).length === 0 && !srcQuery && (
+                    <div className="px-3 py-2 text-xs text-macos-text-tertiary">无其他分支</div>
+                  )}
+                  {srcQuery && sourceOptions.filter((b) => b.toLowerCase().includes(srcQuery.toLowerCase())).length === 0 && (
+                    <div className="px-3 py-2 text-xs text-macos-text-tertiary">无匹配分支</div>
+                  )}
+                  </div>
+                </div>
+              )}
+            </div>
+            <span className="text-macos-text-tertiary shrink-0">→</span>
+          </>
+        )}
         <div className="relative">
           <button
-            onClick={() => setBaseOpen((o) => !o)}
-            className="flex items-center gap-1 px-1.5 py-0.5 rounded-md text-macos-text-secondary hover:bg-macos-bg hover:text-macos-text transition-colors max-w-36"
+            onClick={() => { setBaseOpen((o) => !o); setBaseQuery('') }}
+            className={`flex items-center gap-1 px-1.5 py-0.5 rounded-md text-macos-text-secondary hover:bg-macos-bg hover:text-macos-text transition-colors max-w-36 ${repoIsGit ? '' : 'hidden'}`}
             title="选择对比基线分支"
           >
             <span className="truncate">{gitBaseBranch}</span>
             <ChevronDown size={10} strokeWidth={1.5} className="shrink-0" />
           </button>
           {baseOpen && (
-            <div className="absolute top-full mt-1 left-0 z-20 w-48 max-h-56 overflow-y-auto rounded-lg border border-macos-border bg-white shadow-lg py-1" onMouseDown={(e) => e.stopPropagation()}>
-              {baseOptions.length === 0 && <div className="px-3 py-2 text-xs text-macos-text-tertiary">无其他分支</div>}
-              {baseOptions.map((b) => (
+            <div className="absolute top-full mt-1 left-0 z-20 w-52 max-h-64 rounded-lg border border-macos-border bg-white shadow-lg py-1 overflow-hidden flex flex-col" onMouseDown={(e) => e.stopPropagation()}>
+              <div className="px-2 py-1.5 border-b border-macos-border/40 shrink-0">
+                <input
+                  autoFocus
+                  value={baseQuery}
+                  onChange={(e) => setBaseQuery(e.target.value)}
+                  placeholder="搜索分支…"
+                  className="w-full bg-transparent text-xs text-macos-text placeholder:text-macos-text-tertiary outline-none font-mono"
+                />
+              </div>
+              <div className="overflow-y-auto">
+              {baseOptions
+                .filter((b) => !baseQuery || b.toLowerCase().includes(baseQuery.toLowerCase()))
+                .map((b) => (
                 <button
                   key={b}
                   onClick={() => {
@@ -215,6 +340,10 @@ export const GitChanges: FC = () => {
                   {b}
                 </button>
               ))}
+              {baseOptions.filter((b) => !baseQuery || b.toLowerCase().includes(baseQuery.toLowerCase())).length === 0 && (
+                <div className="px-3 py-2 text-xs text-macos-text-tertiary">{baseQuery ? '无匹配分支' : '无其他分支'}</div>
+              )}
+              </div>
             </div>
           )}
         </div>
@@ -307,9 +436,10 @@ export const GitChanges: FC = () => {
         {gitStatusLoading && !gitStatus && (
           <div className="flex items-center justify-center gap-2 py-6 text-xs text-macos-text-tertiary">
             <Loader2 size={13} strokeWidth={1.5} className="animate-spin" />
-            正在读取 git 信息…
+            正在读取…
           </div>
         )}
+        {/* 非 git 仓库：无变更对比，显示为空（不报错） */}
         {gitStatus && (
           <>
             <Section title="提交" count={gitStatus.commits.length} collapsed={!!collapsed.commits} onToggle={() => toggle('commits')}>

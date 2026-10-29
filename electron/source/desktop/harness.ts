@@ -109,7 +109,8 @@ export async function listSessionDir(sessionId: string, relativePath: string): P
   return harnessCore.listSessionDir(sessionId, relativePath)
 }
 
-export async function gitStatus(sessionId: string, baseBranch: string): Promise<HarnessResult<{
+// Git 变更概览（仓库参数化：来源分支 vs 基线分支；工作区变更绑仓库真实 HEAD）
+export async function gitRepoStatus(repoPath: string, sourceBranch: string, baseBranch: string): Promise<HarnessResult<{
   base: string
   current: string | null
   ahead: number
@@ -118,17 +119,20 @@ export async function gitStatus(sessionId: string, baseBranch: string): Promise<
   branchFiles: HarnessGitFileEntry[]
   worktreeFiles: HarnessGitFileEntry[]
 }>> {
-  if (!isNonEmptyString(sessionId)) return bad('会话 id 无效')
+  if (!isNonEmptyString(repoPath)) return bad('仓库路径无效')
+  if (typeof sourceBranch !== 'string') return bad('来源分支必须是字符串')
   if (typeof baseBranch !== 'string') return bad('基线分支必须是字符串')
-  return harnessCore.gitStatus(sessionId, baseBranch)
+  return harnessCore.gitRepoStatus(repoPath, sourceBranch, baseBranch)
 }
 
-export async function gitDiffFile(sessionId: string, relativePath: string, source: 'branch' | 'worktree', baseBranch: string): Promise<HarnessResult<{ diff: string; path: string }>> {
-  if (!isNonEmptyString(sessionId)) return bad('会话 id 无效')
+// 单文件 diff（仓库参数化：分支变更 base...source / 工作区变更 HEAD + 未跟踪）
+export async function gitRepoDiffFile(repoPath: string, relativePath: string, source: 'branch' | 'worktree', baseBranch: string, sourceBranch: string): Promise<HarnessResult<{ diff: string; path: string }>> {
+  if (!isNonEmptyString(repoPath)) return bad('仓库路径无效')
   if (typeof relativePath !== 'string') return bad('文件路径必须是字符串')
   if (source !== 'branch' && source !== 'worktree') return bad(`未知的 diff 来源: ${String(source)}`)
   if (typeof baseBranch !== 'string') return bad('基线分支必须是字符串')
-  return harnessCore.gitDiffFile(sessionId, relativePath, source, baseBranch)
+  if (typeof sourceBranch !== 'string') return bad('来源分支必须是字符串')
+  return harnessCore.gitRepoDiffFile(repoPath, relativePath, source, baseBranch, sourceBranch)
 }
 
 // 会话事件流订阅（core EventEmitter → store 回调；返回取消订阅函数）

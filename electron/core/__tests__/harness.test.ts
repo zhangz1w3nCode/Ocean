@@ -220,7 +220,7 @@ describe('sendCommand / stopSession 对不存在会话的防御', () => {
 })
 
 describe('listRepoWorktrees（仓库维度视图）', () => {
-  it('主仓库 + .codebases/ git 仓库铺开，非 git 条目跳过', async () => {
+  it('主仓库 + .codebases/ 仓库铺开，blank 条目降级为单目录（非跳过）', async () => {
     const { execFileSync } = await import('node:child_process')
     const proj = join(tmp, 'repo-view')
     const cb = join(proj, '.codebases', 'cb-a')
@@ -233,18 +233,48 @@ describe('listRepoWorktrees（仓库维度视图）', () => {
     execFileSync('git', ['clone', '-q', proj, cb])
 
     const { repos } = await unwrap(harness.listRepoWorktrees(proj))
-    expect(repos).toHaveLength(2)
-    expect(repos[0]).toMatchObject({ isMain: true, name: 'repo-view' })
+    expect(repos).toHaveLength(3)
+    expect(repos[0]).toMatchObject({ isMain: true, isGit: true, name: 'repo-view' })
     expect(repos[0].worktrees).toHaveLength(1)
-    expect(repos[1]).toMatchObject({ isMain: false, name: 'cb-a' })
+    expect(repos[1]).toMatchObject({ isMain: false, isGit: true, name: 'cb-a' })
     expect(repos[1].worktrees[0].branch).toBe('main')
-    // blank 条目（非 git）不出现
-    expect(repos.some((r) => r.name === 'cb-blank')).toBe(false)
+    // blank 条目：单目录降级（不被父仓库 git 向上查找误判）
+    expect(repos[2]).toMatchObject({ isMain: false, isGit: false, name: 'cb-blank' })
+    expect(repos[2].worktrees).toHaveLength(1)
+    expect(repos[2].worktrees[0].path).toBe(blank)
   })
 
-  it('主仓库 git 失败时整体失败（错误优先，与既有语义一致）', async () => {
-    const res = await harness.listRepoWorktrees(join(tmp, 'not-a-repo'))
+  it('主仓库非 git 时降级为单目录仓库（不整体失败，会话可用）', async () => {
+    const proj = join(tmp, 'not-a-repo-dir')
+    mkdirSync(proj, { recursive: true })
+    const { repos } = await unwrap(harness.listRepoWorktrees(proj))
+    expect(repos).toHaveLength(1)
+    expect(repos[0]).toMatchObject({ isMain: true, isGit: false, name: 'not-a-repo-dir' })
+    expect(repos[0].worktrees).toHaveLength(1)
+    expect(repos[0].worktrees[0]).toMatchObject({ path: proj, branch: null, isMain: true })
+  })
+
+  it('非 git 的 .codebases 条目也降级为单目录仓库', async () => {
+    const proj = join(tmp, 'repo-view-blank')
+    const blank = join(proj, '.codebases', 'cb-blank')
+    mkdirSync(blank, { recursive: true })
+    writeFileSync(join(blank, 'README.md'), '# blank', 'utf8')
+    const { execFileSync } = await import('node:child_process')
+    execFileSync('git', ['init', '-q', '-b', 'main', proj])
+    execFileSync('git', ['-C', proj, 'config', 'user.email', 't@t'])
+    execFileSync('git', ['-C', proj, 'config', 'user.name', 't'])
+    execFileSync('git', ['-C', proj, 'commit', '--allow-empty', '-qm', 'init'])
+
+    const { repos } = await unwrap(harness.listRepoWorktrees(proj))
+    expect(repos).toHaveLength(2)
+    expect(repos[0]).toMatchObject({ isMain: true, isGit: true })
+    expect(repos[1]).toMatchObject({ isMain: false, isGit: false, name: 'cb-blank' })
+    expect(repos[1].worktrees).toHaveLength(1)
+  })
+
+  it('路径不存在时仍整体失败', async () => {
+    const res = await harness.listRepoWorktrees(join(tmp, 'no-such-dir'))
     if (res.success !== false) throw new Error('预期业务失败，实际成功')
-    expect(res.error).toMatch(/worktree list 失败/)
+    expect(res.error).toMatch(/不存在/)
   })
 })

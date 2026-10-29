@@ -28,7 +28,7 @@ type DesktopModule = {
   listActiveSessions: () => Promise<{ success: boolean; sessions?: { sessionId: string; worktreePath: string; sessionFile: string | null; pid: number }[]; error?: string }>
   readSessionFile: (sessionId: string, relativePath: string) => Promise<{ success: boolean; content?: string; path?: string; error?: string }>
   listSessionDir: (sessionId: string, relativePath: string) => Promise<{ success: boolean; entries?: { name: string; type: 'file' | 'directory' }[]; path?: string; error?: string }>
-  gitStatus: (sessionId: string, baseBranch: string) => Promise<{
+  gitRepoStatus: (repoPath: string, sourceBranch: string, baseBranch: string) => Promise<{
     success: boolean
     base?: string
     current?: string | null
@@ -39,7 +39,7 @@ type DesktopModule = {
     worktreeFiles?: { path: string; status: string; additions: number | null; deletions: number | null }[]
     error?: string
   }>
-  gitDiffFile: (sessionId: string, filePath: string, source: 'branch' | 'worktree', baseBranch: string) => Promise<{ success: boolean; diff?: string; path?: string; error?: string }>
+  gitRepoDiffFile: (repoPath: string, relativePath: string, source: 'branch' | 'worktree', baseBranch: string, sourceBranch: string) => Promise<{ success: boolean; diff?: string; path?: string; error?: string }>
   onHarnessEvent: (callback: (payload: HarnessEventPayload) => void) => () => void
 }
 
@@ -705,12 +705,17 @@ interface HarnessStore {
   setGitViewMode: (mode: 'tree' | 'list') => void
   gitBaseBranch: string
   setGitBaseBranch: (branch: string) => void
+  gitSourceBranch: string
+  setGitSourceBranch: (branch: string) => void
+  gitRepoPath: string
+  setGitRepo: (repoPath: string) => void
   gitStatus: GitStatusData | null
   gitStatusLoading: boolean
   gitStatusError: string | null
   loadGitStatus: () => Promise<void>
+  loadGitBranches: (repoPath: string) => Promise<void>
   openFileViewer: (sessionId: string, filePath: string) => Promise<void>
-  openFileDiff: (sessionId: string, filePath: string, source: 'branch' | 'worktree') => Promise<void>
+  openFileDiff: (filePath: string, source: 'branch' | 'worktree') => Promise<void>
   toggleFileViewer: () => void
   refreshFileViewer: () => Promise<string | null>
   closeFileViewer: () => void
@@ -835,17 +840,32 @@ export const useHarnessStore = create<HarnessStore>((set, get) => {
       set({ gitBaseBranch: branch })
       void get().loadGitStatus()
     },
+    gitSourceBranch: '',
+    setGitSourceBranch: (branch) => {
+      set({ gitSourceBranch: branch })
+      void get().loadGitStatus()
+    },
+    gitRepoPath: '',
+    setGitRepo: (repoPath) => {
+      // 切仓库：重置分支选择并按该仓库拉分支列表（来源默认 HEAD、基线重置 main）
+      set({ gitRepoPath: repoPath, gitSourceBranch: '', gitBaseBranch: 'main', gitStatus: null, gitStatusError: null })
+      void get().loadGitBranches(repoPath)
+      void get().loadGitStatus()
+    },
     gitStatus: null,
     gitStatusLoading: false,
     gitStatusError: null,
     loadGitStatus: async () => {
-      const sessionId = get().activeSessionId
-      if (!sessionId) {
-        set({ gitStatus: null, gitStatusError: '未选择会话' })
+      // 仓库驱动的 Git 概览（不再绑定会话）：仓库默认主仓库，来源分支默认 HEAD
+      const repoPath = get().gitRepoPath || projectRoot()
+      const repo = get().repos.find((r) => r.path === repoPath)
+      if (repo && !repo.isGit) {
+        // 非 git 仓库：无变更对比，面板显示为空（不报错）
+        set({ gitStatus: null, gitStatusError: null, gitStatusLoading: false })
         return
       }
       set({ gitStatusLoading: true, gitStatusError: null })
-      const res = await mod()?.gitStatus?.(sessionId, get().gitBaseBranch)
+      const res = await mod()?.gitRepoStatus?.(repoPath, get().gitSourceBranch || 'HEAD', get().gitBaseBranch)
       set({ gitStatusLoading: false })
       if (!res || !res.success) {
         set({ gitStatus: null, gitStatusError: (res?.error) ?? 'git 信息读取失败' })
@@ -863,6 +883,9 @@ export const useHarnessStore = create<HarnessStore>((set, get) => {
         },
       })
     },
+    loadGitBranches: async (repoPath: string) => {
+      await get().loadBranches(repoPath)
+    },
     openFileViewer: async (sessionId, filePath) => {
       const res = await mod()?.readSessionFile?.(sessionId, filePath)
       if (!res || !res.success) {
@@ -872,8 +895,10 @@ export const useHarnessStore = create<HarnessStore>((set, get) => {
       set({ fileViewer: { sessionId, path: res.path ?? filePath, content: res.content ?? '', mode: 'content' }, fileViewerOpen: true, filePanelTab: 'preview' })
     },
 
-    openFileDiff: async (sessionId, filePath, source) => {
-      const res = await mod()?.gitDiffFile?.(sessionId, filePath, source, get().gitBaseBranch)
+    openFileDiff: async (filePath, source) => {
+      const repoPath = get().gitRepoPath || projectRoot()
+      const res = await mod()?.gitRepoDiffFile?.(repoPath, filePath, source, get().gitBaseBranch, get().gitSourceBranch || 'HEAD')
+      const sessionId = get().activeSessionId ?? ''
       if (!res || !res.success) {
         set({ fileViewer: { sessionId, path: filePath, content: res?.error ?? '读取 diff 失败', mode: 'content' }, fileViewerOpen: true, filePanelTab: 'preview' })
         return
@@ -903,7 +928,8 @@ export const useHarnessStore = create<HarnessStore>((set, get) => {
       const fv = get().fileViewer
       if (!fv) return null
       if (fv.mode === 'diff') {
-        const res = await mod()?.gitDiffFile?.(fv.sessionId, fv.path, fv.diffSource ?? 'branch', get().gitBaseBranch)
+        const repoPath = get().gitRepoPath || projectRoot()
+        const res = await mod()?.gitRepoDiffFile?.(repoPath, fv.path, fv.diffSource ?? 'branch', get().gitBaseBranch, get().gitSourceBranch || 'HEAD')
         if (!res || !res.success) return res?.error ?? '读取 diff 失败'
         set({ fileViewer: { ...fv, content: res.diff ?? '' } })
         return null

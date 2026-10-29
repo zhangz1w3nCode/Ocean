@@ -228,7 +228,7 @@ export const SessionPanel: FC<{ width: number }> = ({ width }) => {
                     setCreateOpen(true)
                     void loadBranches(repo.path)
                   }}
-                  className="opacity-0 group-hover/repo:opacity-100 p-0.5 rounded text-macos-text-tertiary hover:text-macos-text hover:bg-black/8 shrink-0"
+                  className={`opacity-0 group-hover/repo:opacity-100 p-0.5 rounded text-macos-text-tertiary hover:text-macos-text hover:bg-black/8 shrink-0 ${repo.isGit ? '' : 'hidden'}`}
                   title={`在 ${repo.name} 下新建工作区`}
                 >
                   <Plus size={12} strokeWidth={1.5} />

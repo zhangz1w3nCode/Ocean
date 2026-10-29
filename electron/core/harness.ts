@@ -83,7 +83,9 @@ export interface HarnessRepoGroup {
   path: string
   /** 主仓库（当前项目根） */
   isMain: boolean
-  /** 该仓库的 git worktree 列表 */
+  /** 是否 git 仓库（false=单目录降级：无 worktree 概念，会话可用，Git 能力降级为文件列表） */
+  isGit: boolean
+  /** 该仓库的 git worktree 列表（非 git 仓库仅含主目录一条） */
   worktrees: HarnessWorktree[]
 }
 
@@ -319,24 +321,48 @@ export async function listWorktrees(root: string): Promise<HarnessResult<{ workt
 }
 
 // 仓库维度视图：主仓库 + .codebases/ 下的登记仓库（url/local 方式登记的真实 git 仓库）
-// 各自铺开全部 worktree；blank 条目（非 git）自动跳过。主仓库 git 失败时整体 fail
-// （.codebases 属于主仓库目录，与既有错误语义一致）。
+// 各自铺开全部 worktree；非 git 目录（主仓库根或 blank 条目）降级为单目录仓库（isGit=false，
+// 仅主工作区一行，会话可用，Git 面板降级为文件列表）；路径不存在仍整体 fail。
 export async function listRepoWorktrees(root: string): Promise<HarnessResult<{ repos: HarnessRepoGroup[] }>> {
   return guard(async () => {
-    const main = await listWorktrees(root)
-    if (!main.success) return main
-    const repos: HarnessRepoGroup[] = [
-      { name: path.basename(root), path: root, isMain: true, worktrees: main.worktrees },
-    ]
+    if (!root || !fs.existsSync(root)) {
+      return fail(new Error(`项目根路径不存在: ${root}`))
+    }
+    const repos: HarnessRepoGroup[] = []
+    // git 仓库判定必须显式检查 .git：git -C 对非 git 目录会向上查找父级 .git，
+    // 空白 codebase 条目会被误判为父仓库（返回父仓库的 worktree 列表）
+    const isGitDir = (p: string): boolean => fs.existsSync(path.join(p, '.git'))
+    const singleEntry = (p: string): HarnessWorktree => ({ path: p, branch: null, isMain: true, detached: false, prunable: false, bare: false })
+
+    if (isGitDir(root)) {
+      const main = await listWorktrees(root)
+      repos.push(
+        main.success
+          ? { name: path.basename(root), path: root, isMain: true, isGit: true, worktrees: main.worktrees }
+          // git 仓库但 worktree 列举失败（异常态）：单目录降级，isGit 保持 true（Git 面板仍可尝试）
+          : { name: path.basename(root), path: root, isMain: true, isGit: true, worktrees: [singleEntry(root)] }
+      )
+    } else {
+      // 非 git 主仓库：单目录降级（会话可用，Git 能力降级为文件列表）
+      repos.push({ name: path.basename(root), path: root, isMain: true, isGit: false, worktrees: [singleEntry(root)] })
+    }
+
     const cbDir = path.join(root, '.codebases')
     if (fs.existsSync(cbDir)) {
       for (const entry of fs.readdirSync(cbDir, { withFileTypes: true })) {
         if (!entry.isDirectory()) continue
         const repoPath = path.join(cbDir, entry.name)
-        if (!fs.existsSync(path.join(repoPath, '.git'))) continue
+        if (!isGitDir(repoPath)) {
+          // 非 git 条目（blank 方式）：单目录降级
+          repos.push({ name: entry.name, path: repoPath, isMain: false, isGit: false, worktrees: [singleEntry(repoPath)] })
+          continue
+        }
         const r = await listWorktrees(repoPath)
         if (r.success) {
-          repos.push({ name: entry.name, path: repoPath, isMain: false, worktrees: r.worktrees })
+          repos.push({ name: entry.name, path: repoPath, isMain: false, isGit: true, worktrees: r.worktrees })
+        } else {
+          console.error('[harness] 跳过 worktree 列举失败的仓库，降级单目录:', repoPath)
+          repos.push({ name: entry.name, path: repoPath, isMain: false, isGit: true, worktrees: [singleEntry(repoPath)] })
         }
       }
     }
@@ -352,7 +378,14 @@ export async function listBranches(root: string): Promise<HarnessResult<{ branch
     if (res.status !== 0) {
       return fail(new Error(`git for-each-ref 失败: ${res.stderr.trim()}`))
     }
-    const branches = String(res.stdout || '').split('\n').map((s) => s.trim()).filter(Boolean)
+    // 本地分支在前，远程跟踪分支在后（clone 仓库默认只有单个本地分支，
+    // 其余分支在 refs/remotes/；来源/基线可互选本地与远程 ref 对比）
+    const locals = String(res.stdout || '').split('\n').map((s) => s.trim()).filter(Boolean)
+    const remotes = await execGit(root, ['for-each-ref', 'refs/remotes/', '--format=%(refname:short)'], 10000, env)
+    const remoteBranches = remotes.status === 0
+      ? String(remotes.stdout || '').split('\n').map((s) => s.trim()).filter((b) => b && !b.endsWith('/HEAD'))
+      : []
+    const branches = [...locals, ...remoteBranches]
     const head = await execGit(root, ['rev-parse', '--abbrev-ref', 'HEAD'], 5000, env)
     const current = head.status === 0 ? String(head.stdout || '').trim() : null
     return ok({ branches, current })
@@ -779,8 +812,9 @@ export async function readSessionFile(sessionId: string, relativePath: string): 
   })
 }
 
-// Git 变更概览：当前分支 vs 可配置基线分支（提交时间线/分支变更/工作区变更）
-export async function gitStatus(sessionId: string, baseBranch: string): Promise<HarnessResult<{
+// Git 变更概览（仓库参数化）：来源分支 vs 可配置基线分支（提交时间线/分支变更/工作区变更）
+// 工作区变更绑定仓库真实 HEAD（git status/diff HEAD 的固有语义，不受 source 选择影响）
+export async function gitRepoStatus(repoPath: string, sourceBranch: string, baseBranch: string): Promise<HarnessResult<{
   base: string
   current: string | null
   ahead: number
@@ -789,20 +823,21 @@ export async function gitStatus(sessionId: string, baseBranch: string): Promise<
   branchFiles: HarnessGitFileEntry[]
   worktreeFiles: HarnessGitFileEntry[]
 }>> {
-  const handle = activeSessions.get(sessionId)
-  if (!handle) return fail(new Error(`会话不存在或已结束: ${sessionId}`))
-  const cwd = handle.worktreePath
+  const cwd = repoPath
   const env = buildSpawnEnv(null)
   const base = String(baseBranch || 'main').trim()
+  const source = String(sourceBranch || 'HEAD').trim()
   const run = (args: string[]) => execGit(cwd, args, 15000, env)
   return guard(async () => {
     const verify = await run(['rev-parse', '--verify', base])
     if (verify.status !== 0) return fail(new Error(`基线分支不存在: ${base}`))
-    const current = await run(['rev-parse', '--abbrev-ref', 'HEAD'])
-    const counts = await run(['rev-list', '--left-right', '--count', `${base}...HEAD`])
-    const log = await run(['log', `${base}..HEAD`, '--oneline', '--no-decorate', '-n', '200'])
-    const nameStatus = await run(['diff', '--name-status', '--no-renames', `${base}...HEAD`])
-    const numstat = await run(['diff', '--numstat', '--no-renames', `${base}...HEAD`])
+    const verifySource = await run(['rev-parse', '--verify', source])
+    if (verifySource.status !== 0) return fail(new Error(`来源分支不存在: ${source}`))
+    const current = await run(['rev-parse', '--abbrev-ref', source])
+    const counts = await run(['rev-list', '--left-right', '--count', `${base}...${source}`])
+    const log = await run(['log', `${base}..${source}`, '--oneline', '--no-decorate', '-n', '200'])
+    const nameStatus = await run(['diff', '--name-status', '--no-renames', `${base}...${source}`])
+    const numstat = await run(['diff', '--numstat', '--no-renames', `${base}...${source}`])
     const status = await run(['status', '--porcelain'])
     const wtNumstat = await run(['diff', '--numstat', '--no-renames', 'HEAD'])
     if (log.status !== 0 || nameStatus.status !== 0 || numstat.status !== 0 || status.status !== 0) {
@@ -883,17 +918,15 @@ export async function gitStatus(sessionId: string, baseBranch: string): Promise<
   })
 }
 
-// 读取单个文件的 diff（分支变更 base...HEAD / 工作区变更 HEAD + 未跟踪文件）
-export async function gitDiffFile(sessionId: string, relativePath: string, source: 'branch' | 'worktree', baseBranch: string): Promise<HarnessResult<{ diff: string; path: string }>> {
-  const handle = activeSessions.get(sessionId)
-  if (!handle) return fail(new Error(`会话不存在或已结束: ${sessionId}`))
-  const cwd = handle.worktreePath
+// 读取单个文件的 diff（仓库参数化）：分支变更 base...source / 工作区变更 HEAD + 未跟踪文件
+export async function gitRepoDiffFile(repoPath: string, relativePath: string, source: 'branch' | 'worktree', baseBranch: string, sourceBranch: string): Promise<HarnessResult<{ diff: string; path: string }>> {
+  const cwd = repoPath
   const env = buildSpawnEnv(null)
   const file = String(relativePath || '').trim()
   if (!file) return fail(new Error('缺少文件路径'))
   const resolved = path.resolve(cwd, file)
   if (resolved !== cwd && !resolved.startsWith(cwd + path.sep)) {
-    return fail(new Error('路径越界：仅可读取会话工作区内的文件'))
+    return fail(new Error('路径越界：仅可读取仓库内的文件'))
   }
   return guard(async () => {
     if (source === 'worktree') {
@@ -908,9 +941,10 @@ export async function gitDiffFile(sessionId: string, relativePath: string, sourc
       return ok({ diff: '', path: file })
     }
     const base = String(baseBranch || 'main').trim()
+    const sourceRef = String(sourceBranch || 'HEAD').trim()
     const verify = await execGit(cwd, ['rev-parse', '--verify', base], 5000, env)
     if (verify.status !== 0) return fail(new Error(`基线分支不存在: ${base}`))
-    const res = await execGit(cwd, ['diff', `${base}...HEAD`, '--', file], 15000, env)
+    const res = await execGit(cwd, ['diff', `${base}...${sourceRef}`, '--', file], 15000, env)
     if (res.status !== 0) return fail(new Error('git diff 失败'))
     return ok({ diff: String(res.stdout || ''), path: file })
   })
