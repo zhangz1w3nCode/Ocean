@@ -159,7 +159,6 @@ const electronAPI = {
   loadKnowledgeTemplateFile: (templateType) =>
     ipcRenderer.invoke('load-knowledge-template-file', templateType),
 
-
 }
 
 // 通过 window 暴露

@@ -484,7 +484,7 @@ export interface TaskTraceEvent {
   name?: string
 }
 
-// 任务详情（read-task-detail 返回）
+// 任务详情（renderer 直连 core 返回）
 export interface TaskDetail {
   task: TaskSummary & { content: string }
   contexts: TaskContextFile[]

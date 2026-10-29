@@ -76,7 +76,7 @@ describe('createTask', () => {
   })
 
   it('非法名称：路径分隔符、上跳、超长', async () => {
-    for (const bad of ['a/b', 'a\\b', '../逃逸', 'x'.repeat(101)]) {
+    for (const bad of ['a/b', 'a\\b', '../逃逸', '.', 'x'.repeat(101)]) {
       await fail(createTask(root, { name: bad, content: '正文' }), /任务名称/)
     }
   })

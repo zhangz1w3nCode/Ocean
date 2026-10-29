@@ -130,6 +130,8 @@ function sanitizeTaskName(name: unknown): string | null {
   const trimmed = name.trim()
   if (!trimmed || trimmed.length > 100) return null
   if (trimmed.includes('/') || trimmed.includes('\\') || trimmed.includes('..')) return null
+  // '.' 会被 path.join 解析为 .tasks 本身：把 TASK.md/trace 写到任务库根级，形成 list 不可见但可读写的幽灵任务
+  if (trimmed === '.') return null
   // eslint-disable-next-line no-control-regex
   if (/[\u0000-\u001f\u007f]/.test(trimmed)) return null
   return trimmed
