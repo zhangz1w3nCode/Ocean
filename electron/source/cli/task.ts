@@ -75,7 +75,7 @@ function statusFlag(args: Args): string | undefined {
 
 function taskName(cmd: string, args: Args): string {
   const name = cmd === 'context' ? args.positional[1] : args.positional[0]
-  if (!name) throw new UsageError(`缺少任务名称: ocean task ${cmd === 'context' ? `${args.positional[0]} <name>` : `${cmd} <name>`}`)
+  if (!name) throw new UsageError(`缺少任务名称: ocean task ${cmd === 'context' ? `context ${args.positional[0]} <name>` : `${cmd} <name>`}`)
   return name
 }
 
