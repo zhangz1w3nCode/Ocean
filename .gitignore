@@ -69,4 +69,5 @@ Thumbs.db
 .resources/
 .nodes/
 .workflows/
+.agents/
 docs/
