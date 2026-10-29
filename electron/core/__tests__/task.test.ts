@@ -81,9 +81,9 @@ describe('createTask', () => {
     }
   })
 
-  it('repo/tags 去重去空并截断到 20 项', async () => {
-    const t = await mk('甲', '内容', { repo: ['Ocean', 'Ocean', ' pi ', ''], tags: Array.from({ length: 25 }, (_, i) => `t${i}`) })
-    expect(t.repo).toEqual(['Ocean', 'pi'])
+  it('relatedCodebases/tags 去重去空并截断到 20 项', async () => {
+    const t = await mk('甲', '内容', { relatedCodebases: ['Ocean', 'Ocean', ' pi ', ''], tags: Array.from({ length: 25 }, (_, i) => `t${i}`) })
+    expect(t.relatedCodebases).toEqual(['Ocean', 'pi'])
     expect(t.tags).toHaveLength(20)
   })
 
@@ -106,10 +106,10 @@ describe('createTask', () => {
   })
 
   it('TASK.md 落盘为 YAML frontmatter + 流式数组', async () => {
-    await mk('甲', '正文内容', { repo: ['Ocean'], tags: ['前端'] })
+    await mk('甲', '正文内容', { relatedCodebases: ['Ocean'], tags: ['前端'] })
     const raw = fs.readFileSync(path.join(root, '.tasks', '甲', 'TASK.md'), 'utf-8')
     expect(raw.startsWith('---\nname: 甲\n')).toBe(true)
-    expect(raw).toContain('repo: [ Ocean ]')
+    expect(raw).toContain('related_codebases: [ Ocean ]')
     expect(raw).toContain('tags: [ 前端 ]')
     expect(raw.trimEnd().endsWith('正文内容')).toBe(true)
   })
@@ -191,17 +191,17 @@ describe('updateTask 状态机', () => {
     expect((await upd({ name: '甲', content: '正文', status: '乱写' })).status).toBe('等待处理')
   })
 
-  it('全量覆写语义：不传 repo/tags 会被清空（CLI 侧负责回填）', async () => {
-    await mk('甲', '正文', { repo: ['Ocean'], tags: ['前端'] })
+  it('全量覆写语义：不传 relatedCodebases/tags 会被清空（CLI 侧负责回填）', async () => {
+    await mk('甲', '正文', { relatedCodebases: ['Ocean'], tags: ['前端'] })
     const t = await upd({ name: '甲', content: '正文', handler: '' })
-    expect(t.repo).toEqual([])
+    expect(t.relatedCodebases).toEqual([])
     expect(t.tags).toEqual([])
   })
 
   it('无实质变更时不写事件、不刷新 updated_at', async () => {
     const created = await mk('甲', '正文')
     const before = await detail('甲')
-    const t = await upd({ name: '甲', content: '正文', handler: '', repo: [], tags: [], relatedTasks: [] })
+    const t = await upd({ name: '甲', content: '正文', handler: '', relatedCodebases: [], tags: [], relatedTasks: [] })
     expect(t.updatedAt).toBe(created.updatedAt)
     expect((await detail('甲')).trace.length).toBe(before.trace.length)
   })
@@ -283,7 +283,7 @@ describe('searchTasks（正文维度全文检索）', () => {
   })
 
   it('不匹配摘要字段（名称/处理人/仓库/标签）', async () => {
-    await mk('登录重构', '正文', { handler: '张三', repo: ['Ocean'], tags: ['前端'] })
+    await mk('登录重构', '正文', { handler: '张三', relatedCodebases: ['Ocean'], tags: ['前端'] })
     expect(await search('登录')).toEqual([])
     expect(await search('张三')).toEqual([])
     expect(await search('Ocean')).toEqual([])
@@ -323,21 +323,21 @@ describe('searchTasks（正文维度全文检索）', () => {
   })
 
   it('结果携带摘要字段，供 CLI 直接展示', async () => {
-    await mk('登录重构', 'kw', { handler: '张三', repo: ['Ocean'], tags: ['前端'] })
+    await mk('登录重构', 'kw', { handler: '张三', relatedCodebases: ['Ocean'], tags: ['前端'] })
     const r = (await search('kw'))[0]
-    expect(r).toMatchObject({ name: '登录重构', status: '等待处理', handler: '张三', repo: ['Ocean'], tags: ['前端'] })
+    expect(r).toMatchObject({ name: '登录重构', status: '等待处理', handler: '张三', relatedCodebases: ['Ocean'], tags: ['前端'] })
   })
 })
 
 describe('filterTasks（与桌面端任务库同语义）', () => {
   const seed = async () => {
-    await mk('登录重构', '正文', { handler: '张三', repo: ['Ocean'], tags: ['前端'] })
-    await mk('支付联调', '正文', { handler: '李四', repo: ['pi-agent'], tags: ['后端'] })
+    await mk('登录重构', '正文', { handler: '张三', relatedCodebases: ['Ocean'], tags: ['前端'] })
+    await mk('支付联调', '正文', { handler: '李四', relatedCodebases: ['pi-agent'], tags: ['后端'] })
   }
 
   it('状态精确过滤', async () => {
     await seed()
-    await upd({ name: '登录重构', content: '正文', handler: '张三', repo: ['Ocean'], tags: ['前端'], status: '处理中' })
+    await upd({ name: '登录重构', content: '正文', handler: '张三', relatedCodebases: ['Ocean'], tags: ['前端'], status: '处理中' })
     expect(filterTasks(await list(), '处理中').map(t => t.name)).toEqual(['登录重构'])
   })
 

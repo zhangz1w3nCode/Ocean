@@ -459,7 +459,7 @@ export interface TaskSummary {
   name: string
   status: TaskStatus
   handler: string
-  repo: string[]
+  relatedCodebases: string[]
   tags: string[]
   relatedTasks: string[]
   createdAt: string
@@ -496,7 +496,7 @@ export interface CreateTaskPayload {
   name: string
   content: string
   handler?: string
-  repo?: string[]
+  relatedCodebases?: string[]
   tags?: string[]
   relatedTasks?: string[]
   context?: string
@@ -507,7 +507,7 @@ export interface UpdateTaskPayload {
   name: string
   content: string
   handler?: string
-  repo?: string[]
+  relatedCodebases?: string[]
   tags?: string[]
   relatedTasks?: string[]
   status?: TaskStatus

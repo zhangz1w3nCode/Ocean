@@ -558,7 +558,7 @@ flag:
   --content <text>            任务内容（必填，仅此一种；禁用 --content-file / stdin）
                                 正文开头不得包含 YAML frontmatter
   --handler <name>             处理人（选填）
-  --repo <r1,r2>              关联仓库（逗号分隔）
+  --related-codebases <r1,r2>  关联仓库（逗号分隔）
   --tags <t1,t2>               标签（逗号分隔）
   --related <n1,n2>            关联任务（逗号分隔，仅收录已存在的任务）
   --context <text>             初始上下文内容（写入名为「初始上下文」的上下文文件）
@@ -577,12 +577,12 @@ flag（未提供的字段保留原值）:
   --content <text>            任务内容（仅此一种，禁用 --content-file / stdin；
                                 不传则保留原正文，正文开头不得包含 YAML frontmatter）
   --handler <name>             处理人
-  --repo <r1,r2>              关联仓库（逗号分隔）
+  --related-codebases <r1,r2>  关联仓库（逗号分隔）
   --tags <t1,t2>               标签（逗号分隔）
   --related <n1,n2>            关联任务（逗号分隔）
   --status <状态>             推进状态（等待处理|处理中|已完成|已取消）
 
-清空某字段用显式开关：--no-handler / --no-repo / --no-tags / --no-related
+清空某字段用显式开关：--no-handler / --no-related-codebases / --no-tags / --no-related
 （不能传空字符串：解析器会把 --flag 后紧跟的 -- 开头内容视为另一个 flag）
 
 状态机（仅前进，终态锁定）:

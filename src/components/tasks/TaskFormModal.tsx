@@ -93,7 +93,7 @@ export const TaskFormModal: FC<TaskFormModalProps> = ({
         setName(task?.name || '')
         setContent(task?.content || '')
         setHandler(task?.handler || '')
-        setRepoList(task?.repo || [])
+        setRepoList(task?.relatedCodebases || [])
         setTagsList(task?.tags || [])
         setRelatedTaskList(task?.relatedTasks || [])
         setStatus(taskStatus)
@@ -147,7 +147,7 @@ export const TaskFormModal: FC<TaskFormModalProps> = ({
         name: name.trim(),
         content: content.trim(),
         handler: handler.trim(),
-        repo: repoList,
+        relatedCodebases: repoList,
         tags: tagsList,
         relatedTasks: relatedTaskList,
       } as CreateTaskPayload)
@@ -157,7 +157,7 @@ export const TaskFormModal: FC<TaskFormModalProps> = ({
         name: name.trim(),
         content: content.trim(),
         handler: handler.trim(),
-        repo: repoList,
+        relatedCodebases: repoList,
         tags: tagsList,
         relatedTasks: relatedTaskList,
         status: canSelectStatus ? status : undefined,

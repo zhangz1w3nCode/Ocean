@@ -28,7 +28,7 @@ export interface TaskSummary {
   name: string
   status: TaskStatus
   handler: string
-  repo: string[]
+  relatedCodebases: string[]
   tags: string[]
   relatedTasks: string[]
   createdAt: string
@@ -61,7 +61,7 @@ export interface TaskWritePayload {
   name?: string
   content?: string
   handler?: string
-  repo?: string[]
+  relatedCodebases?: string[]
   tags?: string[]
   relatedTasks?: string[]
   status?: string
@@ -148,7 +148,7 @@ function parseTaskMd(raw: string): { frontmatter: Record<string, unknown>; body:
 }
 
 // 序列化 TASK.md：yaml 库处理多行内容与特殊字符，禁止手拼字符串。
-// 数组字段（tags/repo 等）一律流式 [ a, b ] / []，不用块式 - 列表。
+// 数组字段（tags/related_codebases 等）一律流式 [ a, b ] / []，不用块式 - 列表。
 function serializeTaskMd(frontmatter: Record<string, unknown>, body: string): string {
   const doc = new YAML.Document(frontmatter)
   YAML.visit(doc, { Seq(_key: any, node: any) { node.flow = true; return undefined } })
@@ -157,7 +157,7 @@ function serializeTaskMd(frontmatter: Record<string, unknown>, body: string): st
   return `---\n${yamlText}---\n\n${trimmedBody ? trimmedBody + '\n' : ''}`
 }
 
-// 字符串数组归一化：去空去重，上限 20 项（repo/tags 共用）
+// 字符串数组归一化：去空去重，上限 20 项（related_codebases/tags 共用）
 function normalizeTaskStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return []
   const seen = new Set<string>()
@@ -180,7 +180,7 @@ interface InternalTask {
   name: string
   status: TaskStatus
   handler: string
-  repo: string[]
+  relatedCodebases: string[]
   tags: string[]
   relatedTasks: string[]
   content: string
@@ -200,7 +200,7 @@ function readTaskFile(root: string, taskName: string): InternalTask | null {
     name: String(frontmatter.name || taskName),
     status: (TASK_STATUSES as readonly string[]).includes(String(status)) ? (status as TaskStatus) : TASK_STATUS_PENDING,
     handler: frontmatter.handler != null ? String(frontmatter.handler).trim() : '',
-    repo: readTaskArrayField(frontmatter.repo),
+    relatedCodebases: readTaskArrayField(frontmatter.related_codebases),
     tags: readTaskArrayField(frontmatter.tags),
     relatedTasks: readTaskArrayField(frontmatter.related_tasks),
     content: body,
@@ -216,7 +216,7 @@ function taskSummaryOf(task: InternalTask, dirName?: string): TaskSummary {
     name: dirName || task.name,
     status: task.status,
     handler: task.handler,
-    repo: task.repo,
+    relatedCodebases: task.relatedCodebases,
     tags: task.tags,
     relatedTasks: task.relatedTasks,
     createdAt: task.createdAt,
@@ -305,7 +305,7 @@ export async function createTask(root: string, payload: TaskWritePayload): Promi
 
     const now = new Date().toISOString()
     const handler = typeof p.handler === 'string' ? p.handler.trim() : ''
-    const repo = normalizeTaskStringArray(p.repo)
+    const relatedCodebases = normalizeTaskStringArray(p.relatedCodebases)
     const tags = normalizeTaskStringArray(p.tags)
     // 关联任务：仅收录当前已存在的任务名，防止引用不存在的任务
     const relatedTasks = normalizeTaskStringArray(p.relatedTasks).filter(t => fs.existsSync(taskDir(root, t)))
@@ -313,7 +313,7 @@ export async function createTask(root: string, payload: TaskWritePayload): Promi
       name,
       status: TASK_STATUS_PENDING,
       handler,
-      repo,
+      related_codebases: relatedCodebases,
       tags,
       related_tasks: relatedTasks,
       created_at: now,
@@ -329,7 +329,7 @@ export async function createTask(root: string, payload: TaskWritePayload): Promi
       appendTaskTrace(root, name, { ts: now, type: 'context-created', name: contextName, message: `新增上下文：${contextName}` })
     }
 
-    return { success: true, task: { name, status: TASK_STATUS_PENDING, handler, repo, tags, relatedTasks, createdAt: now, updatedAt: now } }
+    return { success: true, task: { name, status: TASK_STATUS_PENDING, handler, relatedCodebases, tags, relatedTasks, createdAt: now, updatedAt: now } }
   })
 }
 
@@ -343,7 +343,7 @@ export async function updateTask(root: string, payload: TaskWritePayload): Promi
     const content = typeof p.content === 'string' ? p.content.trim() : ''
     if (!content) return { success: false, error: '任务内容不能为空' }
     const handler = typeof p.handler === 'string' ? p.handler.trim() : ''
-    const repo = normalizeTaskStringArray(p.repo)
+    const relatedCodebases = normalizeTaskStringArray(p.relatedCodebases)
     const tags = normalizeTaskStringArray(p.tags)
     // 关联任务：仅收录当前已存在的任务名（排除自身）
     const relatedTasks = normalizeTaskStringArray(p.relatedTasks).filter(t => t !== name && fs.existsSync(taskDir(root, t)))
@@ -378,7 +378,7 @@ export async function updateTask(root: string, payload: TaskWritePayload): Promi
     const changedFields: string[] = []
     if (content !== existing.content.trim()) changedFields.push('任务内容')
     if (handler !== existing.handler) changedFields.push('处理人')
-    if (JSON.stringify(repo) !== JSON.stringify(existing.repo)) changedFields.push('关联仓库')
+    if (JSON.stringify(relatedCodebases) !== JSON.stringify(existing.relatedCodebases)) changedFields.push('关联仓库')
     if (JSON.stringify(tags) !== JSON.stringify(existing.tags)) changedFields.push('标签')
     if (JSON.stringify(relatedTasks) !== JSON.stringify(existing.relatedTasks)) changedFields.push('关联任务')
     const statusChanged = nextStatus !== existing.status
@@ -386,12 +386,14 @@ export async function updateTask(root: string, payload: TaskWritePayload): Promi
       return { success: true, task: taskSummaryOf(existing, name) }
     }
 
-    // 以解析出的原始 frontmatter 为基底增量更新，未知字段原样保留
+    // 以解析出的原始 frontmatter 为基底增量更新，未知字段原样保留；
+    // 旧字段名 repo 已废弃（不做兼容），写入时一并清除
     const frontmatter = { ...existing._raw }
+    delete frontmatter.repo
     frontmatter.name = name
     frontmatter.status = nextStatus
     frontmatter.handler = handler
-    frontmatter.repo = repo
+    frontmatter.related_codebases = relatedCodebases
     frontmatter.tags = tags
     frontmatter.related_tasks = relatedTasks
     frontmatter.updated_at = now
@@ -405,7 +407,7 @@ export async function updateTask(root: string, payload: TaskWritePayload): Promi
       appendTaskTrace(root, name, { ts: now, type: 'status-changed', from: existing.status, to: nextStatus, message: `状态变更：${existing.status} → ${nextStatus}` })
     }
 
-    return { success: true, task: { name, status: nextStatus, handler, repo, tags, relatedTasks, createdAt: existing.createdAt, updatedAt: now } }
+    return { success: true, task: { name, status: nextStatus, handler, relatedCodebases, tags, relatedTasks, createdAt: existing.createdAt, updatedAt: now } }
   })
 }
 

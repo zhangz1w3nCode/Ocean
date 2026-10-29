@@ -4,6 +4,7 @@
 // 由 CLI 入口 main() 统一捕获。
 import * as taskCore from '../../core/task'
 import type { TaskSummary, TaskDetail, TaskWritePayload, TaskContextPayload, TaskSearchResult } from '../../core/task'
+import * as codebaseCore from '../../core/codebases'
 import { UsageError, printAction, printJson, printDataTable, rawOut, out } from './common'
 
 type Args = {
@@ -37,7 +38,7 @@ function listFlag(key: string, args: Args): string[] | undefined {
   return v === undefined ? undefined : v.split(',').map(s => s.trim()).filter(Boolean)
 }
 
-// 显式清空：--no-handler / --no-repo / --no-tags / --no-related
+// 显式清空：--no-handler / --no-related-codebases / --no-tags / --no-related
 function cleared(key: string, args: Args): boolean {
   const v = args.flags[`no-${key}`]
   if (typeof v === 'string') throw new UsageError(`--no-${key} 是开关，不接受值；要设值请用 --${key} <值>`)
@@ -88,10 +89,23 @@ export function filterTasks(tasks: TaskSummary[], status?: string, keyword?: str
     if (!q) return true
     return task.name.toLowerCase().includes(q) ||
       task.handler.toLowerCase().includes(q) ||
-      task.repo.some(r => r.toLowerCase().includes(q)) ||
+      task.relatedCodebases.some(r => r.toLowerCase().includes(q)) ||
       task.tags.some(t => t.toLowerCase().includes(q)) ||
       task.status.toLowerCase().includes(q)
   })
+}
+
+// 关联代码库校验：CLI 是自由输入面，传入的代码库名必须是当前项目 .codebases/ 下
+// 真实存在的（GUI 为选择模式天然满足）；不存在的直接拦截为用法错误
+async function validateRelatedCodebases(root: string, names: string[]): Promise<void> {
+  if (!names.length) return
+  const r = await codebaseCore.list(root)
+  if (!r.success) throw new Error(r.error)
+  const available = new Set(r.codebases.map(c => c.name))
+  const missing = names.filter(n => !available.has(n))
+  if (missing.length) {
+    throw new UsageError(`代码库不存在: ${missing.join(', ')}（可用代码库可用 ocean codebases list 查看，或先在「Ocean桌面端-代码库-管理」页添加）`)
+  }
 }
 
 export async function handleTask(root: string, args: Args): Promise<void> {
@@ -106,7 +120,7 @@ export async function handleTask(root: string, args: Args): Promise<void> {
       } else {
         printDataTable(
           ['任务', '状态', '处理人', '关联仓库', '标签', '更新时间'],
-          tasks.map(t => [t.name, t.status, t.handler || '-', t.repo.join(',') || '-', t.tags.join(',') || '-', t.updatedAt || '-']),
+          tasks.map(t => [t.name, t.status, t.handler || '-', t.relatedCodebases.join(',') || '-', t.tags.join(',') || '-', t.updatedAt || '-']),
         )
       }
       break
@@ -124,7 +138,7 @@ export async function handleTask(root: string, args: Args): Promise<void> {
         ['名称', t.name],
         ['状态', t.status],
         ['处理人', t.handler || '-'],
-        ['关联仓库', t.repo.join(', ') || '-'],
+        ['关联仓库', t.relatedCodebases.join(', ') || '-'],
         ['标签', t.tags.join(', ') || '-'],
         ['关联任务', t.relatedTasks.join(', ') || '-'],
         ['创建时间', t.createdAt || '-'],
@@ -145,8 +159,11 @@ export async function handleTask(root: string, args: Args): Promise<void> {
       const payload: TaskWritePayload = { name, content }
       const handler = strFlag('handler', args)
       if (handler !== undefined) payload.handler = handler
-      const repo = listFlag('repo', args)
-      if (repo) payload.repo = repo
+      const relatedCodebases = listFlag('related-codebases', args)
+      if (relatedCodebases) {
+        await validateRelatedCodebases(root, relatedCodebases)
+        payload.relatedCodebases = relatedCodebases
+      }
       const tags = listFlag('tags', args)
       if (tags) payload.tags = tags
       const related = listFlag('related', args)
@@ -169,14 +186,17 @@ export async function handleTask(root: string, args: Args): Promise<void> {
         throw new UsageError('任务内容不能为空；只改其它字段时请不要传 --content')
       }
       const handlerFlag = strFlag('handler', args)
-      const repoFlag = listFlag('repo', args)
+      const relatedCodebasesFlag = listFlag('related-codebases', args)
+      if (relatedCodebasesFlag !== undefined) {
+        await validateRelatedCodebases(root, relatedCodebasesFlag)
+      }
       const tagsFlag = listFlag('tags', args)
       const relatedFlag = listFlag('related', args)
       const payload: TaskWritePayload = {
         name,
         content: content !== undefined ? content : current.content,
         handler: cleared('handler', args) ? '' : (handlerFlag !== undefined ? handlerFlag : current.handler),
-        repo: cleared('repo', args) ? [] : (repoFlag !== undefined ? repoFlag : current.repo),
+        relatedCodebases: cleared('related-codebases', args) ? [] : (relatedCodebasesFlag !== undefined ? relatedCodebasesFlag : current.relatedCodebases),
         tags: cleared('tags', args) ? [] : (tagsFlag !== undefined ? tagsFlag : current.tags),
         relatedTasks: cleared('related', args) ? [] : (relatedFlag !== undefined ? relatedFlag : current.relatedTasks),
       }
@@ -206,7 +226,7 @@ export async function handleTask(root: string, args: Args): Promise<void> {
           const meta = [
             r.status,
             r.handler ? `处理人: ${r.handler}` : '',
-            r.repo.length ? `仓库: ${r.repo.join(', ')}` : '',
+            r.relatedCodebases.length ? `仓库: ${r.relatedCodebases.join(', ')}` : '',
             r.tags.length ? `标签: ${r.tags.join(', ')}` : '',
           ].filter(Boolean).join('  |  ')
           lines.push(`# ${r.name}  (${meta})`)
