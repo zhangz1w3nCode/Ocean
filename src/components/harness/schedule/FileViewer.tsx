@@ -128,18 +128,18 @@ export const FileViewer: FC<{ width: number; onResizeStart: (e: React.MouseEvent
         {filePanelTab === 'preview' && hasFile && (
           <button
             onClick={() => void handleRefresh()}
-            className="p-1.5 rounded-lg text-macos-text-tertiary hover:text-macos-text hover:bg-macos-bg transition-colors shrink-0"
+            className="w-9 h-9 rounded-xl grid place-items-center text-macos-text-tertiary hover:text-macos-text hover:bg-macos-bg transition-colors shrink-0"
             title="重新读取"
           >
-            <RefreshCw size={13} strokeWidth={1.5} />
+            <RefreshCw size={15} strokeWidth={1.5} />
           </button>
         )}
         <button
           onClick={closeFileViewer}
-          className="p-1.5 rounded-lg text-macos-text-tertiary hover:text-macos-text hover:bg-macos-bg transition-colors shrink-0"
+          className="w-9 h-9 rounded-xl grid place-items-center text-macos-text-tertiary hover:text-macos-text hover:bg-macos-bg transition-colors shrink-0"
           title="收起面板"
         >
-          <PanelLeft size={13} strokeWidth={1.5} />
+          <PanelLeft size={15} strokeWidth={1.5} />
         </button>
       </div>
 

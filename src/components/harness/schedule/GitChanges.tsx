@@ -31,13 +31,13 @@ const fileIconClass = (status: string): string => {
   }
 }
 
-const ChangeRow: FC<{ file: GitChangeFile; source: 'branch' | 'worktree'; onOpenDiff: (path: string, source: 'branch' | 'worktree') => void; treeMode?: boolean; depth?: number }> = ({ file, source, onOpenDiff, treeMode = false, depth = 0 }) => {
+const ChangeRow: FC<{ file: GitChangeFile; source: 'branch' | 'worktree' | 'staged' | 'unstaged'; onOpenDiff: (path: string, source: 'branch' | 'worktree' | 'staged' | 'unstaged') => void; treeMode?: boolean; depth?: number }> = ({ file, source, onOpenDiff, treeMode = false, depth = 0 }) => {
   const name = file.path.split('/').pop() ?? file.path
   const dir = file.path.split('/').slice(0, -1).join('/')
   return (
     <button
       onClick={() => onOpenDiff(file.path, source)}
-      className="w-full flex items-center gap-1.5 py-1 pr-2 rounded-md text-xs text-left transition-colors hover:bg-macos-bg group"
+      className="w-full flex items-center gap-1.5 py-1.5 pr-2 rounded-md text-xs text-left transition-colors hover:bg-macos-bg group"
       style={treeMode ? { paddingLeft: depth * 12 + 24 } : undefined}
       title={file.path}
     >
@@ -84,9 +84,10 @@ const Section: FC<{
 
 const FileTree: FC<{
   files: GitChangeFile[]
-  source: 'branch' | 'worktree'
-  onOpenDiff: (path: string, source: 'branch' | 'worktree') => void
+  source: 'branch' | 'worktree' | 'staged' | 'unstaged'
+  onOpenDiff: (path: string, source: 'branch' | 'worktree' | 'staged' | 'unstaged') => void
 }> = ({ files, source, onOpenDiff }) => {
+  const [dirCollapsed, setDirCollapsed] = useState<Record<string, boolean>>({})
   // 构建目录树：按路径段聚合
   type TreeNode = { name: string; children: Map<string, TreeNode>; file?: GitChangeFile }
   const root: TreeNode = { name: '', children: new Map() }
@@ -102,7 +103,7 @@ const FileTree: FC<{
     node.children.set(fileName, { name: fileName, children: new Map(), file: f })
   }
 
-  const renderNode = (node: TreeNode, depth: number): React.ReactNode => {
+  const renderNode = (node: TreeNode, depth: number, prefix: string): React.ReactNode => {
     const entries = [...node.children.entries()].sort(([a, av], [b, bv]) => {
       const aDir = !av.file
       const bDir = !bv.file
@@ -113,20 +114,25 @@ const FileTree: FC<{
       if (child.file) {
         return <ChangeRow key={name} file={child.file} source={source} onOpenDiff={onOpenDiff} treeMode depth={depth} />
       }
+      const dirKey = prefix ? `${prefix}/${name}` : name
+      const collapsed = !!dirCollapsed[dirKey]
       return (
         <div key={name}>
           <div
-            className="flex items-center gap-1.5 py-1 pr-2 rounded-md text-xs text-macos-text-secondary hover:bg-macos-bg transition-colors cursor-default"
+            className="flex items-center gap-1.5 py-1.5 pr-2 rounded-md text-xs text-macos-text-secondary hover:bg-macos-bg transition-colors cursor-pointer select-none"
             style={{ paddingLeft: depth * 12 + 24 }}
+            onClick={() => setDirCollapsed((c) => ({ ...c, [dirKey]: !c[dirKey] }))}
           >
-            <ChevronDown size={11} strokeWidth={1.5} className="text-macos-text-tertiary shrink-0" />
-            <FolderTree size={12} strokeWidth={1.5} className="text-macos-text-tertiary shrink-0" />
+            {collapsed
+              ? <ChevronRight size={11} strokeWidth={1.5} className="text-macos-text-tertiary shrink-0" />
+              : <ChevronDown size={11} strokeWidth={1.5} className="text-macos-text-tertiary shrink-0" />}
+            <Folder size={12} strokeWidth={1.5} className="text-macos-text-tertiary shrink-0" />
             <span className="truncate">{name}</span>
             <span className="ml-auto text-[10px] text-macos-text-tertiary tabular-nums shrink-0">
               {countFiles(child)}
             </span>
           </div>
-          {renderNode(child, depth + 1)}
+          {!collapsed && renderNode(child, depth + 1, dirKey)}
         </div>
       )
     })
@@ -141,7 +147,7 @@ const FileTree: FC<{
     return count
   }
 
-  return <div className="px-1.5">{renderNode(root, 0)}</div>
+  return <div className="px-1.5">{renderNode(root, 0, '')}</div>
 }
 
 // Git 变更 Tab（对齐 DSH 源代码管理面板）：分支对比 + 提交时间线 + 分支变更/工作区变更
@@ -165,7 +171,7 @@ export const GitChanges: FC = () => {
   const [srcOpen, setSrcOpen] = useState(false)
   const [srcQuery, setSrcQuery] = useState('')
   const [baseQuery, setBaseQuery] = useState('')
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({ commits: true })
   const viewMode = useHarnessStore((s) => s.gitViewMode)
   const setViewMode = useHarnessStore((s) => s.setGitViewMode)
   const diffMode = useHarnessStore((s) => s.diffMode)
@@ -186,7 +192,7 @@ export const GitChanges: FC = () => {
 
   const toggle = (key: string) => setCollapsed((c) => ({ ...c, [key]: !c[key] }))
 
-  const openDiff = (filePath: string, source: 'branch' | 'worktree') => {
+  const openDiff = (filePath: string, source: 'branch' | 'worktree' | 'staged' | 'unstaged') => {
     void openFileDiff(filePath, source)
   }
 
@@ -442,22 +448,6 @@ export const GitChanges: FC = () => {
         {/* 非 git 仓库：无变更对比，显示为空（不报错） */}
         {gitStatus && (
           <>
-            <Section title="提交" count={gitStatus.commits.length} collapsed={!!collapsed.commits} onToggle={() => toggle('commits')}>
-              {gitStatus.commits.length === 0 && <div className="px-2.5 py-1 text-[11px] text-macos-text-tertiary">领先基线分支 0 个提交</div>}
-              <div className="relative px-2.5">
-                {gitStatus.commits.map((line, i) => (
-                  <div key={i} className="relative flex items-start gap-2 py-0.5 pl-0.5">
-                    <span className="relative z-10 mt-0.5 shrink-0">
-                      <GitCommitHorizontal size={11} strokeWidth={1.8} className={i === 0 ? 'text-macos-warning' : 'text-macos-text-tertiary'} />
-                    </span>
-                    <span className="text-[11px] text-macos-text-secondary truncate" title={line}>
-                      {line.length > 60 ? `${line.slice(0, 60)}…` : line}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </Section>
-
             <Section title="分支变更" count={gitStatus.branchFiles.length} collapsed={!!collapsed.branch} onToggle={() => toggle('branch')}>
               {gitStatus.branchFiles.length === 0 && <div className="px-2.5 py-1 text-[11px] text-macos-text-tertiary">与基线分支无差异</div>}
               {viewMode === 'tree' ? (
@@ -471,13 +461,39 @@ export const GitChanges: FC = () => {
               )}
             </Section>
 
-            <Section title="工作区变更" count={gitStatus.worktreeFiles.length} collapsed={!!collapsed.worktree} onToggle={() => toggle('worktree')}>
-              {gitStatus.worktreeFiles.length === 0 && <div className="px-2.5 py-1 text-[11px] text-macos-text-tertiary">工作区干净</div>}
+            <Section title="已暂存" count={gitStatus.stagedFiles.length} collapsed={!!collapsed.staged} onToggle={() => toggle('staged')}>
+              {gitStatus.stagedFiles.length === 0 && <div className="px-2.5 py-1 text-[11px] text-macos-text-tertiary">暂存区干净</div>}
               {viewMode === 'tree' ? (
-                <FileTree files={gitStatus.worktreeFiles} source="worktree" onOpenDiff={openDiff} />
+                <FileTree files={gitStatus.stagedFiles} source="staged" onOpenDiff={openDiff} />
               ) : (
                 <div className="px-1.5">
-                  {gitStatus.worktreeFiles.map((f) => (
+                  {gitStatus.stagedFiles.map((f) => (
+                    <ChangeRow key={f.path} file={f} source="staged" onOpenDiff={openDiff} />
+                  ))}
+                </div>
+              )}
+            </Section>
+
+            <Section title="工作区变更" count={gitStatus.unstagedFiles.length} collapsed={!!collapsed.unstaged} onToggle={() => toggle('unstaged')}>
+              {gitStatus.unstagedFiles.length === 0 && <div className="px-2.5 py-1 text-[11px] text-macos-text-tertiary">工作区干净</div>}
+              {viewMode === 'tree' ? (
+                <FileTree files={gitStatus.unstagedFiles} source="unstaged" onOpenDiff={openDiff} />
+              ) : (
+                <div className="px-1.5">
+                  {gitStatus.unstagedFiles.map((f) => (
+                    <ChangeRow key={f.path} file={f} source="unstaged" onOpenDiff={openDiff} />
+                  ))}
+                </div>
+              )}
+            </Section>
+
+            <Section title="未跟踪" count={gitStatus.untrackedFiles.length} collapsed={!!collapsed.untracked} onToggle={() => toggle('untracked')}>
+              {gitStatus.untrackedFiles.length === 0 && <div className="px-2.5 py-1 text-[11px] text-macos-text-tertiary">无未跟踪文件</div>}
+              {viewMode === 'tree' ? (
+                <FileTree files={gitStatus.untrackedFiles} source="worktree" onOpenDiff={openDiff} />
+              ) : (
+                <div className="px-1.5">
+                  {gitStatus.untrackedFiles.map((f) => (
                     <ChangeRow key={f.path} file={f} source="worktree" onOpenDiff={openDiff} />
                   ))}
                 </div>
@@ -486,6 +502,40 @@ export const GitChanges: FC = () => {
           </>
         )}
       </div>
+
+      {/* 提交时间线：固定面板底部，点击展开向上滑出（不随上方列表滚动） */}
+      {gitStatus && (
+        <div
+          className="shrink-0 border-t border-macos-border/60 overflow-hidden transition-[max-height] duration-200 ease-out"
+          style={{ maxHeight: collapsed.commits ? 33 : '45vh' }}
+        >
+          <button
+            onClick={() => toggle('commits')}
+            className="w-full flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-macos-text-secondary hover:bg-macos-bg/60 transition-colors"
+          >
+            {collapsed.commits
+              ? <ChevronRight size={11} strokeWidth={1.5} className="shrink-0 text-macos-text-tertiary" />
+              : <ChevronDown size={11} strokeWidth={1.5} className="shrink-0 text-macos-text-tertiary" />}
+            <span className="font-medium">提交</span>
+            <span className="text-[10px] text-macos-text-tertiary tabular-nums">{gitStatus.commits.length}</span>
+          </button>
+          <div className="overflow-y-auto" style={{ maxHeight: 'calc(45vh - 33px)' }}>
+            {gitStatus.commits.length === 0 && <div className="px-2.5 py-1 text-[11px] text-macos-text-tertiary">领先基线分支 0 个提交</div>}
+            <div className="relative px-2.5 pb-1.5">
+              {gitStatus.commits.map((line, i) => (
+                <div key={i} className="relative flex items-start gap-2 py-0.5 pl-0.5">
+                  <span className="relative z-10 mt-0.5 shrink-0">
+                    <GitCommitHorizontal size={11} strokeWidth={1.8} className={i === 0 ? 'text-macos-warning' : 'text-macos-text-tertiary'} />
+                  </span>
+                  <span className="text-[11px] text-macos-text-secondary truncate" title={line}>
+                    {line.length > 60 ? `${line.slice(0, 60)}…` : line}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

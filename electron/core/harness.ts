@@ -821,7 +821,9 @@ export async function gitRepoStatus(repoPath: string, sourceBranch: string, base
   behind: number
   commits: string[]
   branchFiles: HarnessGitFileEntry[]
-  worktreeFiles: HarnessGitFileEntry[]
+  stagedFiles: HarnessGitFileEntry[]
+  unstagedFiles: HarnessGitFileEntry[]
+  untrackedFiles: HarnessGitFileEntry[]
 }>> {
   const cwd = repoPath
   const env = buildSpawnEnv(null)
@@ -839,7 +841,9 @@ export async function gitRepoStatus(repoPath: string, sourceBranch: string, base
     const nameStatus = await run(['diff', '--name-status', '--no-renames', `${base}...${source}`])
     const numstat = await run(['diff', '--numstat', '--no-renames', `${base}...${source}`])
     const status = await run(['status', '--porcelain'])
-    const wtNumstat = await run(['diff', '--numstat', '--no-renames', 'HEAD'])
+    // 增删统计分渠道：暂存区 vs HEAD、工作区 vs 暂存区（未跟踪无统计）
+    const stagedNumstat = await run(['diff', '--cached', '--numstat', '--no-renames'])
+    const unstagedNumstat = await run(['diff', '--numstat', '--no-renames'])
     if (log.status !== 0 || nameStatus.status !== 0 || numstat.status !== 0 || status.status !== 0) {
       return fail(new Error('git 信息读取失败'))
     }
@@ -868,33 +872,53 @@ export async function gitRepoStatus(repoPath: string, sourceBranch: string, base
         deletions: n.deletions ?? null,
       })
     }
-    const wtNumByPath: Record<string, { additions: number | null; deletions: number | null }> = {}
-    for (const line of String(wtNumstat.stdout || '').split('\n')) {
-      if (!line.trim()) continue
-      const parts = line.split('\t')
-      if (parts.length >= 3) {
-        wtNumByPath[parts[2]] = {
-          additions: parts[0] === '-' ? null : Number(parts[0]),
-          deletions: parts[1] === '-' ? null : Number(parts[1]),
+    // porcelain XY 拆分：X=暂存区状态、Y=工作区状态、??=未跟踪
+    // 同一文件可同时出现在已暂存与工作区两组（如 MM）
+    const parseNumstat = (out: string): Record<string, { additions: number | null; deletions: number | null }> => {
+      const by: Record<string, { additions: number | null; deletions: number | null }> = {}
+      for (const line of String(out || '').split('\n')) {
+        if (!line.trim()) continue
+        const parts = line.split('\t')
+        if (parts.length >= 3) {
+          by[parts[2]] = {
+            additions: parts[0] === '-' ? null : Number(parts[0]),
+            deletions: parts[1] === '-' ? null : Number(parts[1]),
+          }
         }
       }
+      return by
     }
-    const worktreeFiles: HarnessGitFileEntry[] = []
+    const stagedNumByPath = parseNumstat(stagedNumstat.stdout)
+    const unstagedNumByPath = parseNumstat(unstagedNumstat.stdout)
+    const stagedFiles: HarnessGitFileEntry[] = []
+    const unstagedFiles: HarnessGitFileEntry[] = []
+    const untrackedFiles: HarnessGitFileEntry[] = []
     for (const rawLine of String(status.stdout || '').split('\n')) {
       if (!rawLine.trim()) continue
       const code = rawLine.slice(0, 2)
       const filePath = rawLine.slice(3).trim().replace(/^"|"$/g, '')
-      let letter = '?'
-      if (code.startsWith('??')) letter = 'U'
-      else if (code[0] !== ' ') letter = code[0]
-      else letter = code[1]
-      const n = wtNumByPath[filePath] || {}
-      worktreeFiles.push({
-        path: filePath,
-        status: letter,
-        additions: n.additions ?? null,
-        deletions: n.deletions ?? null,
-      })
+      if (code.startsWith('??')) {
+        untrackedFiles.push({ path: filePath, status: 'U', additions: null, deletions: null })
+        continue
+      }
+      if (code[0] !== ' ') {
+        const n = stagedNumByPath[filePath] || {}
+        stagedFiles.push({
+          path: filePath,
+          status: code[0],
+          additions: n.additions ?? null,
+          deletions: n.deletions ?? null,
+        })
+      }
+      if (code[1] !== ' ') {
+        const n = unstagedNumByPath[filePath] || {}
+        unstagedFiles.push({
+          path: filePath,
+          status: code[1],
+          additions: n.additions ?? null,
+          deletions: n.deletions ?? null,
+        })
+      }
     }
     let ahead = 0
     let behind = 0
@@ -913,13 +937,15 @@ export async function gitRepoStatus(repoPath: string, sourceBranch: string, base
       behind,
       commits,
       branchFiles,
-      worktreeFiles,
+      stagedFiles,
+      unstagedFiles,
+      untrackedFiles,
     })
   })
 }
 
 // 读取单个文件的 diff（仓库参数化）：分支变更 base...source / 工作区变更 HEAD + 未跟踪文件
-export async function gitRepoDiffFile(repoPath: string, relativePath: string, source: 'branch' | 'worktree', baseBranch: string, sourceBranch: string): Promise<HarnessResult<{ diff: string; path: string }>> {
+export async function gitRepoDiffFile(repoPath: string, relativePath: string, source: 'branch' | 'worktree' | 'staged' | 'unstaged', baseBranch: string, sourceBranch: string): Promise<HarnessResult<{ diff: string; path: string }>> {
   const cwd = repoPath
   const env = buildSpawnEnv(null)
   const file = String(relativePath || '').trim()
@@ -929,6 +955,18 @@ export async function gitRepoDiffFile(repoPath: string, relativePath: string, so
     return fail(new Error('路径越界：仅可读取仓库内的文件'))
   }
   return guard(async () => {
+    if (source === 'staged') {
+      // 已暂存：暂存区 vs HEAD
+      const res = await execGit(cwd, ['diff', '--cached', '--', file], 15000, env)
+      if (res.status !== 0) return fail(new Error('git diff 失败'))
+      return ok({ diff: String(res.stdout || ''), path: file })
+    }
+    if (source === 'unstaged') {
+      // 工作区变更：工作区 vs 暂存区
+      const res = await execGit(cwd, ['diff', '--', file], 15000, env)
+      if (res.status !== 0) return fail(new Error('git diff 失败'))
+      return ok({ diff: String(res.stdout || ''), path: file })
+    }
     if (source === 'worktree') {
       const tracked = await execGit(cwd, ['diff', 'HEAD', '--', file], 15000, env)
       if (tracked.status === 0 && String(tracked.stdout || '').trim()) {

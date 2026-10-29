@@ -36,10 +36,12 @@ type DesktopModule = {
     behind?: number
     commits?: string[]
     branchFiles?: { path: string; status: string; additions: number | null; deletions: number | null }[]
-    worktreeFiles?: { path: string; status: string; additions: number | null; deletions: number | null }[]
+    stagedFiles?: { path: string; status: string; additions: number | null; deletions: number | null }[]
+    unstagedFiles?: { path: string; status: string; additions: number | null; deletions: number | null }[]
+    untrackedFiles?: { path: string; status: string; additions: number | null; deletions: number | null }[]
     error?: string
   }>
-  gitRepoDiffFile: (repoPath: string, relativePath: string, source: 'branch' | 'worktree', baseBranch: string, sourceBranch: string) => Promise<{ success: boolean; diff?: string; path?: string; error?: string }>
+  gitRepoDiffFile: (repoPath: string, relativePath: string, source: 'branch' | 'worktree' | 'staged' | 'unstaged', baseBranch: string, sourceBranch: string) => Promise<{ success: boolean; diff?: string; path?: string; error?: string }>
   onHarnessEvent: (callback: (payload: HarnessEventPayload) => void) => () => void
 }
 
@@ -217,7 +219,7 @@ export interface FileViewerState {
   path: string
   content: string
   mode: 'content' | 'diff'
-  diffSource?: 'branch' | 'worktree'
+  diffSource?: 'branch' | 'worktree' | 'staged' | 'unstaged'
 }
 
 // Git 变更概览（当前分支 vs 可配置基线分支）
@@ -235,7 +237,9 @@ export interface GitStatusData {
   behind: number
   commits: string[]
   branchFiles: GitChangeFile[]
-  worktreeFiles: GitChangeFile[]
+  stagedFiles: GitChangeFile[]
+  unstagedFiles: GitChangeFile[]
+  untrackedFiles: GitChangeFile[]
 }
 
 const DIALOG_METHODS = new Set(['select', 'confirm', 'input', 'editor'])
@@ -715,7 +719,7 @@ interface HarnessStore {
   loadGitStatus: () => Promise<void>
   loadGitBranches: (repoPath: string) => Promise<void>
   openFileViewer: (sessionId: string, filePath: string) => Promise<void>
-  openFileDiff: (filePath: string, source: 'branch' | 'worktree') => Promise<void>
+  openFileDiff: (filePath: string, source: 'branch' | 'worktree' | 'staged' | 'unstaged') => Promise<void>
   toggleFileViewer: () => void
   refreshFileViewer: () => Promise<string | null>
   closeFileViewer: () => void
@@ -879,7 +883,9 @@ export const useHarnessStore = create<HarnessStore>((set, get) => {
           behind: res.behind ?? 0,
           commits: res.commits ?? [],
           branchFiles: res.branchFiles ?? [],
-          worktreeFiles: res.worktreeFiles ?? [],
+          stagedFiles: res.stagedFiles ?? [],
+          unstagedFiles: res.unstagedFiles ?? [],
+          untrackedFiles: res.untrackedFiles ?? [],
         },
       })
     },

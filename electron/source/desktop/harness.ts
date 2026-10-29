@@ -117,7 +117,9 @@ export async function gitRepoStatus(repoPath: string, sourceBranch: string, base
   behind: number
   commits: string[]
   branchFiles: HarnessGitFileEntry[]
-  worktreeFiles: HarnessGitFileEntry[]
+  stagedFiles: HarnessGitFileEntry[]
+  unstagedFiles: HarnessGitFileEntry[]
+  untrackedFiles: HarnessGitFileEntry[]
 }>> {
   if (!isNonEmptyString(repoPath)) return bad('仓库路径无效')
   if (typeof sourceBranch !== 'string') return bad('来源分支必须是字符串')
@@ -126,10 +128,10 @@ export async function gitRepoStatus(repoPath: string, sourceBranch: string, base
 }
 
 // 单文件 diff（仓库参数化：分支变更 base...source / 工作区变更 HEAD + 未跟踪）
-export async function gitRepoDiffFile(repoPath: string, relativePath: string, source: 'branch' | 'worktree', baseBranch: string, sourceBranch: string): Promise<HarnessResult<{ diff: string; path: string }>> {
+export async function gitRepoDiffFile(repoPath: string, relativePath: string, source: 'branch' | 'worktree' | 'staged' | 'unstaged', baseBranch: string, sourceBranch: string): Promise<HarnessResult<{ diff: string; path: string }>> {
   if (!isNonEmptyString(repoPath)) return bad('仓库路径无效')
   if (typeof relativePath !== 'string') return bad('文件路径必须是字符串')
-  if (source !== 'branch' && source !== 'worktree') return bad(`未知的 diff 来源: ${String(source)}`)
+  if (source !== 'branch' && source !== 'worktree' && source !== 'staged' && source !== 'unstaged') return bad(`未知的 diff 来源: ${String(source)}`)
   if (typeof baseBranch !== 'string') return bad('基线分支必须是字符串')
   if (typeof sourceBranch !== 'string') return bad('来源分支必须是字符串')
   return harnessCore.gitRepoDiffFile(repoPath, relativePath, source, baseBranch, sourceBranch)
