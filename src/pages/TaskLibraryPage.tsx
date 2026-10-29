@@ -47,7 +47,7 @@ const TaskList: FC<{ onCreateClick: () => void }> = ({ onCreateClick }) => {
     const q = searchQuery.toLowerCase()
     return task.name.toLowerCase().includes(q) ||
       task.handler.toLowerCase().includes(q) ||
-      task.repo.some(r => r.toLowerCase().includes(q)) ||
+      task.relatedCodebases.some(r => r.toLowerCase().includes(q)) ||
       task.tags.some(t => t.toLowerCase().includes(q)) ||
       task.status.toLowerCase().includes(q)
   }).sort((a, b) => {
@@ -130,13 +130,13 @@ const TaskList: FC<{ onCreateClick: () => void }> = ({ onCreateClick }) => {
                   {task.handler || '-'}
                 </span>
                 <div className="flex-1 min-w-0 flex justify-center gap-1 overflow-hidden">
-                  {task.repo.length > 0 ? (
+                  {task.relatedCodebases.length > 0 ? (
                     <>
-                      {task.repo.slice(0, 2).map(r => (
+                      {task.relatedCodebases.slice(0, 2).map(r => (
                         <span key={r} className="text-xs px-1.5 py-0.5 rounded-md bg-gray-50 text-gray-600 truncate max-w-[80px]" title={r}>{r}</span>
                       ))}
-                      {task.repo.length > 2 && (
-                        <span className="text-xs text-macos-text-tertiary flex-shrink-0">+{task.repo.length - 2}</span>
+                      {task.relatedCodebases.length > 2 && (
+                        <span className="text-xs text-macos-text-tertiary flex-shrink-0">+{task.relatedCodebases.length - 2}</span>
                       )}
                     </>
                   ) : (
@@ -220,7 +220,7 @@ const TaskDetail: FC<{ onEditClick: () => void }> = ({ onEditClick }) => {
       name: task.name,
       content,
       handler: task.handler,
-      repo: task.repo,
+      relatedCodebases: task.relatedCodebases,
       tags: task.tags,
     })
     if (!success) addToast('保存任务内容失败，请重试', 'error')
@@ -289,9 +289,9 @@ const TaskDetail: FC<{ onEditClick: () => void }> = ({ onEditClick }) => {
                     {task!.handler || <span className="text-macos-text-tertiary">未分配</span>}
                   </DetailField>
                   <DetailField icon={GitBranch} label="仓库">
-                    {task!.repo.length > 0 ? (
+                    {task!.relatedCodebases.length > 0 ? (
                       <span className="flex gap-1 overflow-hidden">
-                        {task!.repo.map(r => (
+                        {task!.relatedCodebases.map(r => (
                           <span key={r} className="text-xs px-1.5 py-0.5 rounded-md bg-gray-50 text-gray-600 truncate max-w-[80px]" title={r}>{r}</span>
                         ))}
                       </span>
