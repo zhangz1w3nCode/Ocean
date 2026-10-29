@@ -1,6 +1,7 @@
 import type { FC } from 'react'
 import { useCallback, useEffect, useState } from 'react'
 import { Terminal, CheckCircle2, XCircle, RefreshCw, Copy, Check } from 'lucide-react'
+import { loadHarnessModule } from '../stores/harnessStore'
 
 const INSTALL_COMMAND = 'npm i -g @earendil-works/pi-coding-agent'
 
@@ -21,12 +22,12 @@ export const HarnessSettingsPage: FC = () => {
   const runDetect = useCallback(async () => {
     setState({ ...INITIAL_STATE, loading: true })
     try {
-      const api = window.electronAPI
-      if (!api || typeof api.harnessDetect !== 'function') {
+      const m = loadHarnessModule()
+      if (!m || typeof m.detectAgent !== 'function') {
         setState({ loading: false, available: null, version: null, piPath: null, error: '当前环境不支持 Harness 会话（仅桌面端可用）' })
         return
       }
-      const res = await api.harnessDetect()
+      const res = await m.detectAgent()
       if (!res.success) {
         setState({ loading: false, available: null, version: null, piPath: null, error: res.error || 'pi 检测失败' })
         return

@@ -1,19 +1,31 @@
-import { describe, it, expect, afterAll } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync, realpathSync, utimesSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createRequire } from 'node:module'
+import type { HarnessCommand, HarnessResult } from '../harness'
 
-// 会话目录根须在 require 之前钉死到临时目录（模块加载时读取 env）
-const tmp = mkdtempSync(join(tmpdir(), 'ocean-harness-'))
-process.env.OCEAN_HARNESS_SESSIONS_ROOT = join(tmp, 'sessions-root')
+// 会话目录根须在模块加载之前钉死到临时目录（core 模块加载时读取 env，
+// 故用 beforeAll 内动态 import 延迟加载，静态 import 会被提升到 env 设置之前）
+let harness: typeof import('../harness')
+let tmp = ''
 
-const req = createRequire(import.meta.url)
-const harness = req('../sessionManager.cjs')
+beforeAll(async () => {
+  tmp = mkdtempSync(join(tmpdir(), 'ocean-harness-'))
+  process.env.OCEAN_HARNESS_SESSIONS_ROOT = join(tmp, 'sessions-root')
+  harness = await import('../harness')
+})
 
 afterAll(() => {
-  rmSync(tmp, { recursive: true, force: true })
+  if (tmp) rmSync(tmp, { recursive: true, force: true })
 })
+
+// core 统一契约：{ success, ...data } | { success: false, error }，全 async，不向调用方抛出。
+// unwrap 取数据（失败抛错便于定位）。
+async function unwrap<T extends object>(p: Promise<HarnessResult<T>>): Promise<T & { success: true }> {
+  const r = await p
+  if (!r.success) throw new Error(r.error)
+  return r as T & { success: true }
+}
 
 describe('splitJsonlBuffer（LF-only 分帧）', () => {
   it('按 LF 切分并跳过空行', () => {
@@ -122,7 +134,7 @@ describe('listSessions（隔离会话根目录）', () => {
     return file
   }
 
-  it('解析 header/名称/首条用户消息/最后一条消息，损坏文件跳过不崩列表', () => {
+  it('解析 header/名称/首条用户消息/最后一条消息，损坏文件跳过不崩列表', async () => {
     mkdirSync(wtDir, { recursive: true })
     const dir = join(process.env.OCEAN_HARNESS_SESSIONS_ROOT as string, harness.sanitizeCwdForSessionDir(realWt))
     mkdirSync(dir, { recursive: true })
@@ -146,11 +158,10 @@ describe('listSessions（隔离会话根目录）', () => {
       new Date('2026-10-23T02:00:00Z')
     )
 
-    const res = harness.listSessions(wtDir)
-    expect(res.success).toBe(true)
+    const { sessions } = await unwrap(harness.listSessions(wtDir))
     // 损坏文件被跳过
-    expect(res.sessions).toHaveLength(1)
-    const s = res.sessions[0]
+    expect(sessions).toHaveLength(1)
+    const s = sessions[0]
     expect(s.id).toBe('sess-uuid-1')
     expect(s.name).toBe('修 bug 会话')
     expect(s.cwd).toBe(realWt)
@@ -159,21 +170,20 @@ describe('listSessions（隔离会话根目录）', () => {
     expect(s.file.endsWith('.jsonl')).toBe(true)
   })
 
-  it('路径不存在返回失败', () => {
-    const res = harness.listSessions(join(tmp, 'no-such-dir'))
-    expect(res.success).toBe(false)
+  it('路径不存在返回失败', async () => {
+    const res = await harness.listSessions(join(tmp, 'no-such-dir'))
+    if (res.success !== false) throw new Error('预期业务失败，实际成功')
     expect(typeof res.error).toBe('string')
   })
 
-  it('无会话目录返回空列表', () => {
+  it('无会话目录返回空列表', async () => {
     const emptyWt = join(tmp, 'wt-empty')
     mkdirSync(emptyWt, { recursive: true })
-    const res = harness.listSessions(emptyWt)
-    expect(res.success).toBe(true)
-    expect(res.sessions).toEqual([])
+    const { sessions } = await unwrap(harness.listSessions(emptyWt))
+    expect(sessions).toEqual([])
   })
 
-  it('按 mtime 倒序排列', () => {
+  it('按 mtime 倒序排列', async () => {
     const dir = join(process.env.OCEAN_HARNESS_SESSIONS_ROOT as string, harness.sanitizeCwdForSessionDir(realWt))
     mkdirSync(dir, { recursive: true })
     const mk = (name: string, ts: string) => {
@@ -185,26 +195,56 @@ describe('listSessions（隔离会话根目录）', () => {
     const newer = mk('2026-10-22T00-00-00-000Z_b.jsonl', '2026-10-22T00:00:00.000Z')
     utimesSync(older, new Date('2026-10-20T00:00:00Z'), new Date('2026-10-20T00:00:00Z'))
     utimesSync(newer, new Date('2026-10-22T00:00:00Z'), new Date('2026-10-22T00:00:00Z'))
-    const res = harness.listSessions(realWt)
-    expect(res.sessions.length).toBeGreaterThanOrEqual(2)
-    const ids = res.sessions.map((s: { id: string | null }) => s.id)
+    const { sessions } = await unwrap(harness.listSessions(realWt))
+    expect(sessions.length).toBeGreaterThanOrEqual(2)
+    const ids = sessions.map((s) => s.id)
     expect(ids.indexOf('2026-10-22T00-00-00-000Z_b.jsonl')).toBeLessThan(ids.indexOf('2026-10-20T00-00-00-000Z_a.jsonl'))
   })
 })
 
 describe('sendCommand / stopSession 对不存在会话的防御', () => {
-  it('未知会话返回失败而非抛异常', () => {
-    const res = harness.sendCommand('sess-not-exist', { type: 'abort' })
-    expect(res.success).toBe(false)
+  it('未知会话返回失败而非抛异常', async () => {
+    const res = await harness.sendCommand('sess-not-exist', { type: 'abort' })
+    if (res.success !== false) throw new Error('预期业务失败，实际成功')
     expect(res.error).toContain('sess-not-exist')
   })
-  it('无效命令结构返回失败', () => {
+  it('无效命令结构返回失败', async () => {
     // 无会话时先命中会话校验；这里验证参数校验顺序不抛异常即可
-    const res = harness.sendCommand('sess-not-exist', null)
-    expect(res.success).toBe(false)
+    const res = await harness.sendCommand('sess-not-exist', null as unknown as HarnessCommand)
+    if (res.success !== false) throw new Error('预期业务失败，实际成功')
   })
-  it('停止不存在的会话返回 wasRunning false', () => {
-    const res = harness.stopSession('sess-not-exist')
+  it('停止不存在的会话返回 wasRunning false', async () => {
+    const res = await harness.stopSession('sess-not-exist')
     expect(res).toEqual({ success: true, wasRunning: false })
+  })
+})
+
+describe('listRepoWorktrees（仓库维度视图）', () => {
+  it('主仓库 + .codebases/ git 仓库铺开，非 git 条目跳过', async () => {
+    const { execFileSync } = await import('node:child_process')
+    const proj = join(tmp, 'repo-view')
+    const cb = join(proj, '.codebases', 'cb-a')
+    const blank = join(proj, '.codebases', 'cb-blank')
+    mkdirSync(blank, { recursive: true })
+    execFileSync('git', ['init', '-q', '-b', 'main', proj])
+    execFileSync('git', ['-C', proj, 'config', 'user.email', 't@t'])
+    execFileSync('git', ['-C', proj, 'config', 'user.name', 't'])
+    execFileSync('git', ['-C', proj, 'commit', '--allow-empty', '-qm', 'init'])
+    execFileSync('git', ['clone', '-q', proj, cb])
+
+    const { repos } = await unwrap(harness.listRepoWorktrees(proj))
+    expect(repos).toHaveLength(2)
+    expect(repos[0]).toMatchObject({ isMain: true, name: 'repo-view' })
+    expect(repos[0].worktrees).toHaveLength(1)
+    expect(repos[1]).toMatchObject({ isMain: false, name: 'cb-a' })
+    expect(repos[1].worktrees[0].branch).toBe('main')
+    // blank 条目（非 git）不出现
+    expect(repos.some((r) => r.name === 'cb-blank')).toBe(false)
+  })
+
+  it('主仓库 git 失败时整体失败（错误优先，与既有语义一致）', async () => {
+    const res = await harness.listRepoWorktrees(join(tmp, 'not-a-repo'))
+    if (res.success !== false) throw new Error('预期业务失败，实际成功')
+    expect(res.error).toMatch(/worktree list 失败/)
   })
 })

@@ -1,7 +1,7 @@
 import type { FC } from 'react'
 import { useCallback, useEffect, useState } from 'react'
 import { ChevronDown, ChevronRight, Folder, FolderOpen, FileText, FileCode, FileJson, RefreshCw, Loader2 } from 'lucide-react'
-import { useHarnessStore } from '../../../stores/harnessStore'
+import { useHarnessStore, loadHarnessModule } from '../../../stores/harnessStore'
 
 interface DirEntry {
   name: string
@@ -97,7 +97,7 @@ export const FileBrowser: FC = () => {
     const sessionId = useHarnessStore.getState().activeSessionId
     if (!sessionId) return
     setLoading((l) => ({ ...l, [dirPath]: true }))
-    const res = await window.electronAPI?.harnessSessionListDir?.(sessionId, dirPath)
+    const res = await loadHarnessModule()?.listSessionDir?.(sessionId, dirPath)
     setLoading((l) => ({ ...l, [dirPath]: false }))
     if (!res || !res.success) {
       setError(res?.error ?? '读取目录失败')

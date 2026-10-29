@@ -1,10 +1,10 @@
 import type { FC } from 'react'
 import { useMemo, useState } from 'react'
-import { ChevronDown, ChevronRight, Plus, Trash2, Pencil, Search, GitBranchPlus } from 'lucide-react'
+import { ChevronDown, ChevronRight, Plus, Trash2, Pencil, Search, Folder, FolderOpen } from 'lucide-react'
 import { Modal } from '../../ui/Modal'
 import { useHarnessStore } from '../../../stores/harnessStore'
 import type { HarnessSessionRuntime } from '../../../stores/harnessStore'
-import type { HarnessWorktree, HarnessSessionSummary } from '../../../types'
+import type { HarnessWorktree, HarnessSessionSummary, HarnessRepoGroup } from '../../../types'
 
 function formatRelative(mtime: number): string {
   const diff = Date.now() - mtime
@@ -86,7 +86,7 @@ const SessionRow: FC<{
 }
 
 export const SessionPanel: FC<{ width: number }> = ({ width }) => {
-  const worktrees = useHarnessStore((s) => s.worktrees)
+  const repos = useHarnessStore((s) => s.repos)
   const worktreesError = useHarnessStore((s) => s.worktreesError)
   const sessionsByWorktree = useHarnessStore((s) => s.sessionsByWorktree)
   const runtimes = useHarnessStore((s) => s.runtimes)
@@ -100,7 +100,11 @@ export const SessionPanel: FC<{ width: number }> = ({ width }) => {
   const [filter, setFilter] = useState('')
   // 分组三态：collapsed（完全收起，零会话行）/ preview（3 条 + 展开剩余）/ expanded（全部）
   const [groupState, setGroupState] = useState<Record<string, 'collapsed' | 'preview' | 'expanded'>>({})
+  // 仓库层折叠态：默认收起，点击展开（与 wt 层三态独立）
+  const [repoState, setRepoState] = useState<Record<string, 'collapsed' | 'expanded'>>({})
   const [createOpen, setCreateOpen] = useState(false)
+  // 创建工作区弹窗的目标仓库（悬浮 ➕ 所在仓库；主仓库或代码库仓库）
+  const [createRepo, setCreateRepo] = useState<HarnessRepoGroup | null>(null)
   const [wtName, setWtName] = useState('')
   const [wtBranch, setWtBranch] = useState('')
   const [wtBase, setWtBase] = useState('')
@@ -114,17 +118,21 @@ export const SessionPanel: FC<{ width: number }> = ({ width }) => {
   const loadBranches = useHarnessStore((s) => s.loadBranches)
 
   const groups = useMemo(() => {
-    return worktrees
-      .filter((wt) => !wt.bare)
-      .map((wt) => {
-        const label = worktreeLabel(wt)
-        const runtime = Object.values(runtimes).find((rt) => rt.worktreePath === wt.path && rt.status !== 'closed')
-        const sessions = (sessionsByWorktree[wt.path] ?? []).filter((s) =>
-          filter ? sessionTitle(s).toLowerCase().includes(filter.toLowerCase()) : true
-        )
-        return { wt, label, runtime, sessions }
-      })
-  }, [worktrees, runtimes, sessionsByWorktree, filter])
+    // 仓库维度：主仓库 + .codebases/ 登记仓库各自铺开 worktree 分组
+    return repos.map((repo) => {
+      const wtGroups = repo.worktrees
+        .filter((wt) => !wt.bare)
+        .map((wt) => {
+          const label = worktreeLabel(wt)
+          const runtime = Object.values(runtimes).find((rt) => rt.worktreePath === wt.path && rt.status !== 'closed')
+          const sessions = (sessionsByWorktree[wt.path] ?? []).filter((s) =>
+            filter ? sessionTitle(s).toLowerCase().includes(filter.toLowerCase()) : true
+          )
+          return { wt, label, runtime, sessions }
+        })
+      return { repo, wtGroups }
+    })
+  }, [repos, runtimes, sessionsByWorktree, filter])
 
   // 活跃会话的文件路径集合（历史列表里标记为活跃，不可重复打开）
   const activeSessionFiles = useMemo(() => {
@@ -153,7 +161,8 @@ export const SessionPanel: FC<{ width: number }> = ({ width }) => {
     if (!name || creating) return
     setCreating(true)
     setCreateError(null)
-    const res = await createWorktree(name, wtBranch.trim() || undefined, wtBase.trim() || undefined)
+    const repoPath = createRepo?.path
+    const res = await createWorktree(name, wtBranch.trim() || undefined, wtBase.trim() || undefined, repoPath)
     setCreating(false)
     if (res.success) {
       setCreateOpen(false)
@@ -161,6 +170,8 @@ export const SessionPanel: FC<{ width: number }> = ({ width }) => {
       setWtBranch('')
       setWtBase('')
       setBaseOpen(false)
+      // 展开目标仓库并预展开新工作区分组
+      if (repoPath) setRepoState((g) => ({ ...g, [repoPath]: 'expanded' }))
       if (res.path) setGroupState((g) => ({ ...g, [res.path as string]: 'preview' }))
     } else {
       setCreateError(res.error ?? '创建失败')
@@ -189,24 +200,41 @@ export const SessionPanel: FC<{ width: number }> = ({ width }) => {
             className="flex-1 min-w-0 bg-transparent text-xs text-macos-text placeholder:text-macos-text-tertiary outline-none"
           />
         </div>
-        <button
-          onClick={() => {
-            setCreateOpen(true)
-            void loadBranches()
-          }}
-          className="flex items-center gap-1.5 px-2 py-1.5 mx-1 rounded-lg text-xs font-medium text-macos-text-secondary hover:text-macos-text hover:bg-[#E8EAED] transition-colors"
-          title="新建 git worktree 工作区（输入工作区名、分支名与来源分支）"
-        >
-          <GitBranchPlus size={12} strokeWidth={1.5} />
-          新建工作区
-        </button>
       </div>
 
       <div className="flex-1 overflow-y-auto px-1 pb-2 space-y-1">
         {worktreesError && (
           <div className="px-2 py-1.5 text-[11px] text-macos-error">{worktreesError}</div>
         )}
-        {groups.map(({ wt, label, runtime, sessions }) => {
+        {groups.map(({ repo, wtGroups }) => {
+          const repoKey = repo.path
+          const repoOpen = repoState[repoKey] === 'expanded'
+          return (
+            <div key={repoKey} className="space-y-0.5">
+              {/* 仓库行：文件夹图标 + 名称，默认收起，点击展开；悬浮 ➕ 在该仓库下新建工作区（弹窗） */}
+              <div
+                className="group/repo flex items-center gap-1 px-2 py-1.5 rounded-lg cursor-pointer text-xs text-macos-text hover:bg-[#F0F1F3] transition-colors select-none"
+                title={repo.path}
+                onClick={() => setRepoState((g) => ({ ...g, [repoKey]: repoOpen ? 'collapsed' : 'expanded' }))}
+              >
+                {repoOpen
+                  ? <FolderOpen size={12} strokeWidth={1.5} className="shrink-0 text-macos-text-tertiary" />
+                  : <Folder size={12} strokeWidth={1.5} className="shrink-0 text-macos-text-tertiary" />}
+                <span className="text-sm font-semibold truncate flex-1 min-w-0" title={repo.path}>{repo.name}{repo.isMain ? ' *' : ''}</span>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setCreateRepo(repo)
+                    setCreateOpen(true)
+                    void loadBranches(repo.path)
+                  }}
+                  className="opacity-0 group-hover/repo:opacity-100 p-0.5 rounded text-macos-text-tertiary hover:text-macos-text hover:bg-black/8 shrink-0"
+                  title={`在 ${repo.name} 下新建工作区`}
+                >
+                  <Plus size={12} strokeWidth={1.5} />
+                </button>
+              </div>
+              {repoOpen && wtGroups.map(({ wt, label, runtime, sessions }) => {
           const key = wt.path
           // 分组三态：collapsed 完全收起（零会话行）/ preview 3 条预览 / expanded 全部
           const state = groupState[key] ?? 'collapsed'
@@ -293,13 +321,16 @@ export const SessionPanel: FC<{ width: number }> = ({ width }) => {
             </div>
           )
         })}
+            </div>
+          )
+        })}
       </div>
 
       <Modal
         layoutKey="harness-create-worktree"
         isOpen={createOpen}
-        onClose={() => setCreateOpen(false)}
-        title="新建工作区"
+        onClose={() => { setCreateOpen(false); setCreateRepo(null) }}
+        title={createRepo ? `在 ${createRepo.name} 下新建工作区` : '新建工作区'}
         size="sm"
         autoHeight
       >

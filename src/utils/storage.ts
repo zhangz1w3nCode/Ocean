@@ -1,6 +1,6 @@
 // Electron 本地存储工具
 
-import type { AppConfig, KnowledgeGraphConfig, AgenticConfig, AgenticToolConfig, LlmReviewConfig, Usage, AgentLoopEvent, AssetRoot, TaskSummary, TaskDetail, CreateTaskPayload, UpdateTaskPayload, HarnessWorktree, HarnessSessionSummary, HarnessEventPayload, HarnessCommand } from '../types'
+import type { AppConfig, KnowledgeGraphConfig, AgenticConfig, AgenticToolConfig, LlmReviewConfig, Usage, AgentLoopEvent, AssetRoot, TaskSummary, TaskDetail, CreateTaskPayload, UpdateTaskPayload } from '../types'
 import { generateWorkflowMdContent } from './workflow-generator'
 import { updateCachedAssetRoot } from './asset-config'
 import { parse, stringify, Document, isMap, isScalar, isSeq } from 'yaml'
@@ -172,37 +172,6 @@ declare global {
       // 知识模块模板文件 API
       saveKnowledgeTemplateFile: (templateType: 'agentic-create', content: string) => Promise<{ success: boolean; error?: string }>
       loadKnowledgeTemplateFile: (templateType: 'agentic-create') => Promise<{ success: boolean; content: string | null; error?: string }>
-      // Harness 会话（桌面端专属；网页端 electronAPI 不注入这些方法，调用方须判空降级）
-      harnessDetect?: () => Promise<{ success: boolean; available?: boolean; path?: string | null; version?: string | null; error?: string }>
-      harnessListWorktrees?: () => Promise<{ success: boolean; worktrees?: HarnessWorktree[]; error?: string }>
-      harnessListBranches?: () => Promise<{ success: boolean; branches?: string[]; current?: string | null; error?: string }>
-      harnessWorktreeCreate?: (name: string, branch?: string, baseBranch?: string) => Promise<{ success: boolean; path?: string; branch?: string; error?: string }>
-      harnessListSessions?: (worktreePath: string) => Promise<{ success: boolean; sessions?: HarnessSessionSummary[]; error?: string }>
-      harnessSessionStart?: (worktreePath: string) => Promise<{ success: boolean; sessionId?: string; error?: string }>
-      harnessSessionOpen?: (sessionFile: string) => Promise<{ success: boolean; sessionId?: string; error?: string }>
-      harnessSessionSend?: (sessionId: string, command: HarnessCommand) => Promise<{ success: boolean; error?: string }>
-      harnessSessionCommand?: (sessionId: string, command: HarnessCommand) => Promise<{ success: boolean; error?: string }>
-      harnessSessionAbort?: (sessionId: string) => Promise<{ success: boolean; error?: string }>
-      harnessSessionStop?: (sessionId: string) => Promise<{ success: boolean; wasRunning?: boolean; error?: string }>
-      harnessSessionDelete?: (sessionFile: string) => Promise<{ success: boolean; error?: string }>
-      harnessSessionExtensionResponse?: (sessionId: string, response: Record<string, unknown>) => Promise<{ success: boolean; error?: string }>
-      harnessSessionInfo?: (sessionId: string) => Promise<{ success: boolean; worktreePath?: string; sessionFile?: string | null; exited?: boolean; pid?: number; error?: string }>
-      harnessSessionListActive?: () => Promise<{ success: boolean; sessions?: { sessionId: string; worktreePath: string; sessionFile: string | null; pid: number }[]; error?: string }>
-      harnessSessionReadFile?: (sessionId: string, relativePath: string) => Promise<{ success: boolean; content?: string; path?: string; error?: string }>
-      harnessSessionListDir?: (sessionId: string, relativePath: string) => Promise<{ success: boolean; entries?: { name: string; type: 'file' | 'directory' }[]; path?: string; error?: string }>
-      harnessGitStatus?: (sessionId: string, baseBranch: string) => Promise<{
-        success: boolean
-        base?: string
-        current?: string | null
-        ahead?: number
-        behind?: number
-        commits?: string[]
-        branchFiles?: { path: string; status: string; additions: number | null; deletions: number | null }[]
-        worktreeFiles?: { path: string; status: string; additions: number | null; deletions: number | null }[]
-        error?: string
-      }>
-      harnessGitDiff?: (sessionId: string, filePath: string, source: 'branch' | 'worktree', baseBranch: string) => Promise<{ success: boolean; diff?: string; path?: string; error?: string }>
-      onHarnessSessionEvent?: (callback: (payload: HarnessEventPayload) => void) => () => void
     }
   }
 }

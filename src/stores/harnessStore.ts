@@ -1,7 +1,100 @@
 // Harness 会话 store：会话列表、活跃会话运行时、pi RPC 事件路由与多会话隔离。
 // 事件经 33ms 批量刷新写入节点化消息模型（text_delta 高频流式不逐帧重渲）。
 import { create } from 'zustand'
-import type { HarnessWorktree, HarnessSessionSummary, HarnessCommand } from '../types'
+import type { HarnessWorktree, HarnessRepoGroup, HarnessSessionSummary, HarnessCommand, HarnessEventPayload } from '../types'
+import { useProjectStore } from './projectStore'
+
+// Harness 域 renderer Node 直连：不经过 preload IPC，也不走 HTTP。
+// 链路：store → (window).require(electron/dist/source/desktop/harness.js) → core 统一契约。
+// （electron/source/desktop/harness.ts 编译产物，core 内联为单文件）。网页端无 window.require，
+// loadDesktopModule 返回 null，页面层检测降级。
+
+// 桌面模块的扁平结果视图（与旧 electronAPI 声明同构，适配层实际返回判别联合，
+// 结构上可赋值给此形态）：store 内沿用可选字段消费方式，不改条件逻辑。
+type DesktopModule = {
+  detectAgent: () => Promise<{ success: boolean; available?: boolean; path?: string | null; version?: string | null; error?: string }>
+  listWorktrees: (root: string) => Promise<{ success: boolean; worktrees?: HarnessWorktree[]; error?: string }>
+  listRepoWorktrees: (root: string) => Promise<{ success: boolean; repos?: HarnessRepoGroup[]; error?: string }>
+  listBranches: (root: string) => Promise<{ success: boolean; branches?: string[]; current?: string | null; error?: string }>
+  createWorktree: (root: string, name: string, branch?: string, baseBranch?: string) => Promise<{ success: boolean; path?: string; branch?: string; error?: string }>
+  listSessions: (worktreePath: string) => Promise<{ success: boolean; sessions?: HarnessSessionSummary[]; error?: string }>
+  startSession: (worktreePath: string) => Promise<{ success: boolean; sessionId?: string; error?: string }>
+  openSession: (sessionFile: string) => Promise<{ success: boolean; sessionId?: string; error?: string }>
+  sendCommand: (sessionId: string, command: HarnessCommand) => Promise<{ success: boolean; error?: string }>
+  stopSession: (sessionId: string) => Promise<{ success: boolean; wasRunning?: boolean; error?: string }>
+  stopAllSessions: () => Promise<{ success: boolean; stopped?: number; error?: string }>
+  deleteSessionFile: (sessionFile: string) => Promise<{ success: boolean; error?: string }>
+  getSessionInfo: (sessionId: string) => Promise<{ success: boolean; worktreePath?: string; sessionFile?: string | null; exited?: boolean; pid?: number; error?: string }>
+  listActiveSessions: () => Promise<{ success: boolean; sessions?: { sessionId: string; worktreePath: string; sessionFile: string | null; pid: number }[]; error?: string }>
+  readSessionFile: (sessionId: string, relativePath: string) => Promise<{ success: boolean; content?: string; path?: string; error?: string }>
+  listSessionDir: (sessionId: string, relativePath: string) => Promise<{ success: boolean; entries?: { name: string; type: 'file' | 'directory' }[]; path?: string; error?: string }>
+  gitStatus: (sessionId: string, baseBranch: string) => Promise<{
+    success: boolean
+    base?: string
+    current?: string | null
+    ahead?: number
+    behind?: number
+    commits?: string[]
+    branchFiles?: { path: string; status: string; additions: number | null; deletions: number | null }[]
+    worktreeFiles?: { path: string; status: string; additions: number | null; deletions: number | null }[]
+    error?: string
+  }>
+  gitDiffFile: (sessionId: string, filePath: string, source: 'branch' | 'worktree', baseBranch: string) => Promise<{ success: boolean; diff?: string; path?: string; error?: string }>
+  onHarnessEvent: (callback: (payload: HarnessEventPayload) => void) => () => void
+}
+
+const MODULE_RELATIVE = ['electron', 'dist', 'source', 'desktop', 'harness.js'].join('/')
+
+let moduleCache: DesktopModule | null = null
+
+// 产物路径探测：dev 为启动 cwd（项目根），生产为 asar 内 resourcesPath
+function resolveCandidates(): string[] {
+  const candidates: string[] = []
+  try {
+    const w = window as unknown as { process?: { cwd?: () => string; resourcesPath?: string } }
+    const proc = w.process
+    if (proc?.cwd) candidates.push(`${proc.cwd()}/${MODULE_RELATIVE}`)
+    if (proc?.resourcesPath) {
+      candidates.push(`${proc.resourcesPath}/app.asar/${MODULE_RELATIVE}`)
+      candidates.push(`${proc.resourcesPath}/${MODULE_RELATIVE}`)
+    }
+  } catch {
+    // 非 Node 环境由各 action 的空模块分支兑底
+  }
+  return candidates
+}
+
+function loadDesktopModule(): DesktopModule | null {
+  if (moduleCache) return moduleCache
+  try {
+    const w = window as unknown as { require?: NodeRequire }
+    const req = w.require
+    if (typeof req !== 'function') return null
+    for (const candidate of resolveCandidates()) {
+      let exists = false
+      try {
+        exists = req('fs').existsSync(candidate)
+      } catch {
+        exists = false
+      }
+      if (exists) {
+        moduleCache = req(candidate) as DesktopModule
+        return moduleCache
+      }
+    }
+  } catch {
+    return null
+  }
+  return null
+}
+
+// 组件层（FileBrowser/HarnessSettingsPage）直接消费的模块入口（与旧 electronAPI 直调等价）
+export const loadHarnessModule = loadDesktopModule
+
+// 项目根从 projectStore 读取；未选择项目时返回空串交由适配层拦截
+function projectRoot(): string {
+  return useProjectStore.getState().currentProject?.path || ''
+}
 
 export type HarnessSessionStatus = 'connecting' | 'ready' | 'streaming' | 'error' | 'closed'
 
@@ -585,6 +678,7 @@ interface HarnessStore {
   detectError: string | null
   detectVersion: string | null
   worktrees: HarnessWorktree[]
+  repos: HarnessRepoGroup[]
   worktreesError: string | null
   branches: string[]
   currentBranch: string | null
@@ -624,8 +718,8 @@ interface HarnessStore {
   init: () => void
   detect: () => Promise<void>
   refreshWorktrees: () => Promise<void>
-  loadBranches: () => Promise<void>
-  createWorktree: (name: string, branch?: string, baseBranch?: string) => Promise<{ success: boolean; error?: string; path?: string; branch?: string }>
+  loadBranches: (repoPath?: string) => Promise<void>
+  createWorktree: (name: string, branch?: string, baseBranch?: string, repoPath?: string) => Promise<{ success: boolean; error?: string; path?: string; branch?: string }>
   refreshSessions: (worktreePath: string) => Promise<void>
   startSession: (worktreePath: string) => Promise<string | null>
   openSession: (sessionFile: string) => Promise<string | null>
@@ -646,7 +740,7 @@ const pendingEvents: Record<string, Record<string, unknown>[]> = {}
 let flushTimer: ReturnType<typeof setTimeout> | null = null
 
 export const useHarnessStore = create<HarnessStore>((set, get) => {
-  const api = () => window.electronAPI
+  const mod = () => loadDesktopModule()
 
   const queueEvent = (sessionId: string, event: Record<string, unknown>) => {
     ;(pendingEvents[sessionId] = pendingEvents[sessionId] || []).push(event)
@@ -677,8 +771,8 @@ export const useHarnessStore = create<HarnessStore>((set, get) => {
     })
     // agent_settled 后刷新状态与统计（会话文件可能新落盘）
     for (const sessionId of settledSessions) {
-      void api()?.harnessSessionCommand?.(sessionId, { type: 'get_state' })
-      void api()?.harnessSessionCommand?.(sessionId, { type: 'get_session_stats' })
+      void mod()?.sendCommand?.(sessionId, { type: 'get_state' })
+      void mod()?.sendCommand?.(sessionId, { type: 'get_session_stats' })
     }
   }
 
@@ -687,7 +781,7 @@ export const useHarnessStore = create<HarnessStore>((set, get) => {
   }
 
   const sendCommand = async (sessionId: string, command: HarnessCommand): Promise<boolean> => {
-    const res = await api()?.harnessSessionCommand?.(sessionId, command)
+    const res = await mod()?.sendCommand?.(sessionId, command)
     if (!res) return false
     if (!res.success) {
       set((s) => {
@@ -705,6 +799,7 @@ export const useHarnessStore = create<HarnessStore>((set, get) => {
     detectError: null,
     detectVersion: null,
     worktrees: [],
+    repos: [],
     worktreesError: null,
     branches: [],
     currentBranch: null,
@@ -750,7 +845,7 @@ export const useHarnessStore = create<HarnessStore>((set, get) => {
         return
       }
       set({ gitStatusLoading: true, gitStatusError: null })
-      const res = await api()?.harnessGitStatus?.(sessionId, get().gitBaseBranch)
+      const res = await mod()?.gitStatus?.(sessionId, get().gitBaseBranch)
       set({ gitStatusLoading: false })
       if (!res || !res.success) {
         set({ gitStatus: null, gitStatusError: (res?.error) ?? 'git 信息读取失败' })
@@ -769,7 +864,7 @@ export const useHarnessStore = create<HarnessStore>((set, get) => {
       })
     },
     openFileViewer: async (sessionId, filePath) => {
-      const res = await api()?.harnessSessionReadFile?.(sessionId, filePath)
+      const res = await mod()?.readSessionFile?.(sessionId, filePath)
       if (!res || !res.success) {
         set({ fileViewer: { sessionId, path: filePath, content: res?.error ?? '读取失败', mode: 'content' }, fileViewerOpen: true, filePanelTab: 'preview' })
         return
@@ -778,7 +873,7 @@ export const useHarnessStore = create<HarnessStore>((set, get) => {
     },
 
     openFileDiff: async (sessionId, filePath, source) => {
-      const res = await api()?.harnessGitDiff?.(sessionId, filePath, source, get().gitBaseBranch)
+      const res = await mod()?.gitDiffFile?.(sessionId, filePath, source, get().gitBaseBranch)
       if (!res || !res.success) {
         set({ fileViewer: { sessionId, path: filePath, content: res?.error ?? '读取 diff 失败', mode: 'content' }, fileViewerOpen: true, filePanelTab: 'preview' })
         return
@@ -808,12 +903,12 @@ export const useHarnessStore = create<HarnessStore>((set, get) => {
       const fv = get().fileViewer
       if (!fv) return null
       if (fv.mode === 'diff') {
-        const res = await api()?.harnessGitDiff?.(fv.sessionId, fv.path, fv.diffSource ?? 'branch', get().gitBaseBranch)
+        const res = await mod()?.gitDiffFile?.(fv.sessionId, fv.path, fv.diffSource ?? 'branch', get().gitBaseBranch)
         if (!res || !res.success) return res?.error ?? '读取 diff 失败'
         set({ fileViewer: { ...fv, content: res.diff ?? '' } })
         return null
       }
-      const res = await api()?.harnessSessionReadFile?.(fv.sessionId, fv.path)
+      const res = await mod()?.readSessionFile?.(fv.sessionId, fv.path)
       if (!res || !res.success) return res?.error ?? '读取失败'
       set({ fileViewer: { ...fv, content: res.content ?? '' } })
       return null
@@ -823,20 +918,20 @@ export const useHarnessStore = create<HarnessStore>((set, get) => {
     init: () => {
       if (get().initialized) return
       set({ initialized: true })
-      const a = api()
-      if (!a || typeof a.onHarnessSessionEvent !== 'function') {
+      const m = mod()
+      if (!m || typeof m.onHarnessEvent !== 'function') {
         set({ available: false, detectError: '当前环境不支持 Harness 会话（仅桌面端可用）' })
         return
       }
-      a.onHarnessSessionEvent((payload) => {
+      m.onHarnessEvent((payload) => {
         queueEvent(payload.sessionId, payload.event as Record<string, unknown>)
       })
       void get().detect()
       void get().refreshWorktrees()
-      // 渲染层刷新/重开后重连主进程仍在运行的会话（水合历史消息与状态）
+      // renderer 直连后会话子进程随页面生命周期：同页内 store 重建后重连仍在运行的会话（水合历史消息与状态）
       void (async () => {
         try {
-          const res = await a.harnessSessionListActive?.()
+          const res = await m.listActiveSessions?.()
           const activeList = res && res.success ? (res.sessions ?? []) : []
           if (activeList.length > 0) {
             set((s) => {
@@ -862,13 +957,13 @@ export const useHarnessStore = create<HarnessStore>((set, get) => {
             }
           }
         } catch {
-          // 主进程为旧版本（无该 channel）时静默忽略
+          // 模块未就绪（未构建产物）时静默忽略
         }
       })()
     },
 
     detect: async () => {
-      const res = await api()?.harnessDetect?.()
+      const res = await mod()?.detectAgent?.()
       if (!res) {
         set({ available: false, detectError: '当前环境不支持 Harness 会话（仅桌面端可用）' })
         return
@@ -881,27 +976,32 @@ export const useHarnessStore = create<HarnessStore>((set, get) => {
     },
 
     refreshWorktrees: async () => {
-      const res = await api()?.harnessListWorktrees?.()
+      // 仓库维度视图：主仓库 + .codebases/ 登记仓库各自铺开全部 worktree
+      const res = await mod()?.listRepoWorktrees?.(projectRoot())
       if (!res || !res.success) {
         set({ worktreesError: (res?.error) ?? 'worktree 列表获取失败' })
         return
       }
-      const worktrees = res.worktrees ?? []
-      set({ worktrees, worktreesError: null })
-      for (const wt of worktrees) {
-        void get().refreshSessions(wt.path)
+      const repos = res.repos ?? []
+      // 主仓库 worktree 平铺列表保留（新建工作区后预展开、旧消费面兼容）
+      const worktrees = repos.find((r) => r.isMain)?.worktrees ?? []
+      set({ repos, worktrees, worktreesError: null })
+      for (const repo of repos) {
+        for (const wt of repo.worktrees) {
+          void get().refreshSessions(wt.path)
+        }
       }
     },
 
-    loadBranches: async () => {
-      const res = await api()?.harnessListBranches?.()
+    loadBranches: async (repoPath?: string) => {
+      const res = await mod()?.listBranches?.(repoPath || projectRoot())
       if (res && res.success) {
         set({ branches: res.branches ?? [], currentBranch: res.current ?? null })
       }
     },
 
-    createWorktree: async (name, branch, baseBranch) => {
-      const res = await api()?.harnessWorktreeCreate?.(name, branch, baseBranch)
+    createWorktree: async (name, branch, baseBranch, repoPath) => {
+      const res = await mod()?.createWorktree?.(repoPath || projectRoot(), name, branch, baseBranch)
       if (!res || !res.success) {
         return { success: false, error: (res?.error) ?? '创建工作区失败' }
       }
@@ -910,7 +1010,7 @@ export const useHarnessStore = create<HarnessStore>((set, get) => {
     },
 
     refreshSessions: async (worktreePath: string) => {
-      const res = await api()?.harnessListSessions?.(worktreePath)
+      const res = await mod()?.listSessions?.(worktreePath)
       set((s) => ({
         sessionsByWorktree: {
           ...s.sessionsByWorktree,
@@ -920,7 +1020,7 @@ export const useHarnessStore = create<HarnessStore>((set, get) => {
     },
 
     startSession: async (worktreePath: string) => {
-      const res = await api()?.harnessSessionStart?.(worktreePath)
+      const res = await mod()?.startSession?.(worktreePath)
       if (!res || !res.success || !res.sessionId) {
         set({ detectError: res?.error ?? '会话启动失败' })
         return null
@@ -936,15 +1036,15 @@ export const useHarnessStore = create<HarnessStore>((set, get) => {
     },
 
     openSession: async (sessionFile: string) => {
-      const res = await api()?.harnessSessionOpen?.(sessionFile)
+      const res = await mod()?.openSession?.(sessionFile)
       if (!res || !res.success || !res.sessionId) {
         set({ detectError: res?.error ?? '会话打开失败' })
         return null
       }
-      // 从主进程取会话归属工作区（文件预览/后续操作的 cwd 依据）
+      // 从会话句柄取归属工作区（文件预览/后续操作的 cwd 依据）
       let worktreePath = ''
       try {
-        const info = await api()?.harnessSessionInfo?.(res.sessionId)
+        const info = await mod()?.getSessionInfo?.(res.sessionId)
         if (info && info.success) worktreePath = info.worktreePath ?? ''
       } catch {
         // 忽略 info 失败
@@ -962,7 +1062,7 @@ export const useHarnessStore = create<HarnessStore>((set, get) => {
     },
 
     stopSession: async (sessionId: string) => {
-      await api()?.harnessSessionStop?.(sessionId)
+      await mod()?.stopSession?.(sessionId)
       set((s) => {
         const rt = s.runtimes[sessionId]
         if (!rt) return {}
@@ -971,10 +1071,12 @@ export const useHarnessStore = create<HarnessStore>((set, get) => {
     },
 
     deleteSessionFile: async (sessionFile: string) => {
-      const res = await api()?.harnessSessionDelete?.(sessionFile)
+      const res = await mod()?.deleteSessionFile?.(sessionFile)
       if (!res || !res.success) return false
       // 刷新所有 worktree 分组（cwd 归属可能变化）
-      for (const wt of get().worktrees) void get().refreshSessions(wt.path)
+      for (const repo of get().repos) {
+        for (const wt of repo.worktrees) void get().refreshSessions(wt.path)
+      }
       return true
     },
 
@@ -1002,7 +1104,7 @@ export const useHarnessStore = create<HarnessStore>((set, get) => {
     },
 
     abort: async (sessionId) => {
-      await api()?.harnessSessionAbort?.(sessionId)
+      await mod()?.sendCommand?.(sessionId, { type: 'abort' })
     },
 
     compact: async (sessionId) => {
@@ -1026,7 +1128,7 @@ export const useHarnessStore = create<HarnessStore>((set, get) => {
     },
 
     resolveApproval: async (sessionId, requestId, answer) => {
-      await api()?.harnessSessionExtensionResponse?.(sessionId, { id: requestId, ...answer })
+      await mod()?.sendCommand?.(sessionId, { type: 'extension_ui_response', id: requestId, ...answer })
       set((s) => {
         const rt = s.runtimes[sessionId]
         if (!rt) return {}
@@ -1037,5 +1139,18 @@ export const useHarnessStore = create<HarnessStore>((set, get) => {
         return { runtimes: { ...s.runtimes, [sessionId]: { ...rt, nodes, pendingApproval } } }
       })
     },
+  }
+})
+
+// 项目切换后重拉 worktree 列表（分支随「新建工作区」弹窗打开实时拉取无需处理；
+// 会话 runtimes 不动：会话归属 worktree 而非当前项目，切项目不杀会话是既有语义）
+let lastProjectRoot = projectRoot()
+useProjectStore.subscribe((s) => {
+  const root = s.currentProject?.path || ''
+  if (root !== lastProjectRoot) {
+    lastProjectRoot = root
+    if (useHarnessStore.getState().initialized) {
+      void useHarnessStore.getState().refreshWorktrees()
+    }
   }
 })

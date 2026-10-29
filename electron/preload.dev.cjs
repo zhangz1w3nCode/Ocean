@@ -159,34 +159,6 @@ const electronAPI = {
   loadKnowledgeTemplateFile: (templateType) =>
     ipcRenderer.invoke('load-knowledge-template-file', templateType),
 
-
-  // Harness 会话 API（桌面端专属；网页端 webApiShim 不注入，页面应检测不可用并降级）
-  harnessDetect: () => ipcRenderer.invoke('harness-detect'),
-  harnessListWorktrees: () => ipcRenderer.invoke('harness-list-worktrees'),
-  harnessListBranches: () => ipcRenderer.invoke('harness-list-branches'),
-  harnessWorktreeCreate: (name, branch, baseBranch) => ipcRenderer.invoke('harness-worktree-create', name, branch, baseBranch),
-  harnessListSessions: (worktreePath) => ipcRenderer.invoke('harness-list-sessions', worktreePath),
-  harnessSessionStart: (worktreePath) => ipcRenderer.invoke('harness-session-start', worktreePath),
-  harnessSessionOpen: (sessionFile) => ipcRenderer.invoke('harness-session-open', sessionFile),
-  harnessSessionSend: (sessionId, command) => ipcRenderer.invoke('harness-session-send', sessionId, command),
-  harnessSessionCommand: (sessionId, command) => ipcRenderer.invoke('harness-session-command', sessionId, command),
-  harnessSessionAbort: (sessionId) => ipcRenderer.invoke('harness-session-abort', sessionId),
-  harnessSessionStop: (sessionId) => ipcRenderer.invoke('harness-session-stop', sessionId),
-  harnessSessionDelete: (sessionFile) => ipcRenderer.invoke('harness-session-delete', sessionFile),
-  harnessSessionExtensionResponse: (sessionId, response) =>
-    ipcRenderer.invoke('harness-session-extension-response', sessionId, response),
-  harnessSessionInfo: (sessionId) => ipcRenderer.invoke('harness-session-info', sessionId),
-  harnessSessionListActive: () => ipcRenderer.invoke('harness-session-list-active'),
-  harnessSessionReadFile: (sessionId, relativePath) => ipcRenderer.invoke('harness-session-read-file', sessionId, relativePath),
-  harnessSessionListDir: (sessionId, relativePath) => ipcRenderer.invoke('harness-session-list-dir', sessionId, relativePath),
-  harnessGitStatus: (sessionId, baseBranch) => ipcRenderer.invoke('harness-git-status', sessionId, baseBranch),
-  harnessGitDiff: (sessionId, filePath, source, baseBranch) => ipcRenderer.invoke('harness-git-diff', sessionId, filePath, source, baseBranch),
-  // Harness 会话事件监听（pi RPC 事件流，按会话 id 路由）
-  onHarnessSessionEvent: (callback) => {
-    const listener = (_event, data) => callback(data)
-    ipcRenderer.on('harness-session-event', listener)
-    return () => ipcRenderer.removeListener('harness-session-event', listener)
-  },
 }
 
 // 通过 window 暴露

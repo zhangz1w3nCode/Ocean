@@ -547,6 +547,18 @@ export interface CodebaseSearchHit {
 
 // ===== Harness 会话 =====
 
+// 仓库分组（调度页仓库维度视图：主仓库 + .codebases/ 登记仓库各自铺开）
+export interface HarnessRepoGroup {
+  /** 仓库名（主仓库=项目目录名；其他=codebase 条目名） */
+  name: string
+  /** 仓库主工作区路径 */
+  path: string
+  /** 主仓库（当前项目根） */
+  isMain: boolean
+  /** 该仓库的 git worktree 列表 */
+  worktrees: HarnessWorktree[]
+}
+
 // git worktree 条目（git worktree list --porcelain 解析结果）
 export interface HarnessWorktree {
   path: string
