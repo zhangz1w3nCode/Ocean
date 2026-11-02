@@ -17,12 +17,24 @@ export interface LlmReviewParams {
   timeoutMs: number
 }
 
+/** 审核策略：关闭 / 由 LLM 直接判定 / 由本地 agent 用工具实地核对 */
+export type ReviewMode = 'off' | 'llm' | 'agent'
+
+export interface AgentReviewSettings {
+  executable: string
+  model: string
+  timeoutMs: number
+}
+
 export interface LlmReviewConfig {
   enabled: boolean
+  /** 缺省时按 enabled 推导为 'llm'，保持对旧配置的兼容 */
+  mode?: ReviewMode
   providerId: string
   model: string
   prompt: string
   params: LlmReviewParams
+  agent?: AgentReviewSettings
 }
 
 /** LLM 审核服务不可用（网络/超时/鉴权/解析失败），调用方应降级而非阻断。 */
@@ -60,8 +72,18 @@ export function loadLlmReviewConfig(root: string): LlmReviewConfig | null {
     const raw = JSON.parse(fs.readFileSync(configPath, 'utf-8'))
     if (typeof raw !== 'object' || raw === null) return null
     const params = raw.params ?? {}
+    const agent = raw.agent ?? {}
+    const rawMode = raw.mode
+    const mode: ReviewMode | undefined =
+      rawMode === 'off' || rawMode === 'llm' || rawMode === 'agent' ? rawMode : undefined
     return {
       enabled: raw.enabled === true,
+      mode,
+      agent: {
+        executable: typeof agent.executable === 'string' ? agent.executable : '',
+        model: typeof agent.model === 'string' ? agent.model : '',
+        timeoutMs: typeof agent.timeoutMs === 'number' && agent.timeoutMs > 0 ? agent.timeoutMs : 5 * 60 * 1000,
+      },
       providerId: typeof raw.providerId === 'string' ? raw.providerId : '',
       model: typeof raw.model === 'string' ? raw.model : '',
       prompt: typeof raw.prompt === 'string' && raw.prompt.trim() !== '' ? raw.prompt : DEFAULT_LLM_REVIEW_PROMPT,

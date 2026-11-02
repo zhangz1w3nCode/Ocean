@@ -37,20 +37,44 @@ export const WorkflowSettingsPage: FC = () => {
   // 将回退选中的 provider 固化为显式 id，避免落盘空串造成隐式依赖
   const explicitProviderId = llmReviewConfig.providerId || selectedProvider?.id || ''
 
+  // 审核方式：开关决定启停，下拉决定用 LLM 还是 Agent 智能审核
+  const reviewMode: 'llm' | 'agent' = llmReviewConfig.mode === 'agent' ? 'agent' : 'llm'
+
   const handleReviewToggle = async (checked: boolean) => {
-    if (checked && llmProviders.length === 0) {
+    if (checked && reviewMode === 'llm' && llmProviders.length === 0) {
       addToast('请先在「设置 → LLM」中配置模型提供商', 'error')
       return
     }
     const next = {
       ...llmReviewConfig,
       enabled: checked,
-      providerId: checked ? explicitProviderId : llmReviewConfig.providerId,
+      mode: reviewMode,
+      agent: llmReviewConfig.agent ?? { executable: '', model: '', timeoutMs: 300000 },
+      providerId: checked && reviewMode === 'llm' ? explicitProviderId : llmReviewConfig.providerId,
     }
     setLlmReviewConfig(next)
     const ok = await saveLlmReviewConfig(next)
     if (!ok) {
-      addToast('LLM 智能审核配置保存失败', 'error')
+      addToast('产物审核配置保存失败', 'error')
+    }
+  }
+
+  const handleModeChange = async (nextMode: 'llm' | 'agent') => {
+    if (nextMode === 'llm' && llmProviders.length === 0) {
+      addToast('请先在「设置 → LLM」中配置模型提供商', 'error')
+      return
+    }
+    const next = {
+      ...llmReviewConfig,
+      enabled: true,
+      mode: nextMode,
+      agent: llmReviewConfig.agent ?? { executable: '', model: '', timeoutMs: 300000 },
+      providerId: nextMode === 'llm' ? explicitProviderId : llmReviewConfig.providerId,
+    }
+    setLlmReviewConfig(next)
+    const ok = await saveLlmReviewConfig(next)
+    if (!ok) {
+      addToast('产物审核配置保存失败', 'error')
     }
   }
 
@@ -121,7 +145,7 @@ export const WorkflowSettingsPage: FC = () => {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Sparkles size={16} className="text-macos-text-secondary" />
-                  <div className="text-sm font-medium text-macos-text">LLM 智能审核产物</div>
+                  <div className="text-sm font-medium text-macos-text">产物审核策略</div>
                 </div>
                 <Switch
                   checked={llmReviewConfig.enabled}
@@ -130,13 +154,82 @@ export const WorkflowSettingsPage: FC = () => {
                 />
               </div>
               <div className="mt-2 text-xs text-macos-text-tertiary leading-relaxed">
-                开启后，执行 <span className="font-mono">ocean workflow complete</span> 提交产物时，
-                由下方选定的 LLM 按提示词校验产物是否按照节点内容执行：
-                审核不通过或 LLM 不可用时产物均不写入、状态不推进，提示重新提交；
-                LLM 不可用时会在报错中说明原因（可修复后重试或关闭本开关）。
+                开启后，执行 <span className="font-mono">ocean workflow complete</span> 提交产物时先做一次符合性校验：
+                审核不通过或审核器不可用时产物均不写入、状态不推进。
               </div>
 
               {llmReviewConfig.enabled && (
+                <div className="mt-4 flex items-center justify-between gap-4 p-3 rounded-lg bg-gray-50">
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium text-macos-text">审核方式</div>
+                    <div className="text-xs text-macos-text-tertiary mt-0.5">
+                      {reviewMode === 'llm'
+                        ? 'LLM 审核：把产物与节点任务交给下方选定的模型直接判定'
+                        : 'Agent 智能审核：交给本地 agent 用只读工具实地核对产物里的文件与命令输出'}
+                    </div>
+                  </div>
+                  <Dropdown
+                    value={reviewMode}
+                    onChange={(v) => handleModeChange(v as 'llm' | 'agent')}
+                    options={[
+                      { value: 'llm', label: 'LLM 审核' },
+                      { value: 'agent', label: 'Agent 智能审核' },
+                    ]}
+                    className="w-44 flex-shrink-0"
+                  />
+                </div>
+              )}
+
+              {reviewMode === 'agent' && (
+                <div className="mt-4 space-y-4">
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium text-macos-text mb-2">Agent</div>
+                      <div className="px-3 py-2 text-sm bg-gray-50 border border-gray-200 rounded-lg text-macos-text-secondary">pi（本地）</div>
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium text-macos-text mb-2">可执行文件（可选）</div>
+                      <Input
+                        value={llmReviewConfig.agent?.executable || ''}
+                        onChange={(e) => setLlmReviewConfig((c) => ({
+                          ...c,
+                          agent: { ...(c.agent ?? { executable: '', model: '', timeoutMs: 300000 }), executable: e.target.value },
+                        }))}
+                        placeholder="留空自动探测 pi"
+                        className="w-full"
+                      />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium text-macos-text mb-2">超时（秒）</div>
+                      <Input
+                        value={String(Math.round((llmReviewConfig.agent?.timeoutMs ?? 300000) / 1000))}
+                        onChange={(e) => setLlmReviewConfig((c) => ({
+                          ...c,
+                          agent: { ...(c.agent ?? { executable: '', model: '', timeoutMs: 300000 }), timeoutMs: Math.max(30, Number(e.target.value) || 300) * 1000 },
+                        }))}
+                        className="w-full"
+                      />
+                    </div>
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium text-macos-text mb-2">审核用模型（可选）</div>
+                    <Input
+                      value={llmReviewConfig.agent?.model || ''}
+                      onChange={(e) => setLlmReviewConfig((c) => ({
+                        ...c,
+                        agent: { ...(c.agent ?? { executable: '', model: '', timeoutMs: 300000 }), model: e.target.value },
+                      }))}
+                      placeholder="留空用 agent 默认模型"
+                      className="w-full"
+                    />
+                  </div>
+                  <p className="text-xs text-macos-text-tertiary">
+                    审核在独立会话中进行，不会污染被审核实例的执行会话；审核 agent 同样受调度器守卫约束，无法推进工作流状态。
+                  </p>
+                </div>
+              )}
+
+              {reviewMode === 'llm' && (
                 <>
                   {/* 提供商 / 模型 */}
                   <div className="grid grid-cols-2 gap-4 mt-4">

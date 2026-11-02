@@ -309,12 +309,23 @@ export interface LlmReviewParams {
   timeoutMs: number          // 审核请求超时（毫秒，默认 90000；思考型模型长产物实测 37-44s）
 }
 
+/** 产物审核策略：关闭 / LLM 直接判定 / 本地 agent 用工具实地核对 */
+export type ReviewMode = 'off' | 'llm' | 'agent'
+
+export interface AgentReviewSettings {
+  executable: string   // agent 可执行文件，空则自动探测（默认 pi）
+  model: string        // 审核用模型，空则用 agent 默认
+  timeoutMs: number    // 单次审核超时
+}
+
 export interface LlmReviewConfig {
-  enabled: boolean           // 是否启用 workflow next 产物智能审核
+  enabled: boolean           // 是否启用产物审核
+  mode?: ReviewMode          // 审核策略；缺省按 enabled 推导为 'llm'
   providerId: string         // 引用 llm-config.json 的提供商 id（空则用第一个）
   model: string              // 模型（空则用提供商默认模型）
   prompt: string             // 审核提示词模板，占位符 {{node_task}} {{artifact}}
   params: LlmReviewParams
+  agent?: AgentReviewSettings
 }
 
 // ========== Agent Loop 类型定义 ==========

@@ -15,6 +15,7 @@ import {
   loadLlmReviewConfig, resolveLlmProvider, checkArtifactWithLLM,
   LlmReviewUnavailableError, LlmReviewResult,
 } from './llm_review'
+import { checkArtifactWithAgent } from './agent_review'
 
 // ---------------------------------------------------------------------------
 // Private helpers
@@ -114,29 +115,45 @@ export async function complete(root: string, workflow: string, instanceId: strin
   // LLM 智能审核（complete 时写入前把关，严格模式）：
   // 审核不通过或 LLM 不可用时产物均不写入、状态不推进；
   // LLM 不可用时报错提示（可关闭审核或修复后重试）。
-  const llmReview = loadLlmReviewConfig(root)
-  const llmProvider = llmReview != null && llmReview.enabled
-    ? resolveLlmProvider(root, llmReview.providerId, llmReview.model)
-    : null
-  if (llmReview != null && llmReview.enabled && llmProvider != null) {
+  const reviewConfig = loadLlmReviewConfig(root)
+  // 审核策略：旧配置只有 enabled 开关，缺省按 'llm' 处理以保持兼容
+  const reviewMode = reviewConfig != null && reviewConfig.enabled
+    ? (reviewConfig.mode ?? 'llm')
+    : 'off'
+  if (reviewConfig != null && reviewMode !== 'off') {
     const isTaskNode = currentNode.type === 'business' || currentNode.type === 'process' || currentNode.type === 'local'
     if (isTaskNode) {
       const nodeTask = readNodeMd(root, currentNode)
       let review: LlmReviewResult | null = null
       try {
-        review = await checkArtifactWithLLM(root, llmReview, llmProvider, nodeTask, output)
+        if (reviewMode === 'agent') {
+          review = await checkArtifactWithAgent(
+            root,
+            reviewConfig.agent ?? { executable: '', model: '', timeoutMs: 5 * 60 * 1000 },
+            nodeTask,
+            output,
+            { instanceId, invoke: pf.state.current_invoke },
+          )
+        } else {
+          const llmProvider = resolveLlmProvider(root, reviewConfig.providerId, reviewConfig.model)
+          if (llmProvider != null) {
+            review = await checkArtifactWithLLM(root, reviewConfig, llmProvider, nodeTask, output)
+          }
+        }
       } catch (e) {
         if (e instanceof LlmReviewUnavailableError) {
+          const who = reviewMode === 'agent' ? 'Agent 智能审核' : 'LLM 智能审核'
           throw new Error(
-            `写入产物失败：LLM 智能审核不可用（${e.message}）\n` +
-            `请检查模型配置与网络后重试，或在「工作流 → 设置」中关闭 LLM 智能审核`,
+            `写入产物失败：${who}不可用（${e.message}）\n` +
+            `请检查配置后重试，或在「工作流 → 设置」中关闭产物审核`,
           )
         } else {
           throw e
         }
       }
       if (review != null && !review.pass) {
-        const reason = review.reason ? `（LLM 审核：${review.reason}）` : ''
+        const who = reviewMode === 'agent' ? 'Agent 审核' : 'LLM 审核'
+        const reason = review.reason ? `（${who}：${review.reason}）` : ''
         throw new Error(
           `写入产物失败：产物未按照节点内容执行/格式输出${reason}\n` +
           `请重新按照节点要求执行/输出后再提交`,

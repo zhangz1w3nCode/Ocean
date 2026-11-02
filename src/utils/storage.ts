@@ -3678,6 +3678,7 @@ export const DEFAULT_LLM_REVIEW_PROMPT = `你是产物符合性校验判断器�
 export const getDefaultLlmReviewConfig = (): LlmReviewConfig => {
   return {
     enabled: false,
+    mode: 'off',
     providerId: '',
     model: '',
     prompt: DEFAULT_LLM_REVIEW_PROMPT,
@@ -3685,6 +3686,11 @@ export const getDefaultLlmReviewConfig = (): LlmReviewConfig => {
       temperature: 0,
       maxTokens: 1024,
       timeoutMs: 90000
+    },
+    agent: {
+      executable: '',
+      model: '',
+      timeoutMs: 300000
     }
   }
 }
@@ -3692,8 +3698,20 @@ export const getDefaultLlmReviewConfig = (): LlmReviewConfig => {
 const normalizeLlmReviewConfig = (parsed: any): LlmReviewConfig => {
   const base = getDefaultLlmReviewConfig()
   const params = parsed?.params ?? {}
+  const rawMode = parsed?.mode
+  const mode: 'off' | 'llm' | 'agent' =
+    rawMode === 'off' || rawMode === 'llm' || rawMode === 'agent'
+      ? rawMode
+      : (parsed?.enabled === true ? 'llm' : 'off')
+  const agent = parsed?.agent ?? {}
   return {
-    enabled: parsed?.enabled === true,
+    enabled: mode !== 'off',
+    mode,
+    agent: {
+      executable: typeof agent.executable === 'string' ? agent.executable : '',
+      model: typeof agent.model === 'string' ? agent.model : '',
+      timeoutMs: typeof agent.timeoutMs === 'number' && agent.timeoutMs > 0 ? agent.timeoutMs : 300000
+    },
     providerId: typeof parsed?.providerId === 'string' ? parsed.providerId : '',
     model: typeof parsed?.model === 'string' ? parsed.model : '',
     prompt: typeof parsed?.prompt === 'string' && parsed.prompt.trim() !== '' ? parsed.prompt : base.prompt,
