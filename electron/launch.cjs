@@ -689,6 +689,196 @@ function buildInstanceDetail(workflowName, instanceId) {
 
 ipcMain.handle('read-instance-detail', (_, workflowName, instanceId) => buildInstanceDetail(workflowName, instanceId))
 
+// ===== 工作流调度（Dispatch）=====
+// 调度器内核在 electron/core/dispatch.ts，tsc 产物在 electron/dist/core/，此处懒加载 require。
+// 网页端由 registry.cjs 复用本文件，因此这里注册的 handler 桌面端/网页端同时可用。
+
+function coreDispatch() {
+  return require('./dist/core/dispatch.js')
+}
+
+function coreInstance() {
+  return require('./dist/core/instance.js')
+}
+
+function coreExecutor() {
+  return require('./dist/core/executor.js')
+}
+
+function pushDispatchUpdate(record) {
+  try {
+    mainWindow?.webContents?.send('dispatch-update', record)
+  } catch (error) {
+    console.error('推送调度状态失败:', error)
+  }
+}
+
+ipcMain.handle('list-workflow-dispatches', (_, workflowFilter) => {
+  try {
+    const records = coreDispatch().listDispatches(getProjectRoot(), workflowFilter || undefined)
+    return { success: true, records }
+  } catch (error) {
+    console.error('列出调度记录失败:', error)
+    return { success: false, error: String(error), records: [] }
+  }
+})
+
+ipcMain.handle('read-workflow-dispatch', (_, workflowName, instanceId) => {
+  try {
+    const record = coreDispatch().readDispatch(getProjectRoot(), workflowName, instanceId)
+    return { success: true, record }
+  } catch (error) {
+    return { success: false, error: String(error) }
+  }
+})
+
+ipcMain.handle('can-workflow-dispatch', (_, instanceId, workflowName) => {
+  try {
+    return { success: true, ...coreDispatch().canDispatch(getProjectRoot(), instanceId, workflowName || undefined) }
+  } catch (error) {
+    return { success: false, ok: false, reason: String(error) }
+  }
+})
+
+// 新建实例并开始调度（也可只传 instanceId 接管既有实例）
+ipcMain.handle('start-workflow-dispatch', (_, payload) => {
+  try {
+    const root = getProjectRoot()
+    const dispatch = coreDispatch()
+    const {
+      workflow, instanceId: providedId, input,
+      agentType = 'pi', executable, model,
+      nodeTimeoutMs, maxAttempts, approveProject,
+    } = payload || {}
+
+    let instanceId = providedId
+    if (!instanceId) {
+      if (!workflow) return { success: false, error: '缺少工作流名称' }
+      if (!input || !String(input).trim()) return { success: false, error: '初始输入不能为空' }
+      instanceId = coreExecutor().genId()
+      coreInstance().create(root, workflow, instanceId, String(input).trim())
+    }
+
+    let resolvedWorkflow = workflow
+    if (!resolvedWorkflow) {
+      try {
+        resolvedWorkflow = coreExecutor().instanceWorkflow(root, instanceId)
+      } catch (error) {
+        return { success: false, error: String(error && error.message ? error.message : error) }
+      }
+    }
+
+    const precheck = dispatch.canDispatch(root, instanceId, resolvedWorkflow)
+    if (!precheck.ok) return { success: false, error: precheck.reason, instanceId }
+
+    dispatch.startDispatch({
+      root,
+      workflow: resolvedWorkflow,
+      instanceId,
+      agent: {
+        type: agentType,
+        executable: executable || undefined,
+        model: model || undefined,
+        approveProject: !!approveProject,
+      },
+      nodeTimeoutMs: Number(nodeTimeoutMs) > 0 ? Number(nodeTimeoutMs) : undefined,
+      maxAttempts: Number(maxAttempts) > 0 ? Number(maxAttempts) : undefined,
+      onUpdate: pushDispatchUpdate,
+    })
+
+    return { success: true, instanceId, workflow: resolvedWorkflow }
+  } catch (error) {
+    console.error('启动调度失败:', error)
+    return { success: false, error: String(error && error.message ? error.message : error) }
+  }
+})
+
+ipcMain.handle('stop-workflow-dispatch', (_, instanceId) => {
+  try {
+    const stopped = coreDispatch().stopDispatch(instanceId)
+    return { success: true, stopped }
+  } catch (error) {
+    return { success: false, error: String(error) }
+  }
+})
+
+// 读取某次节点运行的落盘文件（prompt / result / events / meta），供调度页日志抽屉使用
+ipcMain.handle('read-dispatch-run-file', (_, workflowName, instanceId, invoke, kind) => {
+  try {
+    const allowed = { prompt: 'prompt.md', result: 'result.md', events: 'events.jsonl', meta: 'meta.json' }
+    const kinds = Object.keys(allowed)
+    if (!kinds.includes(kind)) return { success: false, error: `不支持的读取类型: ${kind}` }
+    const safe = [workflowName, instanceId, invoke].concat(kinds)
+    for (const part of safe) {
+      if (typeof part === 'string' && part.includes('..')) {
+        return { success: false, error: 'Invalid path' }
+      }
+    }
+    const runDir = path.join(
+      getWorkflowsDir(), workflowName, 'instance', instanceId, 'dispatch', 'runs', invoke,
+    )
+    if (!fs.existsSync(runDir)) return { success: false, error: '该节点还没有落盘记录' }
+    const files = fs.readdirSync(runDir).filter((f) => f.endsWith(allowed[kind])).sort()
+    if (files.length === 0) return { success: false, error: '尚未产生该类型的记录' }
+    // 重投场景下存在多份（attempt-1/2/3），取最后一份
+    const filePath = path.join(runDir, files[files.length - 1])
+    let content = fs.readFileSync(filePath, 'utf-8')
+    // 事件流会包含每个 token 的增量（含 thinking），单个节点可达数 MB，
+    // 直接回传会把渲染层拖住，这里只保留尾部 256KB 并标明已截断
+    const MAX_BYTES = 256 * 1024
+    if (content.length > MAX_BYTES) {
+      const omitted = content.length - MAX_BYTES
+      content = `（已省略前 ${omitted} 字节，仅展示尾部 ${MAX_BYTES} 字节）\n` + content.slice(-MAX_BYTES)
+    }
+    return { success: true, content, file: files[files.length - 1] }
+  } catch (error) {
+    console.error('读取调度记录失败:', error)
+    return { success: false, error: String(error) }
+  }
+})
+
+// 读取 pi 的模型目录（供调度页「模型」下拉使用）
+// 数据源：~/.pi/agent/models.json（providers.<name>.models[]）；默认项读 ~/.pi/agent/settings.json
+// 注意：models.json 里带 apiKey，此处只回传 provider 名 / 模型 id / contextWindow，绝不外泄密钥
+ipcMain.handle('load-pi-models', () => {
+  try {
+    const piDir = path.join(os.homedir(), '.pi', 'agent')
+    const modelsPath = path.join(piDir, 'models.json')
+    const settingsPath = path.join(piDir, 'settings.json')
+    if (!fs.existsSync(modelsPath)) {
+      return { success: true, groups: [], defaultModel: null, source: modelsPath }
+    }
+    const raw = JSON.parse(fs.readFileSync(modelsPath, 'utf-8'))
+    const providers = raw && typeof raw.providers === 'object' && raw.providers ? raw.providers : {}
+    const groups = Object.entries(providers)
+      .map(([provider, cfg]) => ({
+        provider,
+        models: (Array.isArray(cfg && cfg.models) ? cfg.models : [])
+          .map((m) => ({
+            id: String((m && (m.id || m.name)) || ''),
+            contextWindow: typeof (m && m.contextWindow) === 'number' ? m.contextWindow : null,
+          }))
+          .filter((m) => m.id !== ''),
+      }))
+      .filter((g) => g.models.length > 0)
+
+    let defaultModel = null
+    try {
+      const st = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'))
+      if (st && st.defaultProvider && st.defaultModel) {
+        defaultModel = { provider: st.defaultProvider, id: st.defaultModel }
+      }
+    } catch {
+      // settings.json 缺失不影响模型列表
+    }
+
+    return { success: true, groups, defaultModel, source: modelsPath }
+  } catch (error) {
+    console.error('读取 pi 模型目录失败:', error)
+    return { success: false, error: String(error), groups: [], defaultModel: null }
+  }
+})
+
 // ===== 实例详情实时推送（fs.watch → 按 filename 路由只读变化文件 → webContents.send） =====
 // fs.watch 回调提供 filename，按文件路由只重读变化的文件并计算其字段，
 // 不再全量重读所有文件 + diffDetail 比较。filename 为 null 或未识别时兜底全量重读。

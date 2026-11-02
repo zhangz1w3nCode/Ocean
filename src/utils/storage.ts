@@ -42,6 +42,31 @@ declare global {
       subscribeInstanceDetail: (workflowName: string, instanceId: string) => Promise<{ success: boolean; detail?: any; error?: string }>
       unsubscribeInstanceDetail: () => Promise<{ success: boolean }>
       onInstanceDetailDelta: (callback: (delta: Record<string, any>) => void) => () => void
+      // 工作流调度（Dispatch）
+      listWorkflowDispatches: (workflowFilter?: string) => Promise<{ success: boolean; records?: any[]; error?: string }>
+      readWorkflowDispatch: (workflowName: string, instanceId: string) => Promise<{ success: boolean; record?: any; error?: string }>
+      canWorkflowDispatch: (instanceId: string, workflowName?: string) => Promise<{ success: boolean; ok?: boolean; reason?: string; workflow?: string }>
+      startWorkflowDispatch: (payload: {
+        workflow?: string
+        instanceId?: string
+        input?: string
+        agentType?: string
+        executable?: string
+        model?: string
+        nodeTimeoutMs?: number
+        maxAttempts?: number
+        approveProject?: boolean
+      }) => Promise<{ success: boolean; instanceId?: string; workflow?: string; error?: string }>
+      stopWorkflowDispatch: (instanceId: string) => Promise<{ success: boolean; stopped?: boolean; error?: string }>
+      readDispatchRunFile: (workflowName: string, instanceId: string, invoke: string, kind: 'prompt' | 'result' | 'events' | 'meta') => Promise<{ success: boolean; content?: string; file?: string; error?: string }>
+      onDispatchUpdate: (callback: (record: any) => void) => () => void
+      loadPiModels: () => Promise<{
+        success: boolean
+        groups?: { provider: string; models: { id: string; contextWindow: number | null }[] }[]
+        defaultModel?: { provider: string; id: string } | null
+        source?: string
+        error?: string
+      }>
       // 任务管理（存储在项目根 .tasks/ 目录）
       listTasks: () => Promise<{ success: boolean; tasks?: TaskSummary[]; error?: string }>
       readTaskDetail: (taskName: string) => Promise<{ success: boolean; detail?: TaskDetail; error?: string }>

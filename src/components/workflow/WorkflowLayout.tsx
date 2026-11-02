@@ -5,6 +5,7 @@ import { WorkflowSidebar } from './WorkflowSidebar'
 import { WorkflowsPage } from '../../pages/WorkflowsPage'
 import { NodesPage } from '../../pages/NodesPage'
 import { WorkflowInstancesPage } from '../../pages/WorkflowInstancesPage'
+import { WorkflowDispatchPage } from '../../pages/WorkflowDispatchPage'
 import { WorkflowSettingsPage } from '../../pages/WorkflowSettingsPage'
 
 export const WorkflowLayout: FC = () => {
@@ -18,6 +19,8 @@ export const WorkflowLayout: FC = () => {
         return <WorkflowsPage nested />
       case 'instances':
         return <WorkflowInstancesPage />
+      case 'dispatch':
+        return <WorkflowDispatchPage />
       case 'settings':
         return <WorkflowSettingsPage />
       default:

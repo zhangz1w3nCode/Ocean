@@ -34,6 +34,8 @@ const INVOKE_METHODS = [
   'saveWorkflowFlowJson', 'loadAllWorkflowFolders', 'deleteWorkflowFolder', 'renameWorkflowFolder',
   'listWorkflowInstances', 'readInstanceFile', 'readInstanceDetail',
   'subscribeInstanceDetail', 'unsubscribeInstanceDetail',
+  'listWorkflowDispatches', 'readWorkflowDispatch', 'canWorkflowDispatch',
+  'startWorkflowDispatch', 'stopWorkflowDispatch', 'readDispatchRunFile', 'loadPiModels',
   'listTasks', 'readTaskDetail', 'createTask', 'updateTask', 'saveTaskContext',
   'saveNodeFile', 'loadNodeFile', 'deleteNodeFile', 'loadAllNodeFiles',
   'saveLocalNode', 'loadLocalNode', 'loadAllLocalNodes', 'deleteLocalNode',
@@ -60,6 +62,7 @@ const INVOKE_METHODS = [
 const EVENT_METHODS: Record<string, string> = {
   onInstanceDetailDelta: 'instance-detail-delta',
   onAgentLoopEvent: 'agent-loop-event',
+  onDispatchUpdate: 'dispatch-update',
 }
 
 async function invoke(method: string, ...args: unknown[]): Promise<unknown> {

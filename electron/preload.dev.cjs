@@ -38,6 +38,21 @@ const electronAPI = {
     return () => ipcRenderer.removeListener('instance-detail-delta', listener)
   },
 
+  // 工作流调度（Dispatch）：程序驱动工作流，把节点内容转发给本地 agent
+  listWorkflowDispatches: (workflowFilter) => ipcRenderer.invoke('list-workflow-dispatches', workflowFilter),
+  readWorkflowDispatch: (workflowName, instanceId) => ipcRenderer.invoke('read-workflow-dispatch', workflowName, instanceId),
+  canWorkflowDispatch: (instanceId, workflowName) => ipcRenderer.invoke('can-workflow-dispatch', instanceId, workflowName),
+  startWorkflowDispatch: (payload) => ipcRenderer.invoke('start-workflow-dispatch', payload),
+  stopWorkflowDispatch: (instanceId) => ipcRenderer.invoke('stop-workflow-dispatch', instanceId),
+  readDispatchRunFile: (workflowName, instanceId, invoke, kind) =>
+    ipcRenderer.invoke('read-dispatch-run-file', workflowName, instanceId, invoke, kind),
+  onDispatchUpdate: (callback) => {
+    const listener = (_event, data) => callback(data)
+    ipcRenderer.on('dispatch-update', listener)
+    return () => ipcRenderer.removeListener('dispatch-update', listener)
+  },
+  loadPiModels: () => ipcRenderer.invoke('load-pi-models'),
+
   // 节点文件数据持久化（Markdown 格式，以名称命名文件）
   saveNodeFile: (name, content) => ipcRenderer.invoke('save-node-file', name, content),
   loadNodeFile: (name) => ipcRenderer.invoke('load-node-file', name),

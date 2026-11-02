@@ -1,12 +1,13 @@
 import type { FC } from 'react'
 import { motion } from 'framer-motion'
-import { Box, FileCode2, Activity, Settings } from 'lucide-react'
+import { Box, FileCode2, Activity, Settings, Terminal } from 'lucide-react'
 import { useAppStore, type WorkflowSubPage } from '../../stores/appStore'
 
 const subNavItems: { id: WorkflowSubPage; label: string; icon: typeof Box }[] = [
   { id: 'nodes', label: '节点', icon: Box },
   { id: 'workflows', label: '设计', icon: FileCode2 },
   { id: 'instances', label: '实例', icon: Activity },
+  { id: 'dispatch', label: '调度', icon: Terminal },
   { id: 'settings', label: '设置', icon: Settings },
 ]
 

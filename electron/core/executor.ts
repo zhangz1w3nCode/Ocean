@@ -24,6 +24,20 @@ function instanceDir(root: string, workflow: string, instanceId: string): string
   return path.join(root, '.workflows', workflow, 'instance', instanceId)
 }
 
+/**
+ * 调度器驱动的 agent 子进程禁止自行推进工作流状态。
+ * 调度器 spawn agent 时注入 OCEAN_DISPATCH_CHILD=1，agent 再往下调用 CLI 会继承该变量。
+ * 状态文件是「读-改-写」，两个写者并发会丢更新，所以这里直接拒绝。
+ */
+function assertNotDispatchChild(command: string): void {
+  if (process.env.OCEAN_DISPATCH_CHILD === '1') {
+    throw new Error(
+      `当前由 Ocean 调度器驱动，禁止自行调用 \`ocean workflow ${command}\` 推进工作流状态。` +
+      `请只完成节点任务并输出结果，调度器会自动提交。`,
+    )
+  }
+}
+
 function loadFlow(root: string, workflow: string): Flow {
   const filePath = path.join(root, '.workflows', workflow, 'meta-data', 'flow.json')
   return fromFile(filePath)
@@ -34,6 +48,7 @@ function loadFlow(root: string, workflow: string): Flow {
 // ---------------------------------------------------------------------------
 
 export async function next(root: string, workflow: string, instanceId: string, json: boolean): Promise<string> {
+  assertNotDispatchChild('next')
   const instDir = instanceDir(root, workflow, instanceId)
   const pf = ProcessFile.read(path.join(instDir, 'process.md'))
 
@@ -80,6 +95,7 @@ export async function next(root: string, workflow: string, instanceId: string, j
 // ---------------------------------------------------------------------------
 
 export async function complete(root: string, workflow: string, instanceId: string, output: string): Promise<string> {
+  assertNotDispatchChild('complete')
   const instDir = instanceDir(root, workflow, instanceId)
   const pf = ProcessFile.read(path.join(instDir, 'process.md'))
 
@@ -170,6 +186,7 @@ export async function complete(root: string, workflow: string, instanceId: strin
 // ---------------------------------------------------------------------------
 
 export function fail(root: string, workflow: string, instanceId: string, reason: string): string {
+  assertNotDispatchChild('fail')
   const instDir = instanceDir(root, workflow, instanceId)
   const pf = ProcessFile.read(path.join(instDir, 'process.md'))
 
@@ -214,6 +231,7 @@ export function choose(
   root: string, workflow: string, instanceId: string,
   branch: string, reason?: string,
 ): string {
+  assertNotDispatchChild('choose')
   const instDir = instanceDir(root, workflow, instanceId)
   const pf = ProcessFile.read(path.join(instDir, 'process.md'))
 

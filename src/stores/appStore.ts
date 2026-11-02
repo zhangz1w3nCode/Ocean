@@ -5,7 +5,7 @@ import type { AppConfig } from '../types'
 export type PageType = 'project' | 'agents' | 'workflows' | 'nodes' | 'resources' | 'knowledges' | 'skills' | 'settings' | 'tasks' | 'codebases'
 
 // 工作流区域二级导航子页面
-export type WorkflowSubPage = 'nodes' | 'workflows' | 'instances' | 'settings'
+export type WorkflowSubPage = 'nodes' | 'workflows' | 'instances' | 'dispatch' | 'settings'
 
 // 知识区域二级导航子页面
 export type KnowledgeSubPage = 'library' | 'graph' | 'catalog' | 'review' | 'settings'
