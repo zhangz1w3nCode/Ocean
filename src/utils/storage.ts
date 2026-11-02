@@ -58,7 +58,8 @@ declare global {
         approveProject?: boolean
       }) => Promise<{ success: boolean; instanceId?: string; workflow?: string; error?: string }>
       stopWorkflowDispatch: (instanceId: string) => Promise<{ success: boolean; stopped?: boolean; error?: string }>
-      readDispatchRunFile: (workflowName: string, instanceId: string, invoke: string, kind: 'prompt' | 'result' | 'events' | 'meta') => Promise<{ success: boolean; content?: string; file?: string; error?: string }>
+      readDispatchPrompt: (workflowName: string, instanceId: string, invoke: string) => Promise<{ success: boolean; content?: string; error?: string }>
+      readDispatchSession: (workflowName: string, instanceId: string) => Promise<{ success: boolean; content?: string; file?: string; error?: string }>
       onDispatchUpdate: (callback: (record: any) => void) => () => void
       loadPiModels: () => Promise<{
         success: boolean

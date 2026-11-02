@@ -19,6 +19,7 @@ export interface DispatchRunView {
 export interface DispatchRecordView {
   instance_id: string
   workflow: string
+  initial_input?: string
   agent: { type: string; executable?: string; model?: string }
   session_id: string
   status: DispatchStatus

@@ -35,7 +35,7 @@ const INVOKE_METHODS = [
   'listWorkflowInstances', 'readInstanceFile', 'readInstanceDetail',
   'subscribeInstanceDetail', 'unsubscribeInstanceDetail',
   'listWorkflowDispatches', 'readWorkflowDispatch', 'canWorkflowDispatch',
-  'startWorkflowDispatch', 'stopWorkflowDispatch', 'readDispatchRunFile', 'loadPiModels',
+  'startWorkflowDispatch', 'stopWorkflowDispatch', 'readDispatchPrompt', 'readDispatchSession', 'loadPiModels',
   'listTasks', 'readTaskDetail', 'createTask', 'updateTask', 'saveTaskContext',
   'saveNodeFile', 'loadNodeFile', 'deleteNodeFile', 'loadAllNodeFiles',
   'saveLocalNode', 'loadLocalNode', 'loadAllLocalNodes', 'deleteLocalNode',

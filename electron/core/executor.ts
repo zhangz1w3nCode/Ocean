@@ -372,6 +372,17 @@ export function listInstances(root: string, workflowFilter?: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// node_content：按节点重新渲染内容（只读，供调度页展示「下发的指令」用）
+// ---------------------------------------------------------------------------
+
+export function nodeContent(root: string, workflow: string, nodeId: string, invoke: string): string {
+  const flow = loadFlow(root, workflow)
+  const n = getNode(flow, nodeId)
+  if (!n) throw new Error(`节点不存在: ${nodeId}`)
+  return renderNode(root, n, invoke, false)
+}
+
+// ---------------------------------------------------------------------------
 // render_node (private)
 // ---------------------------------------------------------------------------
 

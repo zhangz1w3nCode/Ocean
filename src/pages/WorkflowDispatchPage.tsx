@@ -163,7 +163,8 @@ export const WorkflowDispatchPage: FC = () => {
               <span className="w-24 flex-shrink-0 text-center">状态</span>
               <span className="w-20 flex-shrink-0 text-center">Agent</span>
               <span className="flex-1 min-w-0 text-center">工作流 / 实例</span>
-              <span className="flex-1 min-w-0 text-center">当前节点</span>
+              <span className="flex-1 min-w-0 text-center">输入信息</span>
+              <span className="w-28 flex-shrink-0 text-center">当前节点</span>
               <span className="w-16 flex-shrink-0 text-center">步数</span>
               <span className="w-24 flex-shrink-0 text-center">用时</span>
             </div>
@@ -190,7 +191,10 @@ export const WorkflowDispatchPage: FC = () => {
                   <div className="text-sm text-macos-text truncate">{record.workflow}</div>
                   <div className="text-xs text-macos-text-tertiary font-mono truncate">{record.instance_id}</div>
                 </div>
-                <span className="flex-1 min-w-0 text-xs text-macos-text-secondary truncate text-center">{record.current_node || '-'}</span>
+                <span className="flex-1 min-w-0 text-xs text-macos-text-secondary truncate text-center" title={record.initial_input || ''}>
+                  {record.initial_input || '-'}
+                </span>
+                <span className="w-28 flex-shrink-0 text-xs text-macos-text-secondary truncate text-center">{record.current_node || '-'}</span>
                 <span className="w-16 flex-shrink-0 text-xs text-macos-text-secondary text-center">{record.steps}</span>
                 <span className="w-24 flex-shrink-0 text-xs text-macos-text-tertiary text-center">{durationText(record)}</span>
               </div>
@@ -399,19 +403,35 @@ const DispatchDetailDrawer: FC<{
     return record.runs[record.runs.length - 1] ?? null
   }, [record, activeRun])
 
+  // 三档日志都不再落盘：产物取 artifacts（complete/choose 已写）、
+  // 下发指令按 invoke 即时重算、事件流直接读 pi 自己的 session 文件
   useEffect(() => {
     let cancelled = false
     const run = activeRunView
     if (!record || !run || !isElectron()) { setLogContent(''); return }
-    window.electronAPI!
-      .readDispatchRunFile(record.workflow, record.instance_id, run.invoke, logTab)
-      .then((res) => {
-        if (cancelled) return
-        setLogContent(res.success ? (res.content || '') : `（${res.error}）`)
-      })
+    const api = window.electronAPI!
+
+    const load = async (): Promise<string> => {
+      if (logTab === 'result') {
+        const res = await api.readInstanceDetail(record.workflow, record.instance_id)
+        if (!res.success) return `（${res.error || '读取实例详情失败'}）`
+        const artifacts = (res.detail?.artifacts || []) as { nodeName: string; invokeId: string; content: string }[]
+        const hit = artifacts.find((a) => a.nodeName === run.node && a.invokeId === run.invoke)
+        return hit?.content || '（该节点没有产物：可能尚未提交成功）'
+      }
+      if (logTab === 'prompt') {
+        const res = await api.readDispatchPrompt(record.workflow, record.instance_id, run.invoke)
+        return res.success ? (res.content || '') : `（${res.error}）`
+      }
+      const res = await api.readDispatchSession(record.workflow, record.instance_id)
+      return res.success ? (res.content || '') : `（${res.error}）`
+    }
+
+    load()
+      .then((text) => { if (!cancelled) setLogContent(text) })
       .catch((e) => { if (!cancelled) setLogContent(String(e)) })
     return () => { cancelled = true }
-  }, [record?.instance_id, record?.workflow, activeRunView?.invoke, logTab, record])
+  }, [record?.instance_id, record?.workflow, activeRunView?.invoke, activeRunView?.node, logTab])
 
   useEffect(() => {
     if (logTab === 'events' && logRef.current) {
@@ -457,6 +477,13 @@ const DispatchDetailDrawer: FC<{
               <MetaCell label="步数" value={`${record.steps} 个节点`} />
               <MetaCell label="开始" value={record.started_at} />
               <MetaCell label="结束" value={record.finished_at || '-'} />
+            </div>
+
+            <div className="px-6 py-3 border-b border-gray-100 flex-shrink-0">
+              <div className="text-[10px] text-macos-text-tertiary tracking-wide mb-1">初始输入</div>
+              <p className="text-xs text-macos-text whitespace-pre-wrap break-words max-h-24 overflow-y-auto">
+                {record.initial_input || '-'}
+              </p>
             </div>
 
             {record.last_error && (

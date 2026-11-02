@@ -2,7 +2,8 @@ import * as fs from 'node:fs'
 import * as path from 'node:path'
 
 import { AgentSpec, AgentType, runAgent } from './agent_adapter'
-import { next, complete, choose, fail, instanceWorkflow } from './executor'
+import { next, complete, choose, fail, instanceWorkflow, nodeContent } from './executor'
+import { fromFile, node as getNode } from './model'
 import { ProcessFile, Status, formatLocalTime } from './state'
 
 // ---------------------------------------------------------------------------
@@ -12,20 +13,26 @@ import { ProcessFile, Status, formatLocalTime } from './state'
 
 export interface DispatchRun {
   invoke: string
+  /** 节点 id，用于按 invoke 重算「下发的指令」与定位产物 */
+  node_id: string
   node: string
   type: string
   started_at: string
   finished_at?: string
   attempts: number
   outcome: 'completed' | 'chosen' | 'rejected' | 'agent_failed' | 'aborted'
-  artifact?: string
   branch?: string
   error?: string
+  /** 最后一次 agent 进程退出码与是否超时（诊断用，取代原来的 meta.json） */
+  exit_code?: number | null
+  timed_out?: boolean
 }
 
 export interface DispatchRecord {
   instance_id: string
   workflow: string
+  /** 实例初始输入（取自 status.json，供调度页展示） */
+  initial_input?: string
   agent: AgentSpec
   session_id: string
   status: 'running' | 'completed' | 'failed' | 'aborted' | 'stopped'
@@ -84,11 +91,24 @@ function lockPath(root: string, workflow: string, instanceId: string): string {
 export function readDispatch(root: string, workflow: string, instanceId: string): DispatchRecord | null {
   const p = recordPath(root, workflow, instanceId)
   if (!fs.existsSync(p)) return null
+  let record: DispatchRecord
   try {
-    return JSON.parse(fs.readFileSync(p, 'utf-8')) as DispatchRecord
+    record = JSON.parse(fs.readFileSync(p, 'utf-8')) as DispatchRecord
   } catch {
     return null
   }
+  // 历史记录里没有 initial_input，从同目录 status.json 回填（只读，不回写）
+  if (!record.initial_input) {
+    try {
+      const st = JSON.parse(
+        fs.readFileSync(path.join(instanceDir(root, workflow, instanceId), 'status.json'), 'utf-8'),
+      )
+      if (st && typeof st.initial_input === 'string') record.initial_input = st.initial_input
+    } catch {
+      // status.json 缺失或不可解析时忽略
+    }
+  }
+  return record
 }
 
 function writeRecord(root: string, workflow: string, instanceId: string, record: DispatchRecord): void {
@@ -229,14 +249,33 @@ const ARTIFACT_CONTRACT = [
   '4. **最终回复必须就是完整产物正文本身**。不要寒暄、不要复述任务、不要只写"已完成"。',
 ].join('\n')
 
-function buildTaskPrompt(parsed: NodePayload, workflow: string, instanceId: string): string {
-  return [
+function buildTaskPrompt(
+  parsed: NodePayload,
+  workflow: string,
+  instanceId: string,
+  initialInput?: string,
+): string {
+  const head = [
     `你正在执行 Ocean 工作流「${workflow}」的实例 ${instanceId}，当前节点「${parsed.node_name}」。`,
     '',
-    parsed.content ?? '',
-    '',
-    ARTIFACT_CONTRACT,
-  ].join('\n')
+  ]
+  // 开始节点是整条实例的第一跳，把初始输入一并交代清楚，后续节点靠同一会话的上下文延续
+  if (parsed.type === 'start') {
+    if (initialInput) head.push('## 实例初始输入', initialInput, '')
+    head.push(parsed.content ?? '', '')
+    // 开始节点的内容本身只是「确认后推进」，但这里能看到完整初始输入，
+    // 若不显式约束，agent 会把后续所有节点的工作都提前干完（表现为长时间不出结果）
+    head.push(
+      '## 本节点边界（重要）',
+      '开始节点只做一件事：确认收到初始输入并回一句话。',
+      '**不要调用任何工具**，不要开始执行初始输入里描述的任务——那是后续业务节点的工作，由调度器逐节点下发。',
+      '',
+    )
+    head.push(ARTIFACT_CONTRACT)
+    return head.join('\n')
+  }
+  head.push(parsed.content ?? '', '', ARTIFACT_CONTRACT)
+  return head.join('\n')
 }
 
 function buildDecisionPrompt(parsed: NodePayload, workflow: string, instanceId: string): string {
@@ -284,10 +323,6 @@ function readStatus(root: string, workflow: string, instanceId: string): Status 
   return pf.state.status
 }
 
-function runDir(root: string, workflow: string, instanceId: string, invoke: string): string {
-  return path.join(dispatchDir(root, workflow, instanceId), 'runs', invoke)
-}
-
 export async function runDispatch(opts: DispatchOptions): Promise<DispatchRecord> {
   const root = opts.root
   const instanceId = opts.instanceId
@@ -310,9 +345,17 @@ export async function runDispatch(opts: DispatchOptions): Promise<DispatchRecord
     }
   })()
 
+  let initialInput: string | undefined
+  try {
+    initialInput = ProcessFile.read(path.join(instanceDir(root, workflow, instanceId), 'process.md')).state.initial_input
+  } catch {
+    initialInput = undefined
+  }
+
   const record: DispatchRecord = {
     instance_id: instanceId,
     workflow,
+    initial_input: initialInput,
     agent: opts.agent,
     session_id: instanceId,
     status: 'running',
@@ -390,6 +433,7 @@ export async function runDispatch(opts: DispatchOptions): Promise<DispatchRecord
 
     const run: DispatchRun = {
       invoke: payload.invoke,
+      node_id: payload.node_id,
       node: payload.node_name,
       type: payload.type,
       started_at: formatLocalTime(),
@@ -398,37 +442,17 @@ export async function runDispatch(opts: DispatchOptions): Promise<DispatchRecord
     }
     record.runs.push(run)
 
-    const rd = runDir(root, workflow, instanceId, payload.invoke)
-    fs.mkdirSync(rd, { recursive: true })
-
-    // start 节点没有实质任务，直接推进，不消耗 agent 调用
-    if (payload.type === 'start') {
-      try {
-        await complete(root, workflow, instanceId, `工作流「${workflow}」已开始，初始输入已接收。`)
-      } catch (e: any) {
-        run.outcome = 'agent_failed'
-        run.error = e.message
-        run.finished_at = formatLocalTime()
-        return finish('failed', `start 节点推进失败：${e.message}`)
-      }
-      run.finished_at = formatLocalTime()
-      notify()
-      continue
-    }
-
     const isDecision = payload.type === 'decision'
     const branchNames = (payload.branches ?? []).map((b) => b.name)
     let prompt = isDecision
       ? buildDecisionPrompt(payload, workflow, instanceId)
-      : buildTaskPrompt(payload, workflow, instanceId)
+      : buildTaskPrompt(payload, workflow, instanceId, record.initial_input)
 
     let lastError = ''
     let settled = false
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       run.attempts = attempt
-      const attemptPrefix = path.join(rd, `attempt-${attempt}`)
-      fs.writeFileSync(`${attemptPrefix}.prompt.md`, prompt)
 
       const result = await runAgent({
         spec: opts.agent,
@@ -437,25 +461,11 @@ export async function runDispatch(opts: DispatchOptions): Promise<DispatchRecord
         sessionDir,
         cwd,
         timeoutMs: nodeTimeoutMs,
-        eventsPath: `${attemptPrefix}.events.jsonl`,
         signal: controller.signal,
       })
 
-      fs.writeFileSync(
-        `${attemptPrefix}.meta.json`,
-        JSON.stringify(
-          {
-            exit_code: result.exitCode,
-            timed_out: result.timedOut,
-            aborted: result.aborted,
-            session_id: result.sessionId,
-            error: result.error ?? null,
-          },
-          null,
-          2,
-        ),
-      )
-      if (result.text) fs.writeFileSync(`${attemptPrefix}.result.md`, result.text)
+      run.exit_code = result.exitCode
+      run.timed_out = result.timedOut
 
       if (!result.ok) {
         lastError = result.error ?? 'agent 执行失败'
@@ -508,7 +518,6 @@ export async function runDispatch(opts: DispatchOptions): Promise<DispatchRecord
       try {
         await complete(root, workflow, instanceId, result.text)
         run.outcome = 'completed'
-        run.artifact = path.join(rd, `attempt-${attempt}.result.md`)
         run.finished_at = formatLocalTime()
         settled = true
         break
@@ -568,6 +577,57 @@ async function safeFail(
   } catch (e: any) {
     return { aborted: true, error: e.message }
   }
+}
+
+/** 按 invoke 重算当时下发的 prompt（不落盘，展示时即时生成） */
+export function renderRunPrompt(
+  root: string,
+  workflow: string,
+  instanceId: string,
+  invoke: string,
+): string | null {
+  const record = readDispatch(root, workflow, instanceId)
+  const run = record?.runs.find((r) => r.invoke === invoke)
+  if (!run) return null
+
+  const flow = fromFile(path.join(root, '.workflows', workflow, 'meta-data', 'flow.json'))
+  const node = getNode(flow, run.node_id)
+  if (!node) return null
+
+  if (node.type === 'decision') {
+    const payload: NodePayload = {
+      type: 'decision',
+      node_id: node.id,
+      node_name: node.data.label,
+      invoke,
+      condition: node.data.condition ?? null,
+      branches: (node.data.branches || []).map((b) => ({
+        name: b.name,
+        description: b.description ?? null,
+      })),
+    }
+    return buildDecisionPrompt(payload, workflow, instanceId)
+  }
+
+  const payload: NodePayload = {
+    type: node.type,
+    node_id: node.id,
+    node_name: node.data.label,
+    invoke,
+    content: nodeContent(root, workflow, node.id, invoke),
+  }
+  return buildTaskPrompt(payload, workflow, instanceId, record?.initial_input)
+}
+
+/** pi 的会话文件路径（会话是本实例唯一真实执行记录，不再另存事件流） */
+export function sessionFilePath(root: string, workflow: string, instanceId: string): string | null {
+  const dir = path.join(dispatchDir(root, workflow, instanceId), 'sessions')
+  if (!fs.existsSync(dir)) return null
+  const files = fs.readdirSync(dir).filter((f) => f.endsWith('.jsonl'))
+  if (files.length === 0) return null
+  // 文件名形如 <时间戳>_<sessionId>.jsonl，优先匹配本实例 session id
+  const matched = files.find((f) => f.includes(instanceId)) || files[files.length - 1]
+  return path.join(dir, matched)
 }
 
 /** 后台启动；锁被占用时同步抛错（先调 canDispatch 可获得友好提示） */

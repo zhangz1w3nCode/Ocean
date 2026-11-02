@@ -802,37 +802,37 @@ ipcMain.handle('stop-workflow-dispatch', (_, instanceId) => {
   }
 })
 
-// 读取某次节点运行的落盘文件（prompt / result / events / meta），供调度页日志抽屉使用
-ipcMain.handle('read-dispatch-run-file', (_, workflowName, instanceId, invoke, kind) => {
+// 按 invoke 重算「下发的指令」（不落盘，展示时即时生成）
+ipcMain.handle('read-dispatch-prompt', (_, workflowName, instanceId, invoke) => {
   try {
-    const allowed = { prompt: 'prompt.md', result: 'result.md', events: 'events.jsonl', meta: 'meta.json' }
-    const kinds = Object.keys(allowed)
-    if (!kinds.includes(kind)) return { success: false, error: `不支持的读取类型: ${kind}` }
-    const safe = [workflowName, instanceId, invoke].concat(kinds)
-    for (const part of safe) {
-      if (typeof part === 'string' && part.includes('..')) {
-        return { success: false, error: 'Invalid path' }
-      }
+    for (const part of [workflowName, instanceId, invoke]) {
+      if (typeof part === 'string' && part.includes('..')) return { success: false, error: 'Invalid path' }
     }
-    const runDir = path.join(
-      getWorkflowsDir(), workflowName, 'instance', instanceId, 'dispatch', 'runs', invoke,
-    )
-    if (!fs.existsSync(runDir)) return { success: false, error: '该节点还没有落盘记录' }
-    const files = fs.readdirSync(runDir).filter((f) => f.endsWith(allowed[kind])).sort()
-    if (files.length === 0) return { success: false, error: '尚未产生该类型的记录' }
-    // 重投场景下存在多份（attempt-1/2/3），取最后一份
-    const filePath = path.join(runDir, files[files.length - 1])
+    const content = coreDispatch().renderRunPrompt(getProjectRoot(), workflowName, instanceId, invoke)
+    if (content == null) return { success: false, error: '找不到该节点的运行记录' }
+    return { success: true, content }
+  } catch (error) {
+    console.error('重算节点指令失败:', error)
+    return { success: false, error: String(error) }
+  }
+})
+
+// 读取本实例 pi 会话文件（pi 自己的记录就是唯一真实的事件流，不再另存）
+ipcMain.handle('read-dispatch-session', (_, workflowName, instanceId) => {
+  try {
+    for (const part of [workflowName, instanceId]) {
+      if (typeof part === 'string' && part.includes('..')) return { success: false, error: 'Invalid path' }
+    }
+    const filePath = coreDispatch().sessionFilePath(getProjectRoot(), workflowName, instanceId)
+    if (!filePath || !fs.existsSync(filePath)) return { success: false, error: '会话记录尚未产生' }
     let content = fs.readFileSync(filePath, 'utf-8')
-    // 事件流会包含每个 token 的增量（含 thinking），单个节点可达数 MB，
-    // 直接回传会把渲染层拖住，这里只保留尾部 256KB 并标明已截断
     const MAX_BYTES = 256 * 1024
     if (content.length > MAX_BYTES) {
-      const omitted = content.length - MAX_BYTES
-      content = `（已省略前 ${omitted} 字节，仅展示尾部 ${MAX_BYTES} 字节）\n` + content.slice(-MAX_BYTES)
+      content = `（已省略前 ${content.length - MAX_BYTES} 字节，仅展示尾部 ${MAX_BYTES} 字节）\n` + content.slice(-MAX_BYTES)
     }
-    return { success: true, content, file: files[files.length - 1] }
+    return { success: true, content, file: path.basename(filePath) }
   } catch (error) {
-    console.error('读取调度记录失败:', error)
+    console.error('读取会话记录失败:', error)
     return { success: false, error: String(error) }
   }
 })

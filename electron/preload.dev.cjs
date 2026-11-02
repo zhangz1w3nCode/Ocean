@@ -44,8 +44,10 @@ const electronAPI = {
   canWorkflowDispatch: (instanceId, workflowName) => ipcRenderer.invoke('can-workflow-dispatch', instanceId, workflowName),
   startWorkflowDispatch: (payload) => ipcRenderer.invoke('start-workflow-dispatch', payload),
   stopWorkflowDispatch: (instanceId) => ipcRenderer.invoke('stop-workflow-dispatch', instanceId),
-  readDispatchRunFile: (workflowName, instanceId, invoke, kind) =>
-    ipcRenderer.invoke('read-dispatch-run-file', workflowName, instanceId, invoke, kind),
+  readDispatchPrompt: (workflowName, instanceId, invoke) =>
+    ipcRenderer.invoke('read-dispatch-prompt', workflowName, instanceId, invoke),
+  readDispatchSession: (workflowName, instanceId) =>
+    ipcRenderer.invoke('read-dispatch-session', workflowName, instanceId),
   onDispatchUpdate: (callback) => {
     const listener = (_event, data) => callback(data)
     ipcRenderer.on('dispatch-update', listener)

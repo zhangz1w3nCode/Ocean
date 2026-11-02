@@ -31,8 +31,8 @@ export interface AgentRunRequest {
   /** 子进程工作目录，必须稳定（pi 的 session 按 cwd 组织） */
   cwd: string
   timeoutMs: number
-  /** 事件流原始行落盘位置 */
-  eventsPath: string
+  /** 事件流落盘位置；不传则不落盘（pi 自己的 session 文件已是完整执行记录） */
+  eventsPath?: string
   onEvent?: (ev: AgentStreamEvent) => void
   signal?: AbortSignal
 }
@@ -166,9 +166,11 @@ export async function runAgent(req: AgentRunRequest): Promise<AgentRunResult> {
     return result
   }
 
-  fs.mkdirSync(path.dirname(req.eventsPath), { recursive: true })
   fs.mkdirSync(req.sessionDir, { recursive: true })
-  const events = fs.createWriteStream(req.eventsPath, { flags: 'a' })
+  const events = req.eventsPath
+    ? (fs.mkdirSync(path.dirname(req.eventsPath), { recursive: true }),
+       fs.createWriteStream(req.eventsPath, { flags: 'a' }))
+    : null
 
   let stderrBuf = ''
   let buf = ''
@@ -203,7 +205,7 @@ export async function runAgent(req: AgentRunRequest): Promise<AgentRunResult> {
   const handleLine = (line: string) => {
     const trimmed = line.trim()
     if (!trimmed) return
-    events.write(trimmed + '\n')
+    if (events) events.write(trimmed + '\n')
     let parsed: any
     try {
       parsed = JSON.parse(trimmed)
@@ -255,7 +257,7 @@ export async function runAgent(req: AgentRunRequest): Promise<AgentRunResult> {
   })
 
   if (buf.trim()) handleLine(buf)
-  events.end()
+  if (events) events.end()
 
   if (timer) clearTimeout(timer)
   if (killTimer) clearTimeout(killTimer)
