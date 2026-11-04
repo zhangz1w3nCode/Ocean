@@ -25,10 +25,17 @@ function instanceDir(root: string, workflow: string, instanceId: string): string
 }
 
 // 实例运行期一律读实例目录下的 flow.json 快照（创建实例时冻结），
-// 没有快照的历史实例回退到源工作流定义。
+// 没有快照或快照不可用（截断/空文件/被篖改）时回退到源工作流定义，
+// 避免一份坏快照把实例永久卡死。
 function loadFlow(root: string, workflow: string, instanceId: string): Flow {
   const snapshot = path.join(instanceDir(root, workflow, instanceId), 'meta-data', 'flow.json')
-  if (fs.existsSync(snapshot)) return fromFile(snapshot)
+  if (fs.existsSync(snapshot)) {
+    try {
+      return fromFile(snapshot)
+    } catch (e: any) {
+      console.error(`警告：实例快照不可用，回退源工作流定义（${snapshot}）：${e.message}`)
+    }
+  }
   return fromFile(path.join(root, '.workflows', workflow, 'meta-data', 'flow.json'))
 }
 

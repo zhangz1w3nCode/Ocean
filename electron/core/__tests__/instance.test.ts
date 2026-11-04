@@ -136,6 +136,30 @@ describe('instance flow.json snapshot', () => {
     expect(fail(root, workflow, instanceId, '故意失败')).toContain('已标记失败')
   })
 
+  it('快照被截断时回退源定义，实例不被卡死', async () => {
+    create(root, workflow, instanceId, '输入')
+    fs.writeFileSync(snapshotPath(), '{"na', 'utf-8')
+    writeSourceFlow({ startLabel: '源里的新标签' })
+
+    const out = await next(root, workflow, instanceId, false)
+    expect(out).toContain('## 源里的新标签')
+  })
+
+  it('快照为 0 字节时同样回退源定义', async () => {
+    create(root, workflow, instanceId, '输入')
+    fs.writeFileSync(snapshotPath(), '', 'utf-8')
+    writeSourceFlow({ startLabel: '源里的新标签' })
+
+    const out = await next(root, workflow, instanceId, false)
+    expect(out).toContain('## 源里的新标签')
+  })
+
+  it('create 后快照不残留 .tmp 临时文件', () => {
+    create(root, workflow, instanceId, '输入')
+    const snapDir = path.dirname(snapshotPath())
+    expect(fs.readdirSync(snapDir)).toEqual(['flow.json'])
+  })
+
   it('complete 的下一节点按快照计算，源被改成指向别的节点也不受影响', async () => {
     create(root, workflow, instanceId, '输入')
     await next(root, workflow, instanceId, false)

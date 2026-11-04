@@ -653,19 +653,35 @@ function parseInstanceMd(instDir) {
   return { instanceMd }
 }
 
-// 实例详情一律以「实例化那一刻」的 flow.json 快照为准；无快照的历史实例回退到源工作流定义。
+// 实例详情一律以「实例化那一刻」的 flow.json 快照为准；无快照或快照不可用时回退到源工作流定义。
 // 与执行侧保持一致（electron/core/executor.ts 的 loadFlow）。
 function readFlowData(workflowName, instanceId) {
-  let flowData = null
   const sourcePath = path.join(getWorkflowsDir(), workflowName, 'meta-data', 'flow.json')
   const snapshotPath = instanceId
     ? path.join(getWorkflowsDir(), workflowName, 'instance', instanceId, 'meta-data', 'flow.json')
     : null
-  const flowPath = snapshotPath && fs.existsSync(snapshotPath) ? snapshotPath : sourcePath
-  if (fs.existsSync(flowPath)) {
-    try { flowData = JSON.parse(fs.readFileSync(flowPath, 'utf-8')) } catch (e) { console.error('解析 flow.json 失败:', e) }
+
+  const tryRead = (p) => {
+    try {
+      return { ok: true, value: JSON.parse(fs.readFileSync(p, 'utf-8')) }
+    } catch (e) {
+      return { ok: false, error: e }
+    }
   }
-  return { flowData }
+
+  if (snapshotPath && fs.existsSync(snapshotPath)) {
+    const snap = tryRead(snapshotPath)
+    if (snap.ok) return { flowData: snap.value }
+    console.error('实例快照不可用，回退源工作流定义:', snapshotPath, snap.error)
+  }
+
+  if (fs.existsSync(sourcePath)) {
+    const src = tryRead(sourcePath)
+    if (src.ok) return { flowData: src.value }
+    console.error('解析 flow.json 失败:', sourcePath, src.error)
+  }
+
+  return { flowData: null }
 }
 
 // 实例详情构建：被 read-instance-detail（一次性读）与 subscribe-instance-detail（fs.watch 推送初始快照）共用
