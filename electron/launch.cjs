@@ -1541,6 +1541,41 @@ ipcMain.handle('open-folder-dialog', async () => {
   }
 })
 
+// 选择工作流导出包的保存路径（仅弹对话框，不写文件；打包由渲染进程直连 dist 模块完成）
+ipcMain.handle('pick-workflow-package-export-path', async (_, defaultFileName) => {
+  try {
+    const fileName = typeof defaultFileName === 'string' && defaultFileName.trim()
+      ? defaultFileName.trim()
+      : 'workflow.zip'
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: '导出工作流',
+      defaultPath: path.join(app.getPath('downloads'), fileName),
+      filters: [{ name: 'Ocean 工作流包', extensions: ['zip'] }],
+    })
+    if (result.canceled || !result.filePath) return { success: true, path: null }
+    return { success: true, path: result.filePath }
+  } catch (error) {
+    console.error('选择导出路径失败:', error)
+    return { success: false, error: String(error), path: null }
+  }
+})
+
+// 选择要导入的工作流包文件
+ipcMain.handle('pick-workflow-package-import-path', async () => {
+  try {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: '导入工作流',
+      properties: ['openFile'],
+      filters: [{ name: 'Ocean 工作流包', extensions: ['zip'] }],
+    })
+    if (result.canceled || result.filePaths.length === 0) return { success: true, path: null }
+    return { success: true, path: result.filePaths[0] }
+  } catch (error) {
+    console.error('选择导入文件失败:', error)
+    return { success: false, error: String(error), path: null }
+  }
+})
+
 // 加载应用配置
 ipcMain.handle('load-app-config', () => {
   try {

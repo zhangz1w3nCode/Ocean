@@ -21,6 +21,11 @@ const electronAPI = {
   deleteWorkflowFolder: (name) => ipcRenderer.invoke('delete-workflow-folder', name),
   renameWorkflowFolder: (oldName, newName) => ipcRenderer.invoke('rename-workflow-folder', oldName, newName),
 
+  // 工作流导入/导出：仅选路径，打包/解压与写盘由渲染进程直连 dist/source/desktop/workflowPackage.js
+  pickWorkflowPackageExportPath: (defaultFileName) =>
+    ipcRenderer.invoke('pick-workflow-package-export-path', defaultFileName),
+  pickWorkflowPackageImportPath: () => ipcRenderer.invoke('pick-workflow-package-import-path'),
+
   // 工作流实例操作 API
   listWorkflowInstances: () => ipcRenderer.invoke('list-workflow-instances'),
   readInstanceFile: (workflowName, instanceId, fileName) =>
