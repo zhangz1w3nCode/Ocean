@@ -653,13 +653,35 @@ function parseInstanceMd(instDir) {
   return { instanceMd }
 }
 
-function readFlowData(workflowName) {
-  let flowData = null
-  const flowPath = path.join(getWorkflowsDir(), workflowName, 'meta-data', 'flow.json')
-  if (fs.existsSync(flowPath)) {
-    try { flowData = JSON.parse(fs.readFileSync(flowPath, 'utf-8')) } catch (e) { console.error('解析 flow.json 失败:', e) }
+// 实例详情一律以「实例化那一刻」的 flow.json 快照为准；无快照或快照不可用时回退到源工作流定义。
+// 与执行侧保持一致（electron/core/executor.ts 的 loadFlow）。
+function readFlowData(workflowName, instanceId) {
+  const sourcePath = path.join(getWorkflowsDir(), workflowName, 'meta-data', 'flow.json')
+  const snapshotPath = instanceId
+    ? path.join(getWorkflowsDir(), workflowName, 'instance', instanceId, 'meta-data', 'flow.json')
+    : null
+
+  const tryRead = (p) => {
+    try {
+      return { ok: true, value: JSON.parse(fs.readFileSync(p, 'utf-8')) }
+    } catch (e) {
+      return { ok: false, error: e }
+    }
   }
-  return { flowData }
+
+  if (snapshotPath && fs.existsSync(snapshotPath)) {
+    const snap = tryRead(snapshotPath)
+    if (snap.ok) return { flowData: snap.value }
+    console.error('实例快照不可用，回退源工作流定义:', snapshotPath, snap.error)
+  }
+
+  if (fs.existsSync(sourcePath)) {
+    const src = tryRead(sourcePath)
+    if (src.ok) return { flowData: src.value }
+    console.error('解析 flow.json 失败:', sourcePath, src.error)
+  }
+
+  return { flowData: null }
 }
 
 // 实例详情构建：被 read-instance-detail（一次性读）与 subscribe-instance-detail（fs.watch 推送初始快照）共用
@@ -678,7 +700,7 @@ function buildInstanceDetail(workflowName, instanceId) {
         ...parseArtifacts(instDir),
         ...parseContext(instDir),
         ...parseInstanceMd(instDir),
-        ...readFlowData(workflowName),
+        ...readFlowData(workflowName, instanceId),
       },
     }
   } catch (error) {
@@ -702,7 +724,7 @@ function stopInstanceWatcher() {
 }
 
 // filename → 解析器映射；返回 null 表示需要全量兜底
-function parseByFilename(instDir, workflowName, filename) {
+function parseByFilename(instDir, workflowName, instanceId, filename) {
   if (!filename) return null
   const f = filename.replace(/\\\\/g, '/')
   if (f.includes('trace')) return parseTrace(instDir)
@@ -710,7 +732,7 @@ function parseByFilename(instDir, workflowName, filename) {
   if (f.includes('artifacts')) return parseArtifacts(instDir)
   if (f.includes('context.md')) return parseContext(instDir)
   if (f.includes('instance.md')) return parseInstanceMd(instDir)
-  if (f.includes('flow.json')) return readFlowData(workflowName)
+  if (f.includes('flow.json')) return readFlowData(workflowName, instanceId)
   return null
 }
 
@@ -739,7 +761,7 @@ ipcMain.handle('subscribe-instance-detail', (_event, workflowName, instanceId) =
         let needFullRebuild = false
         const delta = {}
         for (const fn of files) {
-          const partial = parseByFilename(instDir, workflowName, fn)
+          const partial = parseByFilename(instDir, workflowName, instanceId, fn)
           if (partial) {
             Object.assign(delta, partial)
           } else {

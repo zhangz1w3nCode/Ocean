@@ -24,9 +24,19 @@ function instanceDir(root: string, workflow: string, instanceId: string): string
   return path.join(root, '.workflows', workflow, 'instance', instanceId)
 }
 
-function loadFlow(root: string, workflow: string): Flow {
-  const filePath = path.join(root, '.workflows', workflow, 'meta-data', 'flow.json')
-  return fromFile(filePath)
+// 实例运行期一律读实例目录下的 flow.json 快照（创建实例时冻结），
+// 没有快照或快照不可用（截断/空文件/被篖改）时回退到源工作流定义，
+// 避免一份坏快照把实例永久卡死。
+function loadFlow(root: string, workflow: string, instanceId: string): Flow {
+  const snapshot = path.join(instanceDir(root, workflow, instanceId), 'meta-data', 'flow.json')
+  if (fs.existsSync(snapshot)) {
+    try {
+      return fromFile(snapshot)
+    } catch (e: any) {
+      console.error(`警告：实例快照不可用，回退源工作流定义（${snapshot}）：${e.message}`)
+    }
+  }
+  return fromFile(path.join(root, '.workflows', workflow, 'meta-data', 'flow.json'))
 }
 
 // ---------------------------------------------------------------------------
@@ -41,7 +51,7 @@ export async function next(root: string, workflow: string, instanceId: string, j
     throw new Error('当前节点未完成，先 complete/choose')
   }
 
-  const flow = loadFlow(root, workflow)
+  const flow = loadFlow(root, workflow, instanceId)
   const currentNode = getNode(flow, pf.state.current)
   if (!currentNode) throw new Error('当前节点不存在')
 
@@ -68,7 +78,7 @@ export async function next(root: string, workflow: string, instanceId: string, j
   pf.appendTrace('active', currentNode.data.label, invoke)
   logTrace(instDir, {
     ts: formatLocalTime(), command: 'next',
-    node: currentNode.data.label, invoke, status: 'active',
+    node: currentNode.data.label, node_id: currentNode.id, invoke, status: 'active',
   })
   pf.write(path.join(instDir, 'process.md'))
 
@@ -86,7 +96,7 @@ export async function complete(root: string, workflow: string, instanceId: strin
   if (pf.state.status !== Status.Executing) {
     throw new Error('当前无执行中的业务节点')
   }
-  const flow = loadFlow(root, workflow)
+  const flow = loadFlow(root, workflow, instanceId)
   const graph = new Graph(flow)
   const currentNode = getNode(flow, pf.state.current)
   if (!currentNode) throw new Error('当前节点不存在')
@@ -136,7 +146,7 @@ export async function complete(root: string, workflow: string, instanceId: strin
   pf.appendTrace('completed', name, invoke)
   logTrace(instDir, {
     ts: formatLocalTime(), command: 'complete',
-    node: name, invoke, status: 'completed',
+    node: name, node_id: pf.state.current, invoke, status: 'completed',
   })
   if (!pf.state.completed.includes(pf.state.current_name)) {
     pf.state.completed.push(pf.state.current_name)
@@ -177,7 +187,7 @@ export function fail(root: string, workflow: string, instanceId: string, reason:
     throw new Error('当前无执行中的业务节点')
   }
 
-  const flow = loadFlow(root, workflow)
+  const flow = loadFlow(root, workflow, instanceId)
 
   writeError(root, workflow, instanceId, pf.state.current_name, pf.state.current_invoke, reason)
   const name = pf.state.current_name
@@ -185,7 +195,7 @@ export function fail(root: string, workflow: string, instanceId: string, reason:
   pf.appendTrace('failed', name, invoke)
   logTrace(instDir, {
     ts: formatLocalTime(), command: 'fail',
-    node: name, invoke, status: 'failed',
+    node: name, node_id: pf.state.current, invoke, status: 'failed',
   })
 
   pf.state.retry_count += 1
@@ -221,7 +231,7 @@ export function choose(
     throw new Error('当前无待决策节点')
   }
 
-  const flow = loadFlow(root, workflow)
+  const flow = loadFlow(root, workflow, instanceId)
   const graph = new Graph(flow)
   const currentNode = getNode(flow, pf.state.current)
   if (!currentNode) throw new Error('决策节点不存在')
@@ -240,7 +250,7 @@ export function choose(
   pf.appendTrace('completed', name, invoke, branch)
   logTrace(instDir, {
     ts: formatLocalTime(), command: 'choose',
-    node: name, invoke, status: 'completed', branch,
+    node: name, node_id: pf.state.current, invoke, status: 'completed', branch,
   })
   if (!pf.state.completed.includes(pf.state.current_name)) {
     pf.state.completed.push(pf.state.current_name)

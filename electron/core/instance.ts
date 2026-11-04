@@ -28,6 +28,20 @@ export function create(
     throw new Error(`创建实例目录失败: ${e.message}`)
   }
 
+  // 定义快照：实例创建时冻结 flow.json 的图结构（label/分支/边/内联 content），之后执行只读快照。
+  // business/local 节点正文按 nodeRefPath 实时读，不在快照范围内。
+  // 先写 .tmp 再 rename：避免进程中断留下被截断的快照，从而阻断实例执行。
+  const snapFlowPath = path.join(instDir, 'meta-data', 'flow.json')
+  const snapTmpPath = `${snapFlowPath}.tmp`
+  try {
+    fs.mkdirSync(path.dirname(snapFlowPath), { recursive: true })
+    fs.copyFileSync(flowPath, snapTmpPath)
+    fs.renameSync(snapTmpPath, snapFlowPath)
+  } catch (e: any) {
+    try { fs.rmSync(snapTmpPath, { force: true }) } catch { /* ignored */ }
+    throw new Error(`复制 flow.json 快照失败: ${e.message}`)
+  }
+
   const wfMd = path.join(wfDir, 'WORKFLOW.md')
   if (fs.existsSync(wfMd)) {
     try {
