@@ -28,6 +28,15 @@ export function create(
     throw new Error(`创建实例目录失败: ${e.message}`)
   }
 
+  // 定义快照：实例创建时冻结 flow.json，之后执行只读快照，不受源工作流修改影响
+  const snapFlowPath = path.join(instDir, 'meta-data', 'flow.json')
+  try {
+    fs.mkdirSync(path.dirname(snapFlowPath), { recursive: true })
+    fs.copyFileSync(flowPath, snapFlowPath)
+  } catch (e: any) {
+    throw new Error(`复制 flow.json 快照失败: ${e.message}`)
+  }
+
   const wfMd = path.join(wfDir, 'WORKFLOW.md')
   if (fs.existsSync(wfMd)) {
     try {

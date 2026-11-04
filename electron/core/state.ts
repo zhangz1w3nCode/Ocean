@@ -142,6 +142,8 @@ export interface TraceLogEntry {
   ts: string
   command: string
   node?: string
+  /** 节点 id，取自实例快照 flow.json（与 node 的 label 一一对应，label 改名后仍稳定） */
+  node_id?: string
   invoke?: string
   status?: string
   branch?: string
@@ -274,7 +276,7 @@ export function parseProcessStateJson(json: string): ProcessState {
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
-// trace.jsonl — compact JSON, field order: ts,command,node,invoke,status,branch
+// trace.jsonl — compact JSON, field order: ts,command,node,node_id,invoke,status,branch
 // ---------------------------------------------------------------------------
 
 export function traceJsonlPath(instDir: string): string {
@@ -287,6 +289,9 @@ export function serializeTraceLogEntry(entry: TraceLogEntry): string {
   parts.push('"command":' + JSON.stringify(entry.command))
   if (entry.node != null) {
     parts.push('"node":' + JSON.stringify(entry.node))
+  }
+  if (entry.node_id != null) {
+    parts.push('"node_id":' + JSON.stringify(entry.node_id))
   }
   if (entry.invoke != null) {
     parts.push('"invoke":' + JSON.stringify(entry.invoke))
@@ -335,6 +340,7 @@ export function readTraceJsonl(filePath: string): TraceLogEntry[] {
         ts: obj.ts,
         command: obj.command,
         node: obj.node,
+        node_id: obj.node_id,
         invoke: obj.invoke,
         status: obj.status,
         branch: obj.branch,
