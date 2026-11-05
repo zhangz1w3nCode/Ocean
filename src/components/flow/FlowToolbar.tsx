@@ -12,6 +12,7 @@ import {
   Image,
   Check,
   Share2,
+  Download,
 } from 'lucide-react'
 import { useFlowEditorStore } from '../../stores/flowEditorStore'
 import { useWorkflowStore } from '../../stores/workflowStore'
@@ -21,11 +22,13 @@ import { ApplyModal } from './ApplyModal'
 interface FlowToolbarProps {
   onBack?: () => void
   onSave?: () => void
+  onExport?: () => void
+  exporting?: boolean
   onClose?: () => void
   workflowId?: string | null
 }
 
-export const FlowToolbar: FC<FlowToolbarProps> = ({ onBack, onSave, onClose, workflowId }) => {
+export const FlowToolbar: FC<FlowToolbarProps> = ({ onBack, onSave, onExport, exporting, onClose, workflowId }) => {
   const {
     workflowName,
     selectedNodeId,
@@ -178,6 +181,20 @@ export const FlowToolbar: FC<FlowToolbarProps> = ({ onBack, onSave, onClose, wor
 
       {/* 右侧：保存 + 应用 + 关闭 */}
       <div className="flex items-center gap-2">
+        <button
+          onClick={onExport}
+          disabled={!isWorkflowSaved || exporting}
+          data-export-button
+          title={isWorkflowSaved ? '导出工作流（含设计文件与引用节点）' : '请先保存工作流后再导出'}
+          className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium border rounded-lg transition-colors
+                     ${isWorkflowSaved && !exporting
+                       ? 'text-gray-700 bg-white border-gray-200 hover:bg-gray-50'
+                       : 'text-gray-400 bg-gray-50 border-gray-200 cursor-not-allowed'}`}
+        >
+          <Download size={16} />
+          {exporting ? '导出中' : '导出'}
+        </button>
+
         <button
           onClick={onSave}
           data-save-button

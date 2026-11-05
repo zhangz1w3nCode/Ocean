@@ -34,6 +34,9 @@ declare global {
       loadAllWorkflowFolders: () => Promise<{ success: boolean; folders?: string[]; error?: string }>
       deleteWorkflowFolder: (name: string) => Promise<{ success: boolean; error?: string }>
       renameWorkflowFolder: (oldName: string, newName: string) => Promise<{ success: boolean; error?: string }>
+      // 工作流导入/导出：仅选路径（打包/解压由渲染进程直连 dist 模块完成）
+      pickWorkflowPackageExportPath: (defaultFileName?: string) => Promise<{ success: boolean; path?: string | null; error?: string }>
+      pickWorkflowPackageImportPath: () => Promise<{ success: boolean; path?: string | null; error?: string }>
       // 工作流实例相关
       listWorkflowInstances: () => Promise<{ success: boolean; instances?: any[]; error?: string }>
       readInstanceFile: (workflowName: string, instanceId: string, fileName: string) => Promise<{ success: boolean; content?: string; error?: string }>

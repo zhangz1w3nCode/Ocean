@@ -9,6 +9,9 @@ import { NodePanel } from '../flow/NodePanel'
 import { useFlowEditorStore } from '../../stores/flowEditorStore'
 import { useWorkflowStore } from '../../stores/workflowStore'
 import { useToastStore } from '../../stores/toastStore'
+import { useProjectStore } from '../../stores/projectStore'
+import { isElectron } from '../../utils/storage'
+import { loadWorkflowPackageModule } from '../../utils/workflowPackageBridge'
 import { getLayout, setLayout } from '../ui/Modal'
 import { ConfirmModal } from '../ui/ConfirmModal'
 
@@ -77,6 +80,7 @@ export const WorkflowEditorModal: FC<WorkflowEditorModalProps> = ({
   const [nodePanelWidth, setNodePanelWidth] = useState(208)
 
   const [showConfirm, setShowConfirm] = useState(false)
+  const [exporting, setExporting] = useState(false)
   const initialSnapshot = useRef<string>('')
 
   const {
@@ -444,6 +448,70 @@ export const WorkflowEditorModal: FC<WorkflowEditorModalProps> = ({
     }
   }, [isMaximized, position, dimensions])
 
+  const handleExport = async () => {
+    if (!workflowId) {
+      addToast('没有工作流ID，无法导出', 'error')
+      return
+    }
+    const target = getWorkflowById(workflowId)
+    if (!target?.name) {
+      addToast('工作流不存在，无法导出', 'error')
+      return
+    }
+    if (!isElectron() || !window.electronAPI?.pickWorkflowPackageExportPath) {
+      addToast('导出仅支持桌面端', 'warning')
+      return
+    }
+    const root = useProjectStore.getState().currentProject?.path || ''
+    if (!root) {
+      addToast('未选择项目目录，无法导出', 'error')
+      return
+    }
+    const pkgModule = loadWorkflowPackageModule()
+    if (!pkgModule) {
+      addToast('导出模块未就绪，请重新构建桌面端', 'error')
+      return
+    }
+
+    // 导出的是磁盘上的设计文件，存在未保存改动时先要求保存
+    const state = useFlowEditorStore.getState()
+    const snapshot = JSON.stringify({ nodes: state.nodes, edges: state.edges })
+    if (snapshot !== initialSnapshot.current) {
+      addToast('当前有未保存的修改，请先保存再导出', 'warning')
+      return
+    }
+
+    setExporting(true)
+    try {
+      const picked = await window.electronAPI.pickWorkflowPackageExportPath(`${target.name}.zip`)
+      if (!picked?.success) {
+        addToast(`选择导出路径失败${picked?.error ? `：${picked.error}` : ''}`, 'error')
+        return
+      }
+      if (!picked.path) return // 用户取消
+
+      let appVersion: string | undefined
+      try {
+        appVersion = await window.electronAPI.getAppVersion()
+      } catch {
+        appVersion = undefined
+      }
+
+      const result = pkgModule.saveWorkflowPackage(root, target.name, picked.path, appVersion)
+      if (!result.success) {
+        addToast(`导出失败：${result.error ?? '未知错误'}`, 'error')
+        return
+      }
+
+      addToast('导出成功', 'success')
+      for (const warning of result.warnings ?? []) {
+        addToast(warning, 'warning')
+      }
+    } finally {
+      setExporting(false)
+    }
+  }
+
   const handleSave = async () => {
     if (!workflowId) {
       addToast('没有工作流ID，无法保存', 'error')
@@ -514,6 +582,8 @@ export const WorkflowEditorModal: FC<WorkflowEditorModalProps> = ({
                 <FlowToolbar
                   onBack={() => handleClose()}
                   onSave={handleSave}
+                  onExport={handleExport}
+                  exporting={exporting}
                   onClose={() => handleClose()}
                   workflowId={workflowId}
                 />
