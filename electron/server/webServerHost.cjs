@@ -1,5 +1,5 @@
 // 桌面端宿主：把网页端作为子进程拉起/停止。
-// 运行在 Electron 主进程内（source/main.ts 的编译产物 require 本模块），自己注册 IPC handler。
+// 运行在 Electron 主进程内（launch.cjs require 本模块），自己注册 IPC handler。
 // 在网页端子进程内（stub 环境）自动禁用，防止递归拉起。
 const { spawn } = require('child_process')
 const net = require('net')

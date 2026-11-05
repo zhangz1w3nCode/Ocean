@@ -11,6 +11,7 @@ import { useAppStore } from './stores/appStore'
 import { useResourceStore } from './stores/resourceStore'
 import { useAgentStore } from './stores/agentStore'
 import { useKnowledgeStore } from './stores/knowledgeStore'
+import { useCodebaseStore } from './stores/codebaseStore'
 import { useSkillStore } from './stores/skillStore'
 import { useSettingsStore } from './stores/settingsStore'
 import { motion } from 'framer-motion'
@@ -22,6 +23,7 @@ const App: FC = () => {
   const { loadAgentFiles } = useAgentStore()
   const { loadKnowledgeFiles } = useKnowledgeStore()
   const { loadSkillFiles } = useSkillStore()
+  const { loadCodebases } = useCodebaseStore()
   const { isProjectLoaded, loadAppConfigOnStart, currentProject, setCurrentProject } = useProjectStore()
   const { isSwitchingProject, finishSwitchingProject, isSidebarCollapsed } = useAppStore()
   const { loadAssetRoot, assetRoot } = useSettingsStore()
@@ -49,8 +51,9 @@ const App: FC = () => {
       loadAgentFiles()
       loadKnowledgeFiles()
       loadSkillFiles()
+      loadCodebases()
     }
-  }, [isProjectLoaded, currentProject, assetRoot, loadNodeDefinitions, loadWorkflows, loadResourceFiles, loadAgentFiles, loadKnowledgeFiles, loadSkillFiles])
+  }, [isProjectLoaded, currentProject, assetRoot, loadNodeDefinitions, loadWorkflows, loadResourceFiles, loadAgentFiles, loadKnowledgeFiles, loadSkillFiles, loadCodebases])
 
   // 切换项目时的处理
   useEffect(() => {

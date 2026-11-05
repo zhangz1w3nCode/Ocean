@@ -1,5 +1,5 @@
 import { describe, it, expect, afterAll } from 'vitest'
-import { mkdtempSync, rmSync, readFileSync, readdirSync } from 'node:fs'
+import { mkdtempSync, rmSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createRequire } from 'node:module'
@@ -21,7 +21,7 @@ afterAll(() => {
 })
 
 describe('registry 在打包版（electron 不可解析）环境下', () => {
-  it('仍能加载主入口产物（dist/source/main.js）并注册全部 handler（数量与源码一致）', () => {
+  it('仍能加载 launch.cjs 并注册全部 handler（数量与源码一致）', () => {
     Module._resolveFilename = function (request: string, ...rest: unknown[]) {
       if (request === 'electron') {
         const err = new Error("Cannot find module 'electron'")
@@ -33,18 +33,10 @@ describe('registry 在打包版（electron 不可解析）环境下', () => {
 
     // 旧实现（用 require.resolve('electron') 定位 require.cache 键）在此处会直接抛错
     const { handlers } = req('./registry.cjs')
-    // 期望值从源码推导，避免硬编码计数随 channel 增删过期：
-    // 主入口 source/main.ts（纯入口，0 个）+ source/desktop/*.ts 模块注册数（主入口 require 编译产物注册）
-    const mainSrc = readFileSync(new URL('../source/main.ts', import.meta.url), 'utf-8')
-    const desktopDir = new URL('../source/desktop/', import.meta.url)
-    const desktopCount = readdirSync(desktopDir)
-      .filter(f => f.endsWith('.ts'))
-      .reduce((sum, f) => {
-        const src = readFileSync(new URL(f, desktopDir), 'utf-8')
-        return sum + (src.match(/ipcMain\.handle\(/g) || []).length
-      }, 0)
-    expect(handlers.size).toBe((mainSrc.match(/ipcMain\.handle\(/g) || []).length + desktopCount)
+    // 期望值从源码推导，避免硬编码计数随 channel 增删过期
+    const launchSrc = readFileSync(new URL('../launch.cjs', import.meta.url), 'utf-8')
+    expect(handlers.size).toBe((launchSrc.match(/ipcMain\.handle\(/g) || []).length)
     expect(handlers.has('set-project-path')).toBe(true)
-    expect(handlers.has('create-task')).toBe(true)
+    expect(handlers.has('get-app-version')).toBe(true)
   })
 })

@@ -21,6 +21,11 @@ const electronAPI = {
   deleteWorkflowFolder: (name) => ipcRenderer.invoke('delete-workflow-folder', name),
   renameWorkflowFolder: (oldName, newName) => ipcRenderer.invoke('rename-workflow-folder', oldName, newName),
 
+  // 工作流导入/导出：仅选路径，打包/解压与写盘由渲染进程直连 dist/source/desktop/workflowPackage.js
+  pickWorkflowPackageExportPath: (defaultFileName) =>
+    ipcRenderer.invoke('pick-workflow-package-export-path', defaultFileName),
+  pickWorkflowPackageImportPath: () => ipcRenderer.invoke('pick-workflow-package-import-path'),
+
   // 工作流实例操作 API
   listWorkflowInstances: () => ipcRenderer.invoke('list-workflow-instances'),
   readInstanceFile: (workflowName, instanceId, fileName) =>
@@ -158,13 +163,6 @@ const electronAPI = {
     ipcRenderer.invoke('save-knowledge-template-file', templateType, content),
   loadKnowledgeTemplateFile: (templateType) =>
     ipcRenderer.invoke('load-knowledge-template-file', templateType),
-
-  // 任务管理 API（存储在项目根 .tasks/ 目录）
-  listTasks: () => ipcRenderer.invoke('list-tasks'),
-  readTaskDetail: (taskName) => ipcRenderer.invoke('read-task-detail', taskName),
-  createTask: (payload) => ipcRenderer.invoke('create-task', payload),
-  updateTask: (payload) => ipcRenderer.invoke('update-task', payload),
-  saveTaskContext: (payload) => ipcRenderer.invoke('save-task-context', payload),
 
 }
 

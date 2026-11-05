@@ -6,6 +6,7 @@ import { useWorkflowStore } from '../stores/workflowStore'
 import { useResourceStore } from '../stores/resourceStore'
 import { useKnowledgeStore } from '../stores/knowledgeStore'
 import { useSkillStore } from '../stores/skillStore'
+import { useCodebaseStore } from '../stores/codebaseStore'
 import { useSettingsStore } from '../stores/settingsStore'
 
 interface UseReferenceItemsOptions {
@@ -20,6 +21,7 @@ const libraryConfig: { category: ReferenceCategory; name: string; subDir: string
   { category: 'resources', name: '资源文件库', subDir: 'resources/' },
   { category: 'skills', name: '技能库', subDir: 'skills/' },
   { category: 'knowledges', name: '知识库', subDir: 'knowledges/' },
+  { category: 'codebases', name: '代码库', subDir: 'codebases/' },
 ]
 
 export function useReferenceItems(options: UseReferenceItemsOptions = {}): ReferenceItem[] {
@@ -33,6 +35,7 @@ export function useReferenceItems(options: UseReferenceItemsOptions = {}): Refer
   const resourceFiles = useResourceStore((state) => state.resourceFiles)
   const skillFiles = useSkillStore((state) => state.skillFiles)
   const knowledgeFiles = useKnowledgeStore((state) => state.knowledgeFiles)
+  const codebases = useCodebaseStore((state) => state.codebases)
 
   return useMemo(() => {
     const items: ReferenceItem[] = []
@@ -186,6 +189,30 @@ export function useReferenceItems(options: UseReferenceItemsOptions = {}): Refer
       }
     })
 
+    // 代码库 - 先添加库引用，再添加具体代码库（跨资产来源共享，固定在项目根 .codebases）
+    const codebaseLibrary = libraryConfig.find(c => c.category === 'codebases')!
+    if (`.codebases/` !== excludePath) {
+      items.push({
+        id: 'library-codebases',
+        name: codebaseLibrary.name,
+        category: 'codebases',
+        path: `.codebases/`,
+        isLibrary: true,
+      })
+    }
+    codebases.forEach((codebase) => {
+      const path = `.codebases/${codebase.name}/`
+      if (path !== excludePath) {
+        items.push({
+          id: `codebase-${codebase.name}`,
+          name: codebase.name,
+          category: 'codebases',
+          path,
+          description: codebase.preview,
+        })
+      }
+    })
+
     return items
-  }, [excludePath, assetRoot, agentFiles, nodeDefinitions, workflows, resourceFiles, skillFiles, knowledgeFiles])
+  }, [excludePath, assetRoot, agentFiles, nodeDefinitions, workflows, resourceFiles, skillFiles, knowledgeFiles, codebases])
 }

@@ -32,6 +32,7 @@ const INVOKE_METHODS = [
   'saveWorkflowFile', 'loadWorkflowFile', 'deleteWorkflowFile', 'loadAllWorkflowFiles',
   'createWorkflowFolder', 'loadWorkflowMd', 'saveWorkflowMd', 'loadWorkflowFlowJson',
   'saveWorkflowFlowJson', 'loadAllWorkflowFolders', 'deleteWorkflowFolder', 'renameWorkflowFolder',
+  'pickWorkflowPackageExportPath', 'pickWorkflowPackageImportPath',
   'listWorkflowInstances', 'readInstanceFile', 'readInstanceDetail',
   'subscribeInstanceDetail', 'unsubscribeInstanceDetail',
   'listTasks', 'readTaskDetail', 'createTask', 'updateTask', 'saveTaskContext',

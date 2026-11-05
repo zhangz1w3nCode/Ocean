@@ -1,120 +1,8 @@
-// CLI 适配层的各种公共操作：参数解析、输出格式化（表格/JSON/带框文本）、用法错误类型、
-// help JSON 捕获缓冲、内容输入与 frontmatter 剥离。source/cli/{domain}.ts 与 bin/ocean.ts 共用这一层。
-
 import Table from 'cli-table3'
-import * as fs from 'node:fs'
 
-// ---------------------------------------------------------------------------
-// 内容输入与 frontmatter 剥离（由 bin/ocean.ts 等价迁入，行为不变）
-// ---------------------------------------------------------------------------
-
-// --content / --content-file / stdin 三选一读取正文
-export function readContent(flags: Record<string, string | boolean>): string {
-  const content = typeof flags.content === 'string' ? flags.content : undefined
-  const contentFile = typeof flags['content-file'] === 'string' ? flags['content-file'] : undefined
-  if (contentFile) {
-    try {
-      return fs.readFileSync(contentFile, 'utf-8')
-    } catch (e: any) {
-      throw new Error(`读取内容文件失败 ${contentFile}: ${e.message}`)
-    }
-  }
-  if (content != null) return content
-  // read stdin
-  return fs.readFileSync(0, 'utf-8')
-}
-
-// 剥掉 YAML frontmatter，返回正文
-export function stripFrontmatter(text: string): string {
-  if (text.startsWith('---')) {
-    const end = text.indexOf('\n---', 3)
-    if (end !== -1) {
-      const after = text.indexOf('\n', end + 4)
-      if (after !== -1) {
-        return text.substring(after + 1).trim()
-      }
-    }
-  }
-  return text
-}
-
-// ---------------------------------------------------------------------------
-// 参数解析
-// ---------------------------------------------------------------------------
-
-export interface CliArgs {
-  root?: string
-  namespace: string
-  subcommand: string
-  positional: string[]
-  flags: Record<string, string | boolean>
-  help: boolean
-  version: boolean
-}
-
-export function parseArgs(argv: string[]): CliArgs {
-  const args = argv.slice(2)
-  let root: string | undefined
-  const positional: string[] = []
-  const flags: Record<string, string | boolean> = {}
-  let help = false
-  let version = false
-
-  let namespace = ''
-  let subcommand = ''
-
-  for (let j = 0; j < args.length; j++) {
-    const arg = args[j]
-    if (arg === '--root') {
-      root = args[++j]
-    } else if (arg.startsWith('--root=')) {
-      root = arg.substring(7)
-    } else if (arg === '--help' || arg === '-h') {
-      help = true
-    } else if (arg === '--version' || arg === '-v') {
-      version = true
-    } else if (arg.startsWith('--')) {
-      const key = arg.substring(2)
-      const next = args[j + 1]
-      if (next && !next.startsWith('--')) {
-        flags[key] = next
-        j++
-      } else {
-        flags[key] = true
-      }
-    } else {
-      if (!namespace) {
-        namespace = arg
-      } else if (!subcommand) {
-        subcommand = arg
-      } else {
-        positional.push(arg)
-      }
-    }
-  }
-
-  // help/version 子命令形式: ocean help [namespace], ocean version
-  if (namespace === 'help' || namespace === '-h') {
-    help = true
-    namespace = subcommand
-    subcommand = ''
-  } else if (namespace === 'version' || namespace === '-v') {
-    version = true
-    namespace = ''
-  }
-
-  return { root, namespace, subcommand, positional, flags, help, version }
-}
-
-export function getLimit(flags: Record<string, string | boolean>, key: string, fallback: number): number {
-  const val = flags[key]
-  if (typeof val === 'string') return parseInt(val, 10)
-  return fallback
-}
-
-// ---------------------------------------------------------------------------
-// 用法错误（exit 2 for usage errors, exit 1 for runtime errors）
-// ---------------------------------------------------------------------------
+// CLI 端公共基建：输出格式 / 错误语义 / 内容输入。
+// 提取自 electron/bin/ocean.ts（保持行为一致，ocean.ts 经 import 复用），
+// 供各域 CLI 适配层（source/cli/{domain}.ts）与 CLI 入口共享。
 
 export class UsageError extends Error {
   constructor(message: string) {
@@ -123,9 +11,15 @@ export class UsageError extends Error {
   }
 }
 
-// ---------------------------------------------------------------------------
-// 输出格式化
-// ---------------------------------------------------------------------------
+let helpJsonBuf: string[] | null = null
+
+export function setHelpJsonCapture(buf: string[] | null): void {
+  helpJsonBuf = buf
+}
+
+export function getHelpJsonCapture(): string[] | null {
+  return helpJsonBuf
+}
 
 export function rawOut(s: string): void {
   process.stdout.write(s + '\n')
@@ -152,22 +46,8 @@ export function displayWidth(s: string): number {
   }, 0)
 }
 
-// help --json 模式的缓冲区：printHelp 开启捕获，out() 收集文本，结束时整体输出
-let _helpJsonBuf: string[] | null = null
-
-export function setHelpJsonBuffer(buf: string[] | null): void {
-  _helpJsonBuf = buf
-}
-
-export function getHelpJsonBuffer(): string[] | null {
-  return _helpJsonBuf
-}
-
 export function out(s: string): void {
-  if (_helpJsonBuf !== null) {
-    _helpJsonBuf.push(s)
-    return
-  }
+  if (helpJsonBuf !== null) { helpJsonBuf.push(s); return }
   const maxBoxW = Math.min((process.stdout.columns || 120) - 4, 70)
   const wrapped: string[] = []
   for (const line of s.split('\n')) {
@@ -192,20 +72,20 @@ export function out(s: string): void {
   }
   const widths = wrapped.map(l => displayWidth(l))
   const maxW = Math.max(...widths, 0)
-  const h = '━'.repeat(maxW + 2)
-  rawOut('┏' + h + '┓')
+  const h = '\u2501'.repeat(maxW + 2)
+  rawOut('\u250f' + h + '\u2513')
   for (let i = 0; i < wrapped.length; i++) {
     const pad = ' '.repeat(maxW - widths[i])
-    rawOut('┃ ' + wrapped[i] + pad + ' ┃')
+    rawOut('\u2503 ' + wrapped[i] + pad + ' \u2503')
   }
-  rawOut('┗' + h + '┛')
+  rawOut('\u2517' + h + '\u251b')
 }
 
 export const TABLE_CHARS = {
-  'top': '━', 'top-mid': '┳', 'top-left': '┏', 'top-right': '┓',
-  'bottom': '─', 'bottom-mid': '┴', 'bottom-left': '└', 'bottom-right': '┘',
-  'left': '│', 'right': '│', 'mid': '━', 'mid-mid': '┇',
-  'left-mid': '┡', 'right-mid': '┩', 'middle': '│',
+  'top': '\u2501', 'top-mid': '\u2533', 'top-left': '\u250f', 'top-right': '\u2513',
+  'bottom': '\u2500', 'bottom-mid': '\u2534', 'bottom-left': '\u2514', 'bottom-right': '\u2518',
+  'left': '\u2502', 'right': '\u2502', 'mid': '\u2501', 'mid-mid': '\u2547',
+  'left-mid': '\u2521', 'right-mid': '\u2529', 'middle': '\u2502',
 }
 
 export function printDataTable(headers: string[], rows: string[][]): void {
@@ -225,7 +105,7 @@ export function printDataTable(headers: string[], rows: string[][]): void {
   const lines = table.toString().split('\n')
   let separatorSeen = false
   const filtered = lines.filter(line => {
-    if (line.includes('┡')) {
+    if (line.includes('\u2521')) {
       if (!separatorSeen) {
         separatorSeen = true
         return true
@@ -235,7 +115,7 @@ export function printDataTable(headers: string[], rows: string[][]): void {
     return true
   })
   if (filtered.length > 2) {
-    filtered[1] = filtered[1].replace(/│/g, '┃')
+    filtered[1] = filtered[1].replace(/\u2502/g, '\u2503')
   }
   rawOut(filtered.join('\n'))
 }
@@ -255,17 +135,17 @@ export function printAction(action: string, fields: Record<string, string>): voi
     style: { head: ['green'] },
     colAligns: ['center', ...keys.map(() => 'center' as const)],
     chars: {
-      'top': '━', 'top-mid': '┳', 'top-left': '┏', 'top-right': '┓',
-      'bottom': '─', 'bottom-mid': '┴', 'bottom-left': '└', 'bottom-right': '┘',
-      'left': '│', 'right': '│', 'mid': '━', 'mid-mid': '┇',
-      'left-mid': '┡', 'right-mid': '┩', 'middle': '│',
+      'top': '\u2501', 'top-mid': '\u2533', 'top-left': '\u250f', 'top-right': '\u2513',
+      'bottom': '\u2500', 'bottom-mid': '\u2534', 'bottom-left': '\u2514', 'bottom-right': '\u2518',
+      'left': '\u2502', 'right': '\u2502', 'mid': '\u2501', 'mid-mid': '\u2547',
+      'left-mid': '\u2521', 'right-mid': '\u2529', 'middle': '\u2502',
     },
   })
   table.push([action, ...keys.map(k => fields[k])])
   const lines = table.toString().split('\n')
   let separatorSeen = false
   const filtered = lines.filter(line => {
-    if (line.includes('┡')) {
+    if (line.includes('\u2521')) {
       if (!separatorSeen) {
         separatorSeen = true
         return true
@@ -275,7 +155,22 @@ export function printAction(action: string, fields: Record<string, string>): voi
     return true
   })
   if (filtered.length > 2) {
-    filtered[1] = filtered[1].replace(/│/g, '┃')
+    filtered[1] = filtered[1].replace(/\u2502/g, '\u2503')
   }
   rawOut(filtered.join('\n'))
+}
+
+export function readContent(flags: Record<string, string | boolean>): string {
+  const content = typeof flags.content === 'string' ? flags.content : undefined
+  const contentFile = typeof flags['content-file'] === 'string' ? flags['content-file'] : undefined
+  if (contentFile) {
+    try {
+      return require('fs').readFileSync(contentFile, 'utf-8')
+    } catch (e: any) {
+      throw new Error(`读取内容文件失败 ${contentFile}: ${e.message}`)
+    }
+  }
+  if (content != null) return content
+  // read stdin
+  return require('fs').readFileSync(0, 'utf-8')
 }
