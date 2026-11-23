@@ -2,6 +2,8 @@
 // 入口负责参数解析与用法拦截（UsageError → exit 2），出口负责输出格式与退出码。
 // 业务结果统一来自 core 的 { success } 契约，业务失败抛 Error（exit 1），
 // 由 CLI 入口 main() 统一捕获。
+import * as fs from 'node:fs'
+import * as path from 'node:path'
 import * as taskCore from '../../core/task'
 import type { TaskSummary, TaskDetail, TaskWritePayload, TaskContextPayload, TaskSearchResult } from '../../core/task'
 import * as codebaseCore from '../../core/codebases'
@@ -116,6 +118,31 @@ function rejectSelfRelated(name: string, related: string[] | undefined): void {
   }
 }
 
+// 工作流绑定校验：绑定为可选项，但一旦填写就必须真实存在（GUI 为选择模式天然满足）。
+// 实例必须属于所选工作流——实例目录本身就挂在工作流目录下，路径存在即归属成立。
+function validateWorkflowBinding(root: string, workflow: string | undefined, instance: string | undefined): void {
+  const wf = (workflow || '').trim()
+  const inst = (instance || '').trim()
+  if (!wf) {
+    if (inst) throw new UsageError('绑定工作流实例时必须同时指定 --workflow <工作流名称>')
+    return
+  }
+  const wfDir = path.join(root, '.workflows', wf)
+  if (!fs.existsSync(wfDir) || !fs.statSync(wfDir).isDirectory()) {
+    throw new UsageError(`工作流不存在: ${wf}（可用 ocean workflow list 查看可用工作流）`)
+  }
+  if (!inst) return
+  const instDir = path.join(wfDir, 'instance', inst)
+  if (!fs.existsSync(instDir) || !fs.statSync(instDir).isDirectory()) {
+    throw new UsageError(`工作流「${wf}」下不存在实例: ${inst}（可用 ocean workflow instance list 查看）`)
+  }
+}
+
+// 上下文路径展示：文件夹可选，平铺不加前缀
+function contextPathLabel(folder: string | null | undefined, topic: string): string {
+  return folder ? `${folder}/${topic}` : topic
+}
+
 export async function handleTask(root: string, args: Args): Promise<void> {
   const cmd = args.subcommand
   const json = args.flags.json === true
@@ -149,9 +176,11 @@ export async function handleTask(root: string, args: Args): Promise<void> {
         ['关联仓库', t.relatedCodebases.join(', ') || '-'],
         ['标签', t.tags.join(', ') || '-'],
         ['关联任务', t.relatedTasks.join(', ') || '-'],
+        ['绑定工作流', t.workflow || '-'],
+        ['绑定实例', t.workflowInstance || '-'],
         ['创建时间', t.createdAt || '-'],
         ['更新时间', t.updatedAt || '-'],
-        ['上下文', detail.contexts.map(c => c.name).join(', ') || '-'],
+        ['上下文', detail.contexts.map(c => contextPathLabel(c.folder, c.name)).join(', ') || '-'],
         ['事件数', String(detail.trace.length)],
       ])
       out(t.content ? t.content.trim() : '（无任务内容）')
@@ -174,13 +203,27 @@ export async function handleTask(root: string, args: Args): Promise<void> {
       }
       const tags = listFlag('tags', args)
       if (tags) payload.tags = tags
-      const related = listFlag('related', args)
-      if (related) {
-        rejectSelfRelated(name, related)
-        payload.relatedTasks = related
+      const associated = listFlag('related', args)
+      if (associated) {
+        rejectSelfRelated(name, associated)
+        payload.relatedTasks = associated
       }
+      const workflow = strFlag('workflow', args)
+      const workflowInstance = strFlag('workflow-instance', args)
+      validateWorkflowBinding(root, workflow, workflowInstance)
+      if (workflow !== undefined) payload.workflow = workflow
+      if (workflowInstance !== undefined) payload.workflowInstance = workflowInstance
       const context = strFlag('context', args)
-      if (context !== undefined) payload.context = context
+      if (context !== undefined) {
+        const contextFolder = strFlag('context-folder', args)
+        if (!contextFolder) {
+          throw new UsageError('写入初始上下文必须同时指定 --context-folder <文件夹>（上下文写入一律落 context/{folder}/{topic}.md）')
+        }
+        payload.context = context
+        payload.contextFolder = contextFolder
+      } else if (args.flags['context-folder'] !== undefined) {
+        throw new UsageError('--context-folder 需与 --context 一同使用')
+      }
       const task = unwrap(await taskCore.createTask(root, payload)).task
       if (json) printJson({ action: 'created', task })
       else printAction('created', { name: task.name, status: task.status })
@@ -206,6 +249,17 @@ export async function handleTask(root: string, args: Args): Promise<void> {
       if (relatedFlag !== undefined) {
         rejectSelfRelated(name, relatedFlag)
       }
+      // 绑定：未提供的字段回填原值（core 为全量覆写语义），--no-workflow / --no-workflow-instance 显式清空；
+      // 清空工作流时同时清空实例（实例不得脱离工作流存在）
+      const workflowFlag = strFlag('workflow', args)
+      const workflowInstanceFlag = strFlag('workflow-instance', args)
+      const workflowValue = cleared('workflow', args) ? '' : (workflowFlag !== undefined ? workflowFlag : current.workflow)
+      // 换工作流但未显式指定实例：旧实例属于原工作流，自动清空而不是报归属错误
+      const workflowChanged = workflowValue !== current.workflow
+      const workflowInstanceValue = cleared('workflow-instance', args) || (workflowChanged && workflowInstanceFlag === undefined)
+        ? ''
+        : (workflowInstanceFlag !== undefined ? workflowInstanceFlag : current.workflowInstance)
+      validateWorkflowBinding(root, workflowValue, workflowValue ? workflowInstanceValue : '')
       const payload: TaskWritePayload = {
         name,
         content: content !== undefined ? content : current.content,
@@ -213,6 +267,8 @@ export async function handleTask(root: string, args: Args): Promise<void> {
         relatedCodebases: cleared('related-codebases', args) ? [] : (relatedCodebasesFlag !== undefined ? relatedCodebasesFlag : current.relatedCodebases),
         tags: cleared('tags', args) ? [] : (tagsFlag !== undefined ? tagsFlag : current.tags),
         relatedTasks: cleared('related', args) ? [] : (relatedFlag !== undefined ? relatedFlag : current.relatedTasks),
+        workflow: workflowValue,
+        workflowInstance: workflowValue ? workflowInstanceValue : '',
       }
       if (status !== undefined) payload.status = status
       const task = unwrap(await taskCore.updateTask(root, payload)).task
@@ -268,27 +324,34 @@ export async function handleTask(root: string, args: Args): Promise<void> {
           const contexts = unwrap(await taskCore.readTaskDetail(root, name)).detail.contexts
           if (json) printJson(contexts)
           else if (contexts.length === 0) rawOut('（无上下文）')
-          else printDataTable(['主题', '更新时间'], contexts.map(c => [c.name, c.updatedAt || '-']))
+          else printDataTable(['文件夹', '主题', '更新时间'], contexts.map(c => [c.folder || '-', c.name, c.updatedAt || '-']))
           break
         }
         case 'read': {
           const topic = strFlag('topic', args)
           if (!topic) throw new UsageError('读取上下文需要 --topic <主题>（ocean task context list <name> 可查主题）')
-          const item = unwrap(await taskCore.readTaskDetail(root, name)).detail.contexts.find(c => c.name === topic)
-          if (!item) throw new Error(`上下文不存在: ${topic}`)
+          const folder = strFlag('folder', args)
+          // 不传 --folder 时只能命中存量平铺上下文（context/{topic}.md）；文件夹内的上下文必须指定 --folder
+          const item = unwrap(await taskCore.readTaskDetail(root, name)).detail.contexts.find(c => c.name === topic && (c.folder ?? undefined) === folder)
+          if (!item) throw new Error(`上下文不存在: ${folder ? `${folder}/${topic}` : `${topic}（如为文件夹内上下文请加 --folder <文件夹>）`}`)
           json ? printJson(item) : out(item.content.trim() || '（空上下文）')
           break
         }
         case 'save': {
           const topic = strFlag('topic', args)
           if (!topic) throw new UsageError('保存上下文需要 --topic <主题>')
+          const folder = strFlag('folder', args)
+          if (!folder) {
+            throw new UsageError('保存上下文需要 --folder <文件夹>（上下文写入一律落 context/{folder}/{topic}.md）')
+          }
           const content = taskContent('上下文内容', args)
           if (content === undefined || content.trim() === '') {
             throw new UsageError('保存上下文必须通过 --content 传入内容（长内容可 --content "$(cat 文件)"），不支持 --content-file / stdin')
           }
-          const isUpdate = unwrap(await taskCore.saveTaskContext(root, { taskName: name, contextName: topic, content } as TaskContextPayload)).isUpdate
-          if (json) printJson({ action: isUpdate ? 'updated' : 'created', task: name, topic })
-          else printAction(isUpdate ? 'updated' : 'created', { task: name, topic })
+          const isUpdate = unwrap(await taskCore.saveTaskContext(root, { taskName: name, contextName: topic, folder, content } as TaskContextPayload)).isUpdate
+          const label = contextPathLabel(folder, topic)
+          if (json) printJson({ action: isUpdate ? 'updated' : 'created', task: name, folder, topic })
+          else printAction(isUpdate ? 'updated' : 'created', { task: name, context: label })
           break
         }
         default:

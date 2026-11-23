@@ -1,6 +1,6 @@
 import type { FC } from 'react'
 import { useState, useEffect, useRef } from 'react'
-import { Type, FileText, Edit3, Eye } from 'lucide-react'
+import { Type, FileText, Edit3, Eye, FolderOpen } from 'lucide-react'
 import { Modal, Input, Button, ConfirmModal, MarkdownEditor, MarkdownRenderer } from '../ui'
 import { useToastStore } from '../../stores/toastStore'
 import type { TaskContextFile } from '../../types'
@@ -12,9 +12,9 @@ interface TaskContextFormModalProps {
   mode?: 'create' | 'edit'
   /** 编辑模式的初始上下文 */
   initialContext?: TaskContextFile | null
-  /** 同名上下文已存在列表（覆盖更新提示） */
+  /** 同名上下文已存在列表（覆盖更新提示），元素为「文件夹/主题」路径 */
   existingContextNames?: string[]
-  onConfirm: (contextName: string, content: string) => Promise<boolean>
+  onConfirm: (contextName: string, content: string, folder: string) => Promise<boolean>
 }
 
 export const TaskContextFormModal: FC<TaskContextFormModalProps> = ({
@@ -27,6 +27,7 @@ export const TaskContextFormModal: FC<TaskContextFormModalProps> = ({
 }) => {
   const { addToast } = useToastStore()
   const isEdit = mode === 'edit'
+  const [folder, setFolder] = useState('')
   const [contextName, setContextName] = useState('')
   const [content, setContent] = useState('')
   const [viewMode, setViewMode] = useState<'edit' | 'preview'>('edit')
@@ -37,14 +38,15 @@ export const TaskContextFormModal: FC<TaskContextFormModalProps> = ({
 
   // 表单实时镜像（ref）：脏检测快照必须读到重置后的值，
   // 直接闭包捕获 state 会在「上一次会话值 → 重置」间拿到旧值造成误判
-  const formStateRef = useRef({ contextName, content })
-  formStateRef.current = { contextName, content }
+  const formStateRef = useRef({ folder, contextName, content })
+  formStateRef.current = { folder, contextName, content }
 
   const getSnapshot = () => JSON.stringify(formStateRef.current)
   const hasChanges = () => getSnapshot() !== initialSnapshot.current
 
   useEffect(() => {
     if (isOpen) {
+      setFolder(isEdit ? (initialContext?.folder || '') : '')
       setContextName(isEdit ? (initialContext?.name || '') : '')
       setContent(isEdit ? (initialContext?.content || '') : '')
       setViewMode('edit')
@@ -58,6 +60,20 @@ export const TaskContextFormModal: FC<TaskContextFormModalProps> = ({
 
   const handleSubmit = async () => {
     if (isSubmitting) return
+
+    if (!isEdit && !folder.trim()) {
+      setInvalidFields(new Set(['folder']))
+      addToast('请输入上下文文件夹', 'warning')
+      setTimeout(() => setInvalidFields(new Set()), 3000)
+      return
+    }
+
+    if (folder.trim() && (folder.includes('/') || folder.includes('\\') || folder.includes('..') || folder.trim() === '.' || folder.trim().startsWith('.'))) {
+      setInvalidFields(new Set(['folder']))
+      addToast('上下文文件夹不能包含 / \\ .. 等非法字符', 'warning')
+      setTimeout(() => setInvalidFields(new Set()), 3000)
+      return
+    }
 
     if (!contextName.trim()) {
       setInvalidFields(new Set(['contextName']))
@@ -82,9 +98,11 @@ export const TaskContextFormModal: FC<TaskContextFormModalProps> = ({
 
     setInvalidFields(new Set())
     setIsSubmitting(true)
-    // 同名覆盖即更新（后端按文件存在性判定 isUpdate）
-    const isOverwrite = existingContextNames.includes(contextName.trim())
-    const success = await onConfirm(contextName.trim(), content)
+    // 同名覆盖即更新（后端按文件存在性判定 isUpdate）；文件路径 = 文件夹/主题
+    const folderValue = folder.trim()
+    const pathLabel = `${folderValue}/${contextName.trim()}`
+    const isOverwrite = existingContextNames.includes(pathLabel)
+    const success = await onConfirm(contextName.trim(), content, folderValue)
     setIsSubmitting(false)
     if (success) {
       addToast(isOverwrite || isEdit ? '上下文更新成功' : '上下文添加成功', 'success')
@@ -127,6 +145,26 @@ export const TaskContextFormModal: FC<TaskContextFormModalProps> = ({
         }
       >
         <div className="flex-1 min-h-0 flex flex-col gap-4">
+          <div>
+            <label className="flex items-center gap-2 text-sm font-medium text-macos-text mb-1.5">
+              <FolderOpen size={16} className="text-macos-text-secondary" />
+              上下文文件夹 *
+            </label>
+            <Input
+              placeholder="例如：调研"
+              value={folder}
+              onChange={(e) => {
+                setFolder(e.target.value)
+                if (invalidFields.has('folder')) setInvalidFields(new Set())
+              }}
+              disabled={isEdit}
+              invalid={invalidFields.has('folder')}
+            />
+            {isEdit && (
+              <p className="text-xs text-macos-text-tertiary mt-1">上下文所在文件夹不可修改</p>
+            )}
+          </div>
+
           <div>
             <label className="flex items-center gap-2 text-sm font-medium text-macos-text mb-1.5">
               <Type size={16} className="text-macos-text-secondary" />

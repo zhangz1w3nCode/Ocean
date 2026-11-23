@@ -462,13 +462,19 @@ export interface TaskSummary {
   relatedCodebases: string[]
   tags: string[]
   relatedTasks: string[]
+  /** 绑定的 Ocean 工作流名称（空串 = 未绑定，可选） */
+  workflow: string
+  /** 绑定的工作流实例 ID（空串 = 未绑定，可选） */
+  workflowInstance: string
   createdAt: string
   updatedAt: string
 }
 
-// 任务上下文（.tasks/{task-name}/context/*.md）
+// 任务上下文（.tasks/{task-name}/context/*.md 或 context/{folder}/*.md）
 export interface TaskContextFile {
   name: string
+  /** 所属文件夹（平铺文件为 null） */
+  folder: string | null
   content: string
   updatedAt: string
 }
@@ -482,6 +488,7 @@ export interface TaskTraceEvent {
   to?: string
   fields?: string[]
   name?: string
+  folder?: string | null
 }
 
 // 任务详情（renderer 直连 core 返回）
@@ -499,6 +506,8 @@ export interface CreateTaskPayload {
   relatedCodebases?: string[]
   tags?: string[]
   relatedTasks?: string[]
+  workflow?: string
+  workflowInstance?: string
   context?: string
 }
 
@@ -510,6 +519,8 @@ export interface UpdateTaskPayload {
   relatedCodebases?: string[]
   tags?: string[]
   relatedTasks?: string[]
+  workflow?: string
+  workflowInstance?: string
   status?: TaskStatus
 }
 

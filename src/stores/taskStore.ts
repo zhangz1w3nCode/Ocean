@@ -13,7 +13,7 @@ type DesktopModule = {
   readTaskDetail: (root: string, taskName: string) => Promise<{ success: boolean; detail?: TaskDetail; error?: string }>
   createTask: (root: string, payload: CreateTaskPayload) => Promise<{ success: boolean; task?: TaskSummary; error?: string }>
   updateTask: (root: string, payload: UpdateTaskPayload) => Promise<{ success: boolean; task?: TaskSummary; error?: string }>
-  saveTaskContext: (root: string, payload: { taskName: string; contextName: string; content: string }) => Promise<{ success: boolean; isUpdate?: boolean; error?: string }>
+  saveTaskContext: (root: string, payload: { taskName: string; contextName: string; folder: string; content: string }) => Promise<{ success: boolean; isUpdate?: boolean; error?: string }>
 }
 
 const MODULE_RELATIVE = ['electron', 'dist', 'source', 'desktop', 'task.js'].join('/')
@@ -89,7 +89,7 @@ interface TaskState {
   showList: () => void
   createTask: (payload: CreateTaskPayload) => Promise<boolean>
   updateTask: (payload: UpdateTaskPayload) => Promise<boolean>
-  saveTaskContext: (taskName: string, contextName: string, content: string) => Promise<boolean>
+  saveTaskContext: (taskName: string, contextName: string, content: string, folder: string) => Promise<boolean>
   reset: () => void
 }
 
@@ -244,11 +244,11 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     }
   },
 
-  saveTaskContext: async (taskName, contextName, content) => {
+  saveTaskContext: async (taskName, contextName, content, folder) => {
     const m = loadDesktopModule()
     if (!m) return false
     try {
-      const result = await m.saveTaskContext(projectRoot(), { taskName, contextName, content })
+      const result = await m.saveTaskContext(projectRoot(), { taskName, contextName, folder, content })
       if (!result.success) {
         console.error('保存任务上下文失败:', result.error)
         return false
