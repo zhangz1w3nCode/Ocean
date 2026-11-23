@@ -184,7 +184,7 @@ Agent 侧的统一入口，与 GUI 操作同一套资产：
 | `node` / `resource` / `agent` / `skill` | 各自的增删改查 |
 | `config` | 资产来源配置 |
 
-全命令支持 `--json`（机器可读）与 `--help`；表格输出统一使用 cli-table3。
+全命令支持 `--json`（机器可读）与 `--help`；表格与方框输出由内置的自适应渲染器（`electron/source/cli/ui.ts`）负责，会按终端宽度排版；在管道下没有终端宽度时，可通过 `OCEAN_WIDTH` 或 `COLUMNS` 指定。
 
 安装：桌面端「设置 → CLI Agent」一键安装（写入 `ocean` 命令：优先 `/usr/local/bin`，其次 `/opt/homebrew/bin`，兜底 `~/.ocean/bin` 并自动配置 PATH）。
 
@@ -230,7 +230,7 @@ pnm web:dev     # 开发模式：vite(5273) + API(8787)，前端改动热更新
 | 图表 | Mermaid | 11.12 |
 | 拖拽排序 | @dnd-kit | 6.3 / 10.0 |
 | Frontmatter | yaml | 2.9 |
-| CLI 表格输出 | cli-table3 | 0.6 |
+| CLI 输出渲染 | 内置 `electron/source/cli/ui.ts` + get-east-asian-width | 1.7 |
 | 测试 | Vitest | 2.1 |
 | 包管理器 | pnpm | 10.19 |
 

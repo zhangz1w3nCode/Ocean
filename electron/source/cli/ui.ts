@@ -12,7 +12,7 @@ import { eastAsianWidth } from 'get-east-asian-width'
 // 宽度来源
 // ---------------------------------------------------------------------------
 
-const MIN_TERM_WIDTH = 40
+const MIN_TERM_WIDTH = 20
 const MAX_TERM_WIDTH = 120
 const FALLBACK_TERM_WIDTH = 100
 // 单行正文超过这个宽度就很难扫读了，即使终端更宽也不再拉长。
@@ -28,7 +28,9 @@ function termWidth(): number {
   const override = Number(process.env.OCEAN_WIDTH) || 0
   const envColumns = Number(process.env.COLUMNS) || 0
   const ttyColumns = process.stdout.columns || 0
-  const raw = override || envColumns || ttyColumns || FALLBACK_TERM_WIDTH
+  // TTY 下 columns 是 ioctl 真值，优先于可能过期的 COLUMNS（tmux/docker/CI 常继承旧值）；
+  // 管道下没有 columns，才退回 COLUMNS。
+  const raw = override || (process.stdout.isTTY ? ttyColumns : 0) || envColumns || ttyColumns || FALLBACK_TERM_WIDTH
   return Math.max(MIN_TERM_WIDTH, Math.min(raw, MAX_TERM_WIDTH))
 }
 
@@ -39,6 +41,9 @@ function colorEnabled(): boolean {
 // ---------------------------------------------------------------------------
 // ANSI 处理
 // ---------------------------------------------------------------------------
+
+// 字符串型转义序列（OSC/DCS/APC/PM）的最大扫描长度：超限即认定非法，防止无终止符输入拖垮性能
+const ANSI_STRING_SCAN_LIMIT = 512
 
 interface AnsiCode {
   code: string
@@ -58,10 +63,15 @@ function extractAnsiCode(s: string, pos: number): AnsiCode | null {
     return null
   }
   if (next === ']' || next === '_' || next === '^' || next === 'P') {
+    // 字符串型序列必须以 BEL 或 ST 收尾。若在扫描上限内找不到终止符，就判定「不是合法序列」
+    // 并返回 null —— 否则一段永远不闭合的 OSC（损坏内容/二进制被当文本渲染）会让每次扫描
+    // 都跑到串尾，调用方再只前进 1 个字符，整体退化成 O(n^2)。
+    const end = Math.min(s.length, pos + 2 + ANSI_STRING_SCAN_LIMIT)
     let i = pos + 2
-    while (i < s.length) {
+    while (i < end) {
       if (s.charCodeAt(i) === 0x07) return { code: s.slice(pos, i + 1), length: i + 1 - pos }
       if (s.charCodeAt(i) === 0x1b && s[i + 1] === '\\') return { code: s.slice(pos, i + 2), length: i + 2 - pos }
+      if (s.charCodeAt(i) === 0x0a) return null
       i++
     }
     return null
@@ -362,8 +372,10 @@ export function wrapTextWithAnsi(text: string, width: number): string[] {
     const line = active + rawLine
     const wrapped = wrapOneLine(line, limit)
     for (const w of wrapped) {
-      const state = sgrState(w)
-      result.push(state.ended ? w + '\x1b[0m' : w)
+      // 软换行同样要重放上一段的活动 SGR，否则被切开的彩色文本只有首段有色
+      const segment = active && !w.startsWith(active) ? active + w : w
+      const state = sgrState(segment)
+      result.push(state.ended ? segment + '\x1b[0m' : segment)
       active = state.active
     }
   }
@@ -424,7 +436,8 @@ export function box(text: string, options: { width?: number } = {}): string {
   const term = options.width ?? termWidth()
   const inner = Math.max(1, Math.min(term, MAX_CONTENT_WIDTH) - 4)
   const lines = wrapTextWithAnsi(expandTabs(text), inner)
-  const widest = Math.max(...lines.map(visibleWidth), 0)
+  let widest = 0
+  for (const line of lines) widest = Math.max(widest, visibleWidth(line))
   const contentW = Math.max(widest, 1)
   const h = CH.h.repeat(contentW + 2)
   const out: string[] = [`${CH.tl}${h}${CH.tr}`]
@@ -443,8 +456,12 @@ export function treeBox(lines: string[], options: { width?: number } = {}): stri
   const term = options.width ?? termWidth()
   const inner = Math.max(1, Math.min(term, MAX_CONTENT_WIDTH) - 4)
   const wrapped: string[] = []
-  for (const line of lines) wrapped.push(...wrapTextWithAnsi(expandTabs(line), inner))
-  const widest = Math.max(...wrapped.map(visibleWidth), 0)
+  // 逐行 push 而不是 wrapped.push(...arr)：后者在行数很多时会超出调用栈上限
+  for (const line of lines) {
+    for (const piece of wrapTextWithAnsi(expandTabs(line), inner)) wrapped.push(piece)
+  }
+  let widest = 0
+  for (const line of wrapped) widest = Math.max(widest, visibleWidth(line))
   const contentW = Math.max(widest, 1)
   const h = CH.h.repeat(contentW + 2)
   const out: string[] = [`${CH.tl}${h}${CH.tr}`]
@@ -493,6 +510,8 @@ const MIN_COLUMN_WIDTH = 4
 // 自然宽度不超过这个值的列视为「短列」（状态、-、标签这种），优先保留自然宽度，
 // 压缩只发生在长文本列上，避免把「处理中」拆成两行。
 const SHORT_COLUMN_WIDTH = 10
+// 堆叠降级的阈值：平均每列不足这么多列时，多列表格会被压成竖排单字，堆叠更可读
+const STACK_FALLBACK_MIN_COL = 8
 
 /**
  * 列宽分配：短列固定为自然宽度；剩余预算在长列之间按自然宽度比例分配，
@@ -591,18 +610,22 @@ export function table(headers: string[], rows: string[][], options: TableOptions
 
   // 固定开销：columnCount+1 条竖线 + 每列左右各一个空格
   const overhead = columnCount + 1 + columnCount * 2
-  const available = Math.max(columnCount * 3, term - overhead)
+  const available = Math.max(0, term - overhead)
 
   const natural = headText.map((h, i) =>
-    Math.max(visibleWidth(stripAnsi(h)), ...bodyText.map(r => visibleWidth(r[i]))),
+    Math.max(visibleWidth(h), ...bodyText.map(r => visibleWidth(r[i]))),
   )
+  const naturalTotal = natural.reduce((a, b) => a + b, 0)
+  const tooNarrow = available < columnCount * MIN_COLUMN_WIDTH
 
-  // 窄屏降级：平均每列不到 8 列时，多列表格会被压成竖排单字，改成「字段: 值」堆叠更可读
-  if (bodyText.length > 0 && available / columnCount < 8) {
+  // 窄屏降级：只有「自然宽度确实装不下」且「平均每列不足 8 列」时才改成「字段: 值」堆叠。
+  // 只看平均列宽会误伤自然宽度很小的表（自然宽 25 的 6 列表在 60 列终端也能放得下）。
+  if (tooNarrow || (bodyText.length > 0 && naturalTotal > available && available / columnCount < STACK_FALLBACK_MIN_COL)) {
+    if (bodyText.length === 0) return box(headText.join('\n'), { width: term })
     return bodyText
       .map(record =>
         box(
-          headText.map((h, i) => `${stripAnsi(h)}: ${record[i] ?? ''}`.trimEnd()).join('\n'),
+          headText.map((h, i) => `${h}: ${record[i] ?? ''}`.trimEnd()).join('\n'),
           { width: term },
         ),
       )
