@@ -845,8 +845,11 @@ export function table(headers: string[], rows: string[][], options: TableOptions
   out.push(border(CH.tl, CH.tt, CH.tr))
   const headStyle = (s: string): string => styleHead(s, options.headColor ?? 'cyan')
   out.push(...renderRow(headText, headStyle))
-  out.push(border(CH.lt, CH.cross, CH.rt))
-  for (const row of bodyText) out.push(...renderRow(row))
+  // 表头下方与每个数据行之间都画分隔线：多行记录时靠横线划分边界，避免两行挨在一起看不出分界
+  for (let i = 0; i < bodyText.length; i++) {
+    out.push(border(CH.lt, CH.cross, CH.rt))
+    out.push(...renderRow(bodyText[i]))
+  }
   out.push(border(CH.bl, CH.bt, CH.br))
   return out.join('\n')
 }
