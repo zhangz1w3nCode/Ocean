@@ -701,7 +701,16 @@ function fitWidths(natural: number[], available: number, protect: boolean[] = []
   const canProtect = protectedCount > 0
     && protectTotal + (count - protectedCount) * minColumn <= available
 
-  const pinned = natural.map((w, i) => (shortColumns[i] && pinShort) || (canProtect && protect[i]))
+  // 首列是行标识（任务名/实例 ID/字段名），它被切断时扫表成本最高：
+  // 全部不可断列装不下时，至少把首列按自然宽度钉住，缺口让其它列去承担。
+  // 仅当首列本身是「不可断标识符」（无空白无 CJK）时才钉住，避免长文本首列挤掉其它列
+  const pinFirstColumn = count > 1
+    && Boolean(protect[0])
+    && natural[0] + (count - 1) * minColumn <= available
+
+  const pinned = natural.map(
+    (w, i) => (shortColumns[i] && pinShort) || (canProtect && protect[i]) || (i === 0 && pinFirstColumn),
+  )
 
   const widths = natural.slice()
   for (let round = 0; round <= count; round++) {
