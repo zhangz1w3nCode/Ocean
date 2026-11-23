@@ -826,13 +826,15 @@ export function table(headers: string[], rows: string[][], options: TableOptions
   const renderRow = (cells: string[], headStyle?: (s: string) => string): string[] => {
     const wrapped = cells.map((cell, i) => wrapTextWithAnsi(cell, widths[i]))
     const height = Math.max(...wrapped.map(w => w.length), 1)
+    // 被折行的单元格改用左对齐：多行文本居中后每行起点都不一样，读起来很散
+    const rowAligns = aligns.map((align, i) => (wrapped[i].length > 1 ? 'left' : align))
     const lines: string[] = []
     for (let line = 0; line < height; line++) {
       const parts = wrapped.map((cellLines, i) => {
         const raw = cellLines[line] ?? ''
         return headStyle
-          ? padStyledCell(raw, widths[i], aligns[i], headStyle)
-          : padCell(raw, widths[i], aligns[i])
+          ? padStyledCell(raw, widths[i], rowAligns[i], headStyle)
+          : padCell(raw, widths[i], rowAligns[i])
       })
       lines.push(`${CH.v} ${parts.join(` ${CH.v} `)} ${CH.v}`)
     }
