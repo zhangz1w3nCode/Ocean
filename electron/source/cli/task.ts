@@ -8,6 +8,7 @@ import * as taskCore from '../../core/task'
 import type { TaskSummary, TaskDetail, TaskWritePayload, TaskContextPayload, TaskSearchResult } from '../../core/task'
 import * as codebaseCore from '../../core/codebases'
 import { UsageError, printAction, printJson, printDataTable, rawOut, out } from './common'
+import { wrapBlock } from './ui'
 
 type Args = {
   subcommand: string
@@ -199,6 +200,7 @@ export async function handleTask(root: string, args: Args): Promise<void> {
         ['上下文', detail.contexts.map(c => contextPathLabel(c.folder, c.name)).join(', ') || '-'],
         ['事件数', String(detail.trace.length)],
       ])
+      rawOut('')
       out(t.content ? t.content.trim() : '（无任务内容）')
       break
     }
@@ -335,7 +337,7 @@ export async function handleTask(root: string, args: Args): Promise<void> {
           }
           lines.push('')
         }
-        rawOut(lines.join('\n'))
+        rawOut(wrapBlock(lines.join('\n')).join('\n'))
       }
       break
     }

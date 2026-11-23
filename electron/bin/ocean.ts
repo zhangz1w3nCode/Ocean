@@ -16,9 +16,9 @@ import * as agentCrud from '../core/agent'
 import * as skillCrud from '../core/skill'
 import { handleTask } from '../source/cli/task'
 import * as wfGraph from '../core/workflow'
-import Table from 'cli-table3'
 import { handleCodebases } from '../source/cli/codebases'
-import { out, rawOut, displayWidth, TABLE_CHARS, printDataTable, printList, printJson, printAction, UsageError, readContent, setHelpJsonCapture, getHelpJsonCapture } from '../source/cli/common'
+import { out, rawOut, printDataTable, printList, printJson, printAction, UsageError, readContent, setHelpJsonCapture, getHelpJsonCapture } from '../source/cli/common'
+import { box, treeBox, wrapBlock } from '../source/cli/ui'
 
 // ---------------------------------------------------------------------------
 // Argument parser
@@ -105,17 +105,12 @@ function stripFrontmatter(text: string): string {
   return text
 }
 
-// （readContent/rawOut/displayWidth/out/TABLE_CHARS/printDataTable/printList/printJson/printAction/UsageError
-//  已提取至 ../source/cli/common.ts，此处经 import 复用）
+// （readContent/rawOut/out/printDataTable/printList/printJson/printAction/UsageError
+//  已提取至 ../source/cli/common.ts；显宽/换行/框/表/树在 ../source/cli/ui.ts）
 
-// 无表头单列表格，用于包裹树形展示（左对齐保留缩进，行间无分隔线）
+// 无表头单列细线框，用于包裹树形展示（左对齐保留缩进，行间无分隔线）
 function printDomainBox(lines: string[]): void {
-  const table = new Table({
-    colAligns: ['left' as const],
-    chars: { ...TABLE_CHARS, mid: '', 'mid-mid': '', 'left-mid': '', 'right-mid': '' },
-  })
-  for (const line of lines) table.push([line])
-  rawOut(table.toString())
+  rawOut(treeBox(lines))
 }
 
 function printMarkdownTable(text: string): void {
@@ -125,12 +120,10 @@ function printMarkdownTable(text: string): void {
     return
   }
   const lines = text.split('\n').filter(Boolean)
-  if (lines.length < 3) {
+  // 只有表头 + 分隔行的空表格也要走表格路径（printDataTable 会输出「无数据」），
+  // 否则会把 ``| # | 节点 | ...|`` 这堆竖线原样塞进方框里
+  if (lines.length < 2 || !/^\|[\s-|]+\|$/.test(lines[1])) {
     out(text || '（无数据）')
-    return
-  }
-  if (!/^\|[\s-|]+\|$/.test(lines[1])) {
-    out(text)
     return
   }
   const parseRow = (line: string) => line.split('|').map(s => s.trim()).filter(Boolean)
@@ -159,16 +152,8 @@ function markdownTableToJson(text: string): any[] {
 
 function err(e: any): void {
   const code = e instanceof UsageError ? 2 : 1
-  const lines = e.message.split('\n')
-  const widths = lines.map((l: string) => displayWidth(l))
-  const maxW = Math.max(...widths, 0)
-  const h = '\u2501'.repeat(maxW + 2)
-  process.stderr.write('\u250f' + h + '\u2513\n')
-  for (let i = 0; i < lines.length; i++) {
-    const pad = ' '.repeat(maxW - widths[i])
-    process.stderr.write('\u2503 ' + lines[i] + pad + ' \u2503\n')
-  }
-  process.stderr.write('\u2517' + h + '\u251b\n')
+  // 错误框与正常输出共用同一套宽度与换行逻辑，避免长错误文本把边框撞破
+  process.stderr.write(box(e.message) + '\n')
   process.exit(code)
 }
 
@@ -1388,7 +1373,7 @@ function handleKnowledge(root: string, args: ReturnType<typeof parseArgs>): void
           }
           lines.push('')
         }
-        rawOut(lines.join('\n'))
+        rawOut(wrapBlock(lines.join('\n')).join('\n'))
       }
       break
     }

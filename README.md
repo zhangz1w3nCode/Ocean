@@ -184,7 +184,7 @@ The unified entry for agents, operating on the same assets as the GUI:
 | `node` / `resource` / `agent` / `skill` | CRUD for each |
 | `config` | Asset source configuration |
 
-Every command supports `--json` (machine-readable) and `--help`; table output is unified via cli-table3.
+Every command supports `--json` (machine-readable) and `--help`; table and box output is rendered by an internal width-aware renderer (`electron/source/cli/ui.ts`), which adapts to the terminal width and falls back to `OCEAN_WIDTH` / `COLUMNS` when running under a pipe.
 
 Installation: one click in the desktop app (Settings > CLI Agent) -- writes an `ocean` wrapper (to `/usr/local/bin` first, then `/opt/homebrew/bin`, falling back to `~/.ocean/bin` with automatic PATH configuration).
 
@@ -230,7 +230,7 @@ You can also toggle hosting from the desktop app (Settings > General > Web Acces
 | Diagrams | Mermaid | 11.12 |
 | Drag & Drop | @dnd-kit | 6.3 / 10.0 |
 | Frontmatter | yaml | 2.9 |
-| CLI Tables | cli-table3 | 0.6 |
+| CLI Rendering | internal `electron/source/cli/ui.ts` + get-east-asian-width | 1.7 |
 | Testing | Vitest | 2.1 |
 | Package Manager | pnpm | 10.19 |
 
