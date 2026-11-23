@@ -429,6 +429,143 @@ function expandTabs(s: string): string {
 // 框
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Markdown 排版（只影响内容框的观感，不解析语法树）
+// ---------------------------------------------------------------------------
+
+const HEADING_LINE = /^#{1,6}\s+(.*)$/
+const TABLE_ROW_LINE = /^\s*\|.*\|\s*$/
+const TABLE_SEP_LINE = /^\s*\|[\s:|-]+\|\s*$/
+const FENCE_LINE = /^\s*```/
+
+function splitTableRow(line: string): string[] {
+  const trimmed = line.trim()
+  const inner = trimmed.startsWith('|') ? trimmed.slice(1) : trimmed
+  const bodyOfCells = inner.endsWith('|') ? inner.slice(0, -1) : inner
+  return bodyOfCells.split('|').map(cell => cell.trim())
+}
+
+/**
+ * 把 markdown 表格渲染成「无边框对齐列」。
+ * 内容框里再套一个带边框的表格会显得很乱，所以这里只做列对齐，不画线。
+ */
+function formatMarkdownTable(header: string[], body: string[][], budget: number): string[] {
+  const columns = Math.max(header.length, 1)
+  const gap = '  '
+  const normalize = (row: string[]): string[] =>
+    Array.from({ length: columns }, (_, i) => row[i] ?? '')
+  const head = normalize(header)
+  const rows = body.map(normalize)
+
+  const natural = head.map((h, i) =>
+    Math.max(visibleWidth(h), ...rows.map(r => visibleWidth(r[i]))),
+  )
+  // 与 table() 一致的保护策略：不可断列（ID/时间戳）整组装得下时固定为自然宽度，
+  // 只压缩可断列，避免把执行 ID 折成两行。
+  const breakable = natural.map((_, i) =>
+    rows.length === 0 || rows.some(r => /\s/.test(r[i]) || CJK.test(r[i])),
+  )
+  const protect = breakable.map(v => !v)
+  const protectTotal = natural.reduce((a, w, i) => (protect[i] ? a + w : a), 0)
+  const protectedCount = protect.filter(Boolean).length
+  const canProtect = protectedCount > 0
+    && protectTotal + (columns - protectedCount) * 4 + gap.length * (columns - 1) <= budget
+
+  const widths = natural.slice()
+  const needed = (): number =>
+    widths.reduce((a, b) => a + b, 0) + gap.length * (columns - 1)
+  let guard = 0
+  while (needed() > budget && guard++ < 2000) {
+    let widest = -1
+    for (let i = 0; i < columns; i++) {
+      if (canProtect && protect[i]) continue
+      if (widths[i] <= 4) continue
+      if (widest === -1 || widths[i] > widths[widest]) widest = i
+    }
+    if (widest === -1) break
+    widths[widest] -= 1
+  }
+
+  const renderRow = (cells: string[], isHeader: boolean): string[] => {
+    const wrapped = cells.map((cell, i) => wrapTextWithAnsi(cell, widths[i]))
+    const height = Math.max(...wrapped.map(w => w.length), 1)
+    const lines: string[] = []
+    for (let line = 0; line < height; line++) {
+      const parts = wrapped.map((cellLines, i) => {
+        const text = cellLines[line] ?? ''
+        return text + ' '.repeat(Math.max(0, widths[i] - visibleWidth(text)))
+      })
+      let text = parts.join(gap).trimEnd()
+      if (isHeader) text = `\x1b[1m${text}\x1b[0m`
+      lines.push(text)
+    }
+    return lines
+  }
+
+  const out = renderRow(head, true)
+  if (rows.length === 0) {
+    out.push('（无数据）')
+    return out
+  }
+  for (const row of rows) out.push(...renderRow(row, false))
+  return out
+}
+
+/**
+ * 轻量 markdown 排版：标题去掉 `#` 后加粗，表格转成对齐列，代码块原样保留，其余不变。
+ * 目的是让内容框里不再出现 `| a | b |` 这种原始竖线，不追求完整的 markdown 渲染。
+ */
+export function renderMarkdown(text: string, width: number): string {
+  const source = text.split(/\r\n|\r|\n/)
+  const out: string[] = []
+  let inFence = false
+  let i = 0
+  while (i < source.length) {
+    const line = source[i]
+    if (FENCE_LINE.test(line)) {
+      inFence = !inFence
+      out.push(line)
+      i++
+      continue
+    }
+    if (inFence) {
+      out.push(line)
+      i++
+      continue
+    }
+    if (TABLE_ROW_LINE.test(line) && i + 1 < source.length && TABLE_SEP_LINE.test(source[i + 1])) {
+      const header = splitTableRow(line)
+      const body: string[][] = []
+      let j = i + 2
+      while (j < source.length && TABLE_ROW_LINE.test(source[j])) {
+        body.push(splitTableRow(source[j]))
+        j++
+      }
+      out.push(...formatMarkdownTable(header, body, width))
+      i = j
+      continue
+    }
+    const heading = HEADING_LINE.exec(line)
+    if (heading) {
+      out.push(`\x1b[1m${heading[1]}\x1b[0m`)
+      i++
+      continue
+    }
+    out.push(line)
+    i++
+  }
+  return out.join('\n')
+}
+
+/**
+ * markdown 内容框：按 markdown 排版后套细线方框（供 out() 输出节点内容、任务内容等）。
+ */
+export function markdownBox(text: string, options: { width?: number } = {}): string {
+  const term = options.width ?? termWidth()
+  const inner = Math.max(1, Math.min(term, MAX_CONTENT_WIDTH) - 4)
+  return box(renderMarkdown(expandTabs(text), inner), { width: term })
+}
+
 /**
  * 细线方框。宽度自适应：内容短则框窄（保持原观感），内容长则在终端宽度内换行。
  */

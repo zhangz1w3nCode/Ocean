@@ -1,4 +1,4 @@
-import { box, table } from './ui'
+import { markdownBox, table } from './ui'
 
 // 显宽 / 换行 / 框 / 表 / 树统一在 ./ui.ts（剥 ANSI + grapheme + East Asian Width 一把尺子）。
 
@@ -28,12 +28,12 @@ export function rawOut(s: string): void {
 }
 
 /**
- * 通用文本输出：细线方框 + 自适应换行。
+ * 通用文本输出：markdown 排版（标题加粗、表格转对齐列）+ 细线方框 + 自适应换行。
  * 宽度来自 ui.termWidth()（OCEAN_WIDTH → COLUMNS → stdout.columns → 兜底 100）。
  */
 export function out(s: string): void {
   if (helpJsonBuf !== null) { helpJsonBuf.push(s); return }
-  rawOut(box(s))
+  rawOut(markdownBox(s))
 }
 
 export function printDataTable(headers: string[], rows: string[][]): void {
