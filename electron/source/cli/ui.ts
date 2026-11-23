@@ -458,82 +458,19 @@ function splitTableRow(line: string): string[] {
 }
 
 /**
- * 把 markdown 表格渲染成「无边框对齐列」。
- * 内容框里再套一个带边框的表格会显得很乱，所以这里只做列对齐，不画线。
+ * markdown 表格块直接交给表格渲染器输出（带边框与行分隔），
+ * 与 CLI 其它表格保持同一种视觉，不再用「无边框对齐列」。
  */
 function formatMarkdownTable(header: string[], body: string[][], budget: number): string[] {
-  // 列数取表头与所有数据行的最大值：行里多出来的单元格必须保留，
-  // 固定成表头长度会把它们静默丢掉（产物详情里内嵌表格就会触发）
-  const columns = Math.max(header.length, ...body.map(r => r.length), 1)
-  const gap = '  '
-  const normalize = (row: string[]): string[] =>
-    Array.from({ length: columns }, (_, i) => row[i] ?? '')
-  const head = normalize(header)
-  const rows = body.map(normalize)
-
-  const natural = head.map((h, i) =>
-    Math.max(visibleWidth(h), ...rows.map(r => visibleWidth(r[i]))),
-  )
-  // 与 table() 一致的保护策略：不可断列（ID/时间戳）整组装得下时固定为自然宽度，
-  // 只压缩可断列，避免把执行 ID 折成两行。
-  const breakable = natural.map((_, i) =>
-    rows.length === 0 || rows.some(r => /\s/.test(r[i]) || CJK.test(r[i])),
-  )
-  const protect = breakable.map(v => !v)
-  const protectTotal = natural.reduce((a, w, i) => (protect[i] ? a + w : a), 0)
-  const protectedCount = protect.filter(Boolean).length
-  const canProtect = protectedCount > 0
-    && protectTotal + (columns - protectedCount) * 4 + gap.length * (columns - 1) <= budget
-
-  const widths = natural.slice()
-  const needed = (): number =>
-    widths.reduce((a, b) => a + b, 0) + gap.length * (columns - 1)
-  let guard = 0
-  while (needed() > budget && guard++ < 2000) {
-    let widest = -1
-    for (let i = 0; i < columns; i++) {
-      if (canProtect && protect[i]) continue
-      if (widths[i] <= 4) continue
-      if (widest === -1 || widths[i] > widths[widest]) widest = i
-    }
-    if (widest === -1) break
-    widths[widest] -= 1
-  }
-
-  const renderRow = (cells: string[], isHeader: boolean): string[] => {
-    const wrapped = cells.map((cell, i) => wrapTextWithAnsi(cell, widths[i]))
-    const height = Math.max(...wrapped.map(w => w.length), 1)
-    const lines: string[] = []
-    for (let line = 0; line < height; line++) {
-      const parts = wrapped.map((cellLines, i) => {
-        const text = cellLines[line] ?? ''
-        return text + ' '.repeat(Math.max(0, widths[i] - visibleWidth(text)))
-      })
-      let text = parts.join(gap).trimEnd()
-      if (isHeader) text = `\x1b[1m${text}\x1b[0m`
-      lines.push(text)
-    }
-    return lines
-  }
-
-  const out = renderRow(head, true)
-  if (rows.length === 0) {
-    out.push('（无数据）')
-    return out
-  }
-  // 无边框表格用空行分隔记录：横线在方框里会像把框切开一刀，空白更干净
-  for (let i = 0; i < rows.length; i++) {
-    if (i > 0) out.push('')
-    out.push(...renderRow(rows[i], false))
-  }
-  return out
+  if (body.length === 0) return ['（无数据）']
+  return table(header, body, { width: budget }).split('\n')
 }
 
 /**
  * 轻量 markdown 排版：标题去掉 `#` 后加粗，表格转成对齐列，代码块原样保留，其余不变。
  * 目的是让内容框里不再出现 `| a | b |` 这种原始竖线，不追求完整的 markdown 渲染。
  */
-export function renderMarkdown(text: string, width: number): string {
+export function renderMarkdown(text: string, width: number, tableBudget = width): string {
   const source = text.split(/\r\n|\r|\n/)
   const out: string[] = []
   let inFence = false
@@ -559,7 +496,7 @@ export function renderMarkdown(text: string, width: number): string {
         body.push(splitTableRow(source[j]))
         j++
       }
-      out.push(...formatMarkdownTable(header, body, width))
+      out.push(...formatMarkdownTable(header, body, tableBudget))
       i = j
       continue
     }
@@ -580,8 +517,10 @@ export function renderMarkdown(text: string, width: number): string {
  */
 export function markdownBox(text: string, options: { width?: number } = {}): string {
   const term = options.width ?? termWidth()
-  const inner = Math.max(1, Math.min(term, MAX_CONTENT_WIDTH) - 4)
-  return box(renderMarkdown(expandTabs(text), inner), { width: term })
+  // 正文按可读性上限折行，表格块用满终端可用宽度（否则宽表会被压得莫名换行）
+  const proseLimit = Math.max(1, Math.min(term, MAX_CONTENT_WIDTH) - 4)
+  const tableLimit = Math.max(1, term - 4)
+  return box(renderMarkdown(expandTabs(text), proseLimit, tableLimit), { width: term })
 }
 
 /**
@@ -589,7 +528,7 @@ export function markdownBox(text: string, options: { width?: number } = {}): str
  */
 export function box(text: string, options: { width?: number } = {}): string {
   const term = options.width ?? termWidth()
-  const inner = Math.max(1, Math.min(term, MAX_CONTENT_WIDTH) - 4)
+  const inner = Math.max(1, term - 4)
   const lines = wrapTextWithAnsi(expandTabs(text), inner)
   let widest = 0
   for (const line of lines) widest = Math.max(widest, visibleWidth(line))
