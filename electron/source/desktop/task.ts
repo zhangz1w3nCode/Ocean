@@ -58,6 +58,16 @@ export async function createTask(root: string, payload: TaskWritePayload): Promi
   if (e4) return bad(e4)
   const e5 = checkOptionalStringArray(payload.relatedTasks, '关联任务')
   if (e5) return bad(e5)
+  const e6 = checkOptionalString(payload.workflow, '绑定工作流')
+  if (e6) return bad(e6)
+  const e7 = checkOptionalString(payload.workflowInstance, '绑定工作流实例')
+  if (e7) return bad(e7)
+  // 初始上下文写入必须有文件夹（与 saveTaskContext 同规则）
+  if (typeof payload.context === 'string' && payload.context.trim()) {
+    if (!isNonEmptyString(payload.contextFolder)) return bad('写入初始上下文时必须指定上下文文件夹')
+  } else if (payload.contextFolder != null) {
+    return bad('上下文文件夹需与初始上下文一同使用')
+  }
   return taskCore.createTask(root, payload)
 }
 
@@ -74,6 +84,10 @@ export async function updateTask(root: string, payload: TaskWritePayload): Promi
   if (e3) return bad(e3)
   const e4 = checkOptionalStringArray(payload.relatedTasks, '关联任务')
   if (e4) return bad(e4)
+  const e5 = checkOptionalString(payload.workflow, '绑定工作流')
+  if (e5) return bad(e5)
+  const e6 = checkOptionalString(payload.workflowInstance, '绑定工作流实例')
+  if (e6) return bad(e6)
   if (payload.status != null && !(taskCore.TASK_STATUSES as readonly string[]).includes(String(payload.status))) {
     return bad(`无效的状态: ${String(payload.status)}，可选: ${taskCore.TASK_STATUSES.join(' | ')}`)
   }
@@ -85,6 +99,7 @@ export async function saveTaskContext(root: string, payload: TaskContextPayload)
   if (!payload || typeof payload !== 'object') return bad('上下文参数无效')
   if (!isNonEmptyString(payload.taskName)) return bad('任务名称不能为空')
   if (!isNonEmptyString(payload.contextName)) return bad('上下文主题不能为空')
+  if (!isNonEmptyString(payload.folder)) return bad('上下文文件夹不能为空')
   if (typeof payload.content !== 'string' || !payload.content.trim()) return bad('上下文内容不能为空')
   return taskCore.saveTaskContext(root, payload)
 }
