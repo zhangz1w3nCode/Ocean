@@ -42,8 +42,8 @@ export interface TaskSummary {
 export interface TaskContextItem {
   /** 上下文主题（文件名去 .md） */
   name: string
-  /** 所属文件夹（context/{folder}/{name}.md）；平铺文件为 null */
-  folder: string | null
+  /** 所属文件夹（context/{folder}/{name}.md）——文件夹是唯一合法布局 */
+  folder: string
   content: string
   updatedAt: string
 }
@@ -56,7 +56,7 @@ export interface TaskTraceEvent {
   from?: string
   to?: string
   name?: string
-  /** 上下文事件所属文件夹（与 name 组成路径；平铺为 null） */
+  /** 上下文事件所属文件夹（与 name 组成路径；历史平铺事件为 null） */
   folder?: string | null
 }
 
@@ -264,35 +264,25 @@ function readTaskContextItems(root: string, taskName: string): TaskContextItem[]
   const contextDir = taskContextDir(root, taskName)
   if (!fs.existsSync(contextDir)) return []
   const items: TaskContextItem[] = []
-  const pushFile = (filePath: string, folder: string | null): void => {
-    items.push({
-      name: path.basename(filePath).slice(0, -3),
-      folder,
-      content: fs.readFileSync(filePath, 'utf-8'),
-      updatedAt: fs.statSync(filePath).mtime.toISOString(),
-    })
-  }
   for (const entry of fs.readdirSync(contextDir, { withFileTypes: true })) {
-    if (entry.isFile()) {
-      if (entry.name.endsWith('.md')) pushFile(path.join(contextDir, entry.name), null)
-      continue
-    }
+    // 仅认文件夹布局 context/{folder}/{topic}.md；旧的平铺文件 context/{topic}.md 既不读取也不允许更新
     if (!entry.isDirectory()) continue
     // 目录名复用目录名规则（拒 ./../控制字符）且不允许点开头，避免系统/隐藏目录被当成上下文夹
     if (sanitizeTaskName(entry.name) !== entry.name || entry.name.startsWith('.')) continue
     const folderDir = path.join(contextDir, entry.name)
     for (const sub of fs.readdirSync(folderDir, { withFileTypes: true })) {
       if (!sub.isFile() || !sub.name.endsWith('.md')) continue
-      pushFile(path.join(folderDir, sub.name), entry.name)
+      const filePath = path.join(folderDir, sub.name)
+      items.push({
+        name: sub.name.slice(0, -3),
+        folder: entry.name,
+        content: fs.readFileSync(filePath, 'utf-8'),
+        updatedAt: fs.statSync(filePath).mtime.toISOString(),
+      })
     }
   }
-  // 排序：文件夹升序（平铺在前），同文件夹内按主题字典序
-  items.sort((a, b) => {
-    const af = a.folder ?? ''
-    const bf = b.folder ?? ''
-    if (af !== bf) return af < bf ? -1 : 1
-    return a.name.localeCompare(b.name)
-  })
+  // 排序：文件夹升序，同文件夹内按主题字典序
+  items.sort((a, b) => (a.folder !== b.folder ? (a.folder < b.folder ? -1 : 1) : a.name.localeCompare(b.name)))
   return items
 }
 

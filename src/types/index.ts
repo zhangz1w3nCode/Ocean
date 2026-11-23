@@ -473,8 +473,8 @@ export interface TaskSummary {
 // 任务上下文（.tasks/{task-name}/context/*.md 或 context/{folder}/*.md）
 export interface TaskContextFile {
   name: string
-  /** 所属文件夹（平铺文件为 null） */
-  folder: string | null
+  /** 所属文件夹（文件夹是唯一合法布局） */
+  folder: string
   content: string
   updatedAt: string
 }

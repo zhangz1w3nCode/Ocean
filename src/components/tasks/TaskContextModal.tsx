@@ -18,7 +18,7 @@ export const TaskContextModal: FC<TaskContextModalProps> = ({ context, onClose, 
     <Modal
       isOpen={true}
       onClose={onClose}
-      title={context.folder ? `${context.folder}/${context.name}` : context.name}
+      title={`${context.folder}/${context.name}`}
       size="lg"
       layoutKey="task-context"
       persistLayout

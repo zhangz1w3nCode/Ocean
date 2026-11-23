@@ -10,6 +10,7 @@ import { useTaskStore } from '../stores/taskStore'
 import { useToastStore } from '../stores/toastStore'
 import type { TaskSummary, TaskContextFile, TaskStatus } from '../types'
 import { formatRelativeTime } from '../utils/format'
+import { buildContentSavePayload } from '../utils/taskPayload'
 import { TaskFormModal, TaskContextModal, TaskContextFormModal, TaskContentModal, TaskTimelineModal, TaskTimelineVisual } from '../components/tasks'
 
 // 任务状态配色（列表/详情/标签页统一）
@@ -213,18 +214,10 @@ const TaskDetail: FC<{ onEditClick: () => void }> = ({ onEditClick }) => {
     setIsRefreshing(false)
   }
 
-  // 任务内容卡片放大编辑：只更新内容，状态与其它字段保持不变（绑定字段需回填，core 为全量覆写语义）
+  // 任务内容卡片放大编辑：只更新内容，其余字段由 buildContentSavePayload 统一回填（core 为全量覆写语义）
   const handleContentSave = async (content: string) => {
     if (!task) return false
-    const success = await updateTask({
-      name: task.name,
-      content,
-      handler: task.handler,
-      relatedCodebases: task.relatedCodebases,
-      tags: task.tags,
-      workflow: task.workflow,
-      workflowInstance: task.workflowInstance,
-    })
+    const success = await updateTask(buildContentSavePayload(task, content))
     if (!success) addToast('保存任务内容失败，请重试', 'error')
     return success
   }
@@ -400,10 +393,9 @@ const TaskDetail: FC<{ onEditClick: () => void }> = ({ onEditClick }) => {
                 {detail.contexts.length > 0 ? (
                   // 按文件夹分组展示：全为平铺时保持原扁平网格；存在文件夹时分组（平铺归入「未分组」）
                   (() => {
-                    const hasFolders = detail.contexts.some(c => c.folder)
                     const groups = new Map<string, TaskContextFile[]>()
                     for (const ctx of detail.contexts) {
-                      const key = ctx.folder || ''
+                      const key = ctx.folder
                       const list = groups.get(key) || []
                       list.push(ctx)
                       groups.set(key, list)
@@ -411,12 +403,12 @@ const TaskDetail: FC<{ onEditClick: () => void }> = ({ onEditClick }) => {
                     const keys = Array.from(groups.keys()).sort((a, b) => (a === '' ? -1 : b === '' ? 1 : a.localeCompare(b)))
                     const renderCard = (ctx: TaskContextFile) => (
                       <div
-                        key={ctx.folder ? `${ctx.folder}/${ctx.name}` : ctx.name}
+                        key={`${ctx.folder}/${ctx.name}`}
                         className="rounded-lg border border-gray-100 p-3 transition-colors cursor-pointer hover:border-gray-200 hover:bg-gray-50/50"
                         onClick={() => setViewingContext(ctx)}
                       >
                         <div className="flex items-center justify-between mb-1">
-                          <span className="text-sm font-medium text-macos-text truncate" title={ctx.folder ? `${ctx.folder}/${ctx.name}` : ctx.name}>{ctx.name}</span>
+                          <span className="text-sm font-medium text-macos-text truncate" title={`${ctx.folder}/${ctx.name}`}>{ctx.name}</span>
                           <StickyNote size={14} className="text-macos-text-tertiary flex-shrink-0" strokeWidth={1.5} />
                         </div>
                         <p className="text-xs text-macos-text-tertiary truncate" title={ctx.content.split('\n')[0] || ''}>
@@ -430,14 +422,12 @@ const TaskDetail: FC<{ onEditClick: () => void }> = ({ onEditClick }) => {
                     return (
                       <div className="flex flex-col gap-4">
                         {keys.map(key => (
-                          <div key={key || '__root__'}>
-                            {hasFolders && (
-                              <div className="flex items-center gap-1.5 mb-2">
-                                <FolderOpen size={13} className="text-macos-text-tertiary" strokeWidth={1.5} />
-                                <span className="text-xs font-medium text-macos-text-secondary">{key || '未分组'}</span>
-                                <span className="text-[10px] text-macos-text-tertiary">{groups.get(key)!.length}</span>
-                              </div>
-                            )}
+                          <div key={key}>
+                            <div className="flex items-center gap-1.5 mb-2">
+                              <FolderOpen size={13} className="text-macos-text-tertiary" strokeWidth={1.5} />
+                              <span className="text-xs font-medium text-macos-text-secondary">{key}</span>
+                              <span className="text-[10px] text-macos-text-tertiary">{groups.get(key)!.length}</span>
+                            </div>
                             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                               {groups.get(key)!.map(renderCard)}
                             </div>
@@ -476,7 +466,7 @@ const TaskDetail: FC<{ onEditClick: () => void }> = ({ onEditClick }) => {
         onClose={() => { setIsAddContextOpen(false); setEditingContext(null) }}
         mode={editingContext ? 'edit' : 'create'}
         initialContext={editingContext}
-        existingContextNames={(detail?.contexts || []).map(c => (c.folder ? `${c.folder}/${c.name}` : c.name))}
+        existingContextNames={(detail?.contexts || []).map(c => `${c.folder}/${c.name}`)}
         onConfirm={handleSaveContext}
       />
 

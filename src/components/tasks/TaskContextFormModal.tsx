@@ -46,7 +46,7 @@ export const TaskContextFormModal: FC<TaskContextFormModalProps> = ({
 
   useEffect(() => {
     if (isOpen) {
-      setFolder(isEdit ? (initialContext?.folder || '') : '')
+      setFolder(isEdit ? (initialContext?.folder ?? '') : '')
       setContextName(isEdit ? (initialContext?.name || '') : '')
       setContent(isEdit ? (initialContext?.content || '') : '')
       setViewMode('edit')

@@ -494,16 +494,20 @@ describe('context 文件夹', () => {
     if (r.success !== false) throw new Error('预期符号链接写入被拒绝')
     expect(r.error).toContain('符号链接')
     expect(fs.existsSync(path.join(outside, '主题.md'))).toBe(false)
+    expect((await detail('戊')).contexts).toHaveLength(0)
     fs.rmSync(outside, { recursive: true, force: true })
   })
 
-  it('存量平铺 context 仍可读取（folder 为 null）', async () => {
+  it('旧平铺文件不再读取（folder 是唯一合法布局），也不允许写入平铺', async () => {
     await mk('甲')
     const ctxDir = path.join(root, '.tasks', '甲', 'context')
     fs.writeFileSync(path.join(ctxDir, '历史平铺.md'), '旧数据正文')
     await saveCtx({ taskName: '甲', contextName: '新需求', folder: '调研', content: '新数据' })
     const ctxs = (await detail('甲')).contexts
-    expect(ctxs.map(c => `${c.folder ?? '-'}/${c.name}`)).toEqual(['-/历史平铺', '调研/新需求'])
+    // 平铺文件被忽略：只剩文件夹内的上下文
+    expect(ctxs.map(c => `${c.folder}/${c.name}`)).toEqual(['调研/新需求'])
+    // 平铺写入被拒绝（folder 必填）
+    await fail(saveTaskContext(root, { taskName: '甲', contextName: '历史平铺', folder: '', content: 'x' }), /上下文文件夹不能为空/)
   })
 
   it('非法文件夹被拒绝（路径分隔符 / 上跳 / 点号 / 点开头）', async () => {

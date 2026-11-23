@@ -154,9 +154,9 @@ function assertBindingSyntax(label: string, value: string): void {
   if (illegal) throw new UsageError(`${label}不能包含 / \\ .. 等非法字符，且不能超过 100 字符`)
 }
 
-// 上下文路径展示：文件夹可选，平铺不加前缀
-function contextPathLabel(folder: string | null | undefined, topic: string): string {
-  return folder ? `${folder}/${topic}` : topic
+// 上下文路径展示：文件夹为唯一合法布局
+function contextPathLabel(folder: string, topic: string): string {
+  return `${folder}/${topic}`
 }
 
 export async function handleTask(root: string, args: Args): Promise<void> {
@@ -351,16 +351,16 @@ export async function handleTask(root: string, args: Args): Promise<void> {
           const contexts = unwrap(await taskCore.readTaskDetail(root, name)).detail.contexts
           if (json) printJson(contexts)
           else if (contexts.length === 0) rawOut('（无上下文）')
-          else printDataTable(['文件夹', '主题', '更新时间'], contexts.map(c => [c.folder || '-', c.name, c.updatedAt || '-']))
+          else printDataTable(['文件夹', '主题', '更新时间'], contexts.map(c => [c.folder, c.name, c.updatedAt || '-']))
           break
         }
         case 'read': {
           const topic = strFlag('topic', args)
           if (!topic) throw new UsageError('读取上下文需要 --topic <主题>（ocean task context list <name> 可查主题）')
           const folder = strFlag('folder', args)
-          // 不传 --folder 时只能命中存量平铺上下文（context/{topic}.md）；文件夹内的上下文必须指定 --folder
-          const item = unwrap(await taskCore.readTaskDetail(root, name)).detail.contexts.find(c => c.name === topic && (c.folder ?? undefined) === folder)
-          if (!item) throw new Error(`上下文不存在: ${folder ? `${folder}/${topic}` : `${topic}（如为文件夹内上下文请加 --folder <文件夹>）`}`)
+          if (!folder) throw new UsageError('读取上下文需要 --folder <文件夹>（上下文一律保存在文件夹下）')
+          const item = unwrap(await taskCore.readTaskDetail(root, name)).detail.contexts.find(c => c.name === topic && c.folder === folder)
+          if (!item) throw new Error(`上下文不存在: ${folder}/${topic}`)
           json ? printJson(item) : out(item.content.trim() || '（空上下文）')
           break
         }
