@@ -229,14 +229,27 @@ function printHelp(namespace?: string, subcommand?: string, json: boolean = fals
       if (subcommand) {
         switch (subcommand) {
           case 'instance':
-            out(`ocean workflow instance — 创建工作流实例
+            out(`ocean workflow instance — 创建工作流实例 / 列出实例
 
-用法: ocean workflow instance <name> [--flags...]
+用法:
+  ocean workflow instance <name> [--input <string>]   创建实例
+  ocean workflow instance list [--workflow <name>] [--keyword <kw>]   列出/搜索实例
 
-参数:
+列出实例:
+  ocean workflow instance list [--workflow <name>] [--keyword <kw...>]
+
+列出实例 flag:
+  --workflow <name>           仅列出指定工作流的实例
+  --keyword <kw...>           关键词搜索实例，支持两种写法（多词为 AND 全部命中才显示）：
+                                空格分隔多个词: --keyword "词1" "词2"
+                                逗号分隔（中英文逗号均可）: --keyword "词1,词2"
+                              匹配实例 ID、工作流名、状态、初始输入，大小写不敏感
+  --json                       JSON 格式输出
+
+创建实例参数:
   <name>                      工作流名称（必填）
 
-flag:
+创建实例 flag:
   --input <string>            初始输入内容（必填）
   --max-steps <n>             最大步数上限（默认 100）
   --max-loop <n>              最大循环次数上限（默认 10）
@@ -369,7 +382,7 @@ flag:
 执行子命令:
   list                          列出可用工作流
   instance <name>              创建工作流实例，返回 instance-id
-  instance list                 列出实例
+  instance list                 列出实例（--workflow 按工作流名过滤，--keyword 支持逗号分隔多关键词 AND 搜索）
   next                          拉取下一个节点内容
   complete                      交产物并推进
   fail                          标记失败
@@ -812,8 +825,11 @@ async function handleWorkflow(root: string, args: ReturnType<typeof parseArgs>):
     case 'instance': {
       if (args.positional[0] === 'list') {
         const wf = typeof args.flags.workflow === 'string' ? args.flags.workflow : undefined
-        if (args.flags.json) printJson(markdownTableToJson(listInstances(root, wf)))
-        else printMarkdownTable(listInstances(root, wf))
+        const kwFlag = typeof args.flags.keyword === 'string' ? args.flags.keyword : undefined
+        const kwExtra = args.positional.slice(1).join(',')
+        const kw = [kwFlag, kwExtra].filter(Boolean).join(',') || undefined
+        if (args.flags.json) printJson(markdownTableToJson(listInstances(root, wf, kw)))
+        else printMarkdownTable(listInstances(root, wf, kw))
       } else {
         const workflowName = args.positional[0]
         if (!workflowName) {
