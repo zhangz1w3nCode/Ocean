@@ -329,10 +329,23 @@ export function listWorkflows(root: string): string {
   return names.join('\n')
 }
 
-export function listInstances(root: string, workflowFilter?: string): string {
-  let out = '| 实例 | 工作流 | 状态 |\n|------|--------|------|\n'
+const INSTANCE_INPUT_DISPLAY_MAX = 40
+
+function instanceCellText(text: string): string {
+  const flat = text.replace(/[\r\n]+/g, ' ').replace(/\|/g, '｜')
+  if (flat.length <= INSTANCE_INPUT_DISPLAY_MAX) return flat
+  return flat.slice(0, INSTANCE_INPUT_DISPLAY_MAX) + '…'
+}
+
+export function listInstances(root: string, workflowFilter?: string, keyword?: string): string {
+  const rows: string[] = []
   const base = path.join(root, '.workflows')
-  if (!fs.existsSync(base)) return out
+  if (!fs.existsSync(base)) return ''
+
+  const kws = (keyword || '')
+    .split(/[,，]/)
+    .map((k) => k.trim().toLowerCase())
+    .filter(Boolean)
 
   const wfDirs: string[] = []
   for (const entry of fs.readdirSync(base, { withFileTypes: true })) {
@@ -351,16 +364,23 @@ export function listInstances(root: string, workflowFilter?: string): string {
     ids.sort()
     for (const id of ids) {
       let st = 'unknown'
+      let input = ''
       try {
         const pf = ProcessFile.read(path.join(instDir, id, 'process.md'))
         st = statusAsStr(pf.state.status)
+        input = pf.state.initial_input ?? ''
       } catch {
         // read failure → unknown
       }
-      out += `| ${id} | ${wfName} | ${st} |\n`
+      if (kws.length > 0) {
+        const haystack = [id, wfName, st, input].join('\n').toLowerCase()
+        if (!kws.every((k) => haystack.includes(k))) continue
+      }
+      rows.push(`| ${id} | ${wfName} | ${st} | ${instanceCellText(input)} |`)
     }
   }
-  return out
+  if (rows.length === 0) return ''
+  return ['| 实例 | 工作流 | 状态 | 初始输入 |', '|------|--------|------|----------|', ...rows].join('\n')
 }
 
 // ---------------------------------------------------------------------------
