@@ -43,7 +43,7 @@ const mk = async (name: string, content = '正文', extra?: Record<string, unkno
   (await unwrap(createTask(root, { name, content, ...extra }))).task
 const detail = async (name: string) => (await unwrap(readTaskDetail(root, name))).detail
 const upd = async (payload: Record<string, unknown>) => (await unwrap(updateTask(root, payload as any))).task
-const saveCtx = async (payload: { taskName: string; contextName: string; content: string }) =>
+const saveCtx = async (payload: { taskName: string; contextName: string; folder: string; content: string }) =>
   (await unwrap(saveTaskContext(root, payload))).isUpdate
 const search = async (kw: string, opts?: { top?: number; context?: number; status?: string }) =>
   (await unwrap(searchTasks(root, kw, opts))).results
@@ -98,11 +98,12 @@ describe('createTask', () => {
     expect((await detail('甲')).trace[0].type).toBe('task-created')
   })
 
-  it('--context 写入名为「初始上下文」的上下文文件', async () => {
-    await mk('甲', '内容', { context: '  背景  ' })
+  it('--context 写入「文件夹/初始上下文」的上下文文件（文件夹必填）', async () => {
+    await mk('甲', '内容', { context: '  背景  ', contextFolder: '初始' })
     const d = await detail('甲')
-    expect(d.contexts.map(c => c.name)).toContain('初始上下文')
+    expect(d.contexts.map(c => `${c.folder}/${c.name}`)).toContain('初始/初始上下文')
     expect(d.contexts.find(c => c.name === '初始上下文')!.content.trim()).toBe('背景')
+    await fail(createTask(root, { name: '乙', content: 'x', context: '背景' }), /必须提供合法文件夹/)
   })
 
   it('TASK.md 落盘为 YAML frontmatter + 流式数组', async () => {
@@ -225,16 +226,17 @@ describe('updateTask 状态机', () => {
 describe('saveTaskContext', () => {
   it('同名覆盖判定新建 / 更新', async () => {
     await mk('甲')
-    expect(await saveCtx({ taskName: '甲', contextName: '需求', content: '一' })).toBe(false)
-    expect(await saveCtx({ taskName: '甲', contextName: '需求', content: '二' })).toBe(true)
+    expect(await saveCtx({ taskName: '甲', contextName: '需求', folder: '默认', content: '一' })).toBe(false)
+    expect(await saveCtx({ taskName: '甲', contextName: '需求', folder: '默认', content: '二' })).toBe(true)
     expect((await detail('甲')).contexts.find(c => c.name === '需求')!.content.trim()).toBe('二')
   })
 
   it('空内容 / 非法主题 / 任务不存在 被拒绝', async () => {
     await mk('甲')
-    await fail(saveTaskContext(root, { taskName: '甲', contextName: '需求', content: '  ' }), /上下文内容不能为空/)
-    await fail(saveTaskContext(root, { taskName: '甲', contextName: 'a/b', content: 'x' }), /上下文主题/)
-    await fail(saveTaskContext(root, { taskName: '没有', contextName: '需求', content: 'x' }), /任务不存在/)
+    await fail(saveTaskContext(root, { taskName: '甲', contextName: '需求', folder: '默认', content: '  ' }), /上下文内容不能为空/)
+    await fail(saveTaskContext(root, { taskName: '甲', contextName: 'a/b', folder: '默认', content: 'x' }), /上下文主题/)
+    await fail(saveTaskContext(root, { taskName: '甲', contextName: '需求', folder: '', content: 'x' }), /上下文文件夹不能为空/)
+    await fail(saveTaskContext(root, { taskName: '没有', contextName: '需求', folder: '默认', content: 'x' }), /任务不存在/)
   })
 
   it('保存上下文会刷新任务 updated_at 并写事件', async () => {
@@ -242,7 +244,7 @@ describe('saveTaskContext', () => {
     vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'))
     const created = await mk('甲')
     vi.setSystemTime(new Date('2026-01-01T00:00:01.000Z'))
-    await saveCtx({ taskName: '甲', contextName: '需求', content: '一' })
+    await saveCtx({ taskName: '甲', contextName: '需求', folder: '默认', content: '一' })
     const d = await detail('甲')
     expect(d.task.updatedAt).not.toBe(created.updatedAt)
     expect(d.trace.map(e => e.type)).toContain('context-created')
@@ -264,11 +266,11 @@ describe('searchTasks（正文维度全文检索）', () => {
     expect(await search('TOKEN')).toHaveLength(1)
   })
 
-  it('命中上下文正文并以主题名作为位置', async () => {
+  it('命中上下文正文并以「文件夹/主题」作为位置', async () => {
     await mk('甲', '正文无关')
-    await saveCtx({ taskName: '甲', contextName: '需求背景', content: '背景一\n要求支持降级\n背景三' })
+    await saveCtx({ taskName: '甲', contextName: '需求背景', folder: '默认', content: '背景一\n要求支持降级\n背景三' })
     const r = await search('降级')
-    expect(r[0].matches[0].where).toBe('需求背景')
+    expect(r[0].matches[0].where).toBe('默认/需求背景')
     expect(r[0].matches[0].line).toBe(2)
   })
 
@@ -385,7 +387,7 @@ describe('IO 异常收敛（guard，renderer 直连防线）', () => {
     const ctxDir = path.join(root, '.tasks', '甲', 'context')
     fs.rmSync(ctxDir, { recursive: true, force: true })
     fs.writeFileSync(ctxDir, 'occupied')
-    const r = await saveTaskContext(root, { taskName: '甲', contextName: '需求', content: 'x' })
+    const r = await saveTaskContext(root, { taskName: '甲', contextName: '需求', folder: '默认', content: 'x' })
     if (r.success !== false) throw new Error('预期 IO 收敛失败')
     expect(r.error).toContain('IO 错误')
   })
@@ -395,5 +397,158 @@ describe('IO 异常收敛（guard，renderer 直连防线）', () => {
     const r = await searchTasks(root, 'kw')
     if (r.success !== false) throw new Error('预期 IO 收敛失败')
     expect(r.error).toContain('IO 错误')
+  })
+})
+
+describe('工作流绑定（可选项）', () => {
+  it('创建时写入 workflow / workflow_instance；未绑定时不落键', async () => {
+    const bound = await mk('甲', '正文', { workflow: 'standard-task-pipeline', workflowInstance: '20261123T232512-0283' })
+    expect(bound.workflow).toBe('standard-task-pipeline')
+    expect(bound.workflowInstance).toBe('20261123T232512-0283')
+    const raw = fs.readFileSync(path.join(root, '.tasks', '甲', 'TASK.md'), 'utf-8')
+    expect(raw).toContain('workflow: standard-task-pipeline')
+    expect(raw).toContain('workflow_instance: 20261123T232512-0283')
+
+    await mk('乙')
+    const rawPlain = fs.readFileSync(path.join(root, '.tasks', '乙', 'TASK.md'), 'utf-8')
+    expect(rawPlain).not.toContain('workflow')
+    expect((await detail('乙')).task.workflow).toBe('')
+    expect((await detail('乙')).task.workflowInstance).toBe('')
+  })
+
+  it('实例不能脱离工作流绑定（创建与更新均拒绝）', async () => {
+    await fail(createTask(root, { name: '甲', content: 'x', workflowInstance: '20261123T232512-0283' }), /必须同时绑定工作流/)
+    await mk('乙')
+    await fail(updateTask(root, { name: '乙', content: 'x', workflowInstance: '20261123T232512-0283' }), /必须同时绑定工作流/)
+  })
+
+  it('绑定校验先于落盘：被拒绝的创建不留下幽灵目录（不占用任务名）', async () => {
+    await fail(createTask(root, { name: '丙', content: 'x', workflowInstance: '20261123T232512-0283' }), /必须同时绑定工作流/)
+    expect(fs.existsSync(path.join(root, '.tasks', '丙'))).toBe(false)
+    // 同名再次创建（合法绑定）应成功，证明名称未被占用
+    const t = await mk('丙', 'x', { workflow: 'wf1' })
+    expect(t.workflow).toBe('wf1')
+  })
+
+  it('非法绑定值（含路径分隔符）被拒绝', async () => {
+    await fail(createTask(root, { name: '甲', content: 'x', workflow: 'a/b' }), /绑定工作流不能包含/)
+    await mk('乙')
+    await fail(updateTask(root, { name: '乙', content: 'x', workflowInstance: 'a/b' }), /绑定工作流实例不能包含/)
+  })
+
+  it('更新绑定记入字段变更事件，清空后 frontmatter 键被删除', async () => {
+    await mk('甲')
+    const updated = await upd({ name: '甲', content: '正文', workflow: 'wf1', workflowInstance: 'ins1' })
+    expect(updated.workflow).toBe('wf1')
+    expect(updated.workflowInstance).toBe('ins1')
+    expect((await detail('甲')).trace.find(e => e.type === 'task-updated')!.fields).toEqual(expect.arrayContaining(['绑定工作流', '绑定实例']))
+    const rawBound = fs.readFileSync(path.join(root, '.tasks', '甲', 'TASK.md'), 'utf-8')
+    expect(rawBound).toContain('workflow: wf1')
+    expect(rawBound).toContain('workflow_instance: ins1')
+
+    const cleared = await upd({ name: '甲', content: '正文' })
+    expect(cleared.workflow).toBe('')
+    expect(cleared.workflowInstance).toBe('')
+    const rawCleared = fs.readFileSync(path.join(root, '.tasks', '甲', 'TASK.md'), 'utf-8')
+    expect(rawCleared).not.toContain('workflow')
+  })
+
+  it('listTasks 回读绑定值', async () => {
+    await mk('甲', '正文', { workflow: 'wf1' })
+    expect((await list()).find(t => t.name === '甲')!.workflow).toBe('wf1')
+  })
+})
+
+describe('context 文件夹', () => {
+  it('带 folder 落盘 context/{folder}/{topic}.md 并按路径判定新建/更新', async () => {
+    await mk('甲')
+    expect(await saveCtx({ taskName: '甲', contextName: '基线', folder: '调研', content: '一' })).toBe(false)
+    expect(fs.existsSync(path.join(root, '.tasks', '甲', 'context', '调研', '基线.md'))).toBe(true)
+    expect(await saveCtx({ taskName: '甲', contextName: '基线', folder: '调研', content: '二' })).toBe(true)
+    const item = (await detail('甲')).contexts.find(c => c.folder === '调研' && c.name === '基线')!
+    expect(item.content.trim()).toBe('二')
+  })
+
+  it('同名主题在不同文件夹共存（文件夹必填，写入不再产生平铺文件）', async () => {
+    await mk('甲')
+    await saveCtx({ taskName: '甲', contextName: '需求', folder: 'A', content: 'inA' })
+    await saveCtx({ taskName: '甲', contextName: '需求', folder: 'B', content: 'inB' })
+    const ctxs = (await detail('甲')).contexts
+    expect(ctxs.map(c => `${c.folder ?? '-'}/${c.name}`)).toEqual(['A/需求', 'B/需求'])
+    expect(fs.existsSync(path.join(root, '.tasks', '甲', 'context', '需求.md'))).toBe(false)
+  })
+
+  it('非法 context-folder 的创建在落盘前被拒绝，不残留任务目录', async () => {
+    await fail(createTask(root, { name: '丁', content: 'x', context: '背景', contextFolder: 'a/b' }), /必须提供合法文件夹/)
+    expect(fs.existsSync(path.join(root, '.tasks', '丁'))).toBe(false)
+    // 同名合法创建应成功，证明任务名未被占用
+    const ok = await unwrap(createTask(root, { name: '丁', content: 'x', context: '背景', contextFolder: '初始' }))
+    expect(ok.task.name).toBe('丁')
+  })
+
+  it('文件夹为符号链接时拒绝写入（防止写到任务目录外且读取不可见）', async () => {
+    await mk('戊')
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'ocean-outside-'))
+    fs.symlinkSync(outside, path.join(root, '.tasks', '戊', 'context', '链接夹'))
+    const r = await saveTaskContext(root, { taskName: '戊', contextName: '主题', folder: '链接夹', content: 'x' })
+    if (r.success !== false) throw new Error('预期符号链接写入被拒绝')
+    expect(r.error).toContain('符号链接')
+    expect(fs.existsSync(path.join(outside, '主题.md'))).toBe(false)
+    expect((await detail('戊')).contexts).toHaveLength(0)
+    fs.rmSync(outside, { recursive: true, force: true })
+  })
+
+  it('旧平铺文件不再读取（folder 是唯一合法布局），也不允许写入平铺', async () => {
+    await mk('甲')
+    const ctxDir = path.join(root, '.tasks', '甲', 'context')
+    fs.writeFileSync(path.join(ctxDir, '历史平铺.md'), '旧数据正文')
+    await saveCtx({ taskName: '甲', contextName: '新需求', folder: '调研', content: '新数据' })
+    const ctxs = (await detail('甲')).contexts
+    // 平铺文件被忽略：只剩文件夹内的上下文
+    expect(ctxs.map(c => `${c.folder}/${c.name}`)).toEqual(['调研/新需求'])
+    // 平铺写入被拒绝（folder 必填）
+    await fail(saveTaskContext(root, { taskName: '甲', contextName: '历史平铺', folder: '', content: 'x' }), /上下文文件夹不能为空/)
+  })
+
+  it('非法文件夹被拒绝（路径分隔符 / 上跳 / 点号 / 点开头）', async () => {
+    await mk('甲')
+    await fail(saveTaskContext(root, { taskName: '甲', contextName: 'x', folder: 'a/b', content: 'y' }), /上下文文件夹/)
+    await fail(saveTaskContext(root, { taskName: '甲', contextName: 'x', folder: '..', content: 'y' }), /上下文文件夹/)
+    await fail(saveTaskContext(root, { taskName: '甲', contextName: 'x', folder: '.', content: 'y' }), /上下文文件夹/)
+    await fail(saveTaskContext(root, { taskName: '甲', contextName: 'x', folder: '.hidden', content: 'y' }), /上下文文件夹/)
+  })
+
+  it('trace 事件带 folder 字段且 message 为路径', async () => {
+    await mk('甲')
+    await saveCtx({ taskName: '甲', contextName: '需求', folder: '调研', content: 'x' })
+    await saveCtx({ taskName: '甲', contextName: '需求', folder: '方案', content: 'x' })
+    const events = (await detail('甲')).trace.filter(e => e.type === 'context-created')
+    expect(events.map(e => e.folder)).toEqual(['调研', '方案'])
+    expect(events[0].message).toContain('调研/需求')
+    expect(events[1].message).toContain('方案/需求')
+  })
+
+  it('searchTasks 命中文件夹内上下文并以「文件夹/主题」标注位置', async () => {
+    await mk('甲')
+    await saveCtx({ taskName: '甲', contextName: '基线', folder: '调研', content: '这里写了 zeta 关键字' })
+    const matches = (await search('zeta'))[0].matches
+    expect(matches[0].where).toBe('调研/基线')
+  })
+
+  it('点开头目录不被当作上下文文件夹', async () => {
+    await mk('甲')
+    const hiddenDir = path.join(root, '.tasks', '甲', 'context', '.hidden')
+    fs.mkdirSync(hiddenDir, { recursive: true })
+    fs.writeFileSync(path.join(hiddenDir, 'x.md'), 'x')
+    expect((await detail('甲')).contexts).toHaveLength(0)
+  })
+
+  it('folder 与同名文件冲突时返回业务错误', async () => {
+    await mk('甲')
+    const ctxDir = path.join(root, '.tasks', '甲', 'context')
+    fs.writeFileSync(path.join(ctxDir, '调研'), 'occupied')
+    const r = await saveTaskContext(root, { taskName: '甲', contextName: 'x', folder: '调研', content: 'y' })
+    if (r.success !== false) throw new Error('预期失败')
+    expect(r.error).toContain('上下文文件夹与已有文件冲突')
   })
 })

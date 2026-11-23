@@ -1,8 +1,9 @@
 import type { FC } from 'react'
 import { useState, useEffect, useRef } from 'react'
-import { Type, FileText, User, GitBranch, Tags, CircleDot, Edit3, Eye, Link2 } from 'lucide-react'
+import { Type, FileText, User, GitBranch, Tags, CircleDot, Edit3, Eye, Link2, Workflow } from 'lucide-react'
 import { Modal, Input, Button, ConfirmModal, Dropdown, MarkdownEditor, MarkdownRenderer } from '../ui'
 import { TagChipsInput } from './TagChipsInput'
+import { WorkflowBindingPicker } from './WorkflowBindingPicker'
 import { useToastStore } from '../../stores/toastStore'
 import { useCodebaseStore } from '../../stores/codebaseStore'
 import type { TaskSummary, TaskStatus, CreateTaskPayload, UpdateTaskPayload } from '../../types'
@@ -27,6 +28,16 @@ const STATUS_BADGE_CLASSES: Record<string, string> = {
   '已取消': 'bg-red-50 text-red-600',
 }
 
+// 工作流名 → 实例 ID 列表。用无原型对象，避免工作流名恰好是 __proto__/constructor 时命中原型链
+function buildInstancesByWorkflow(items: Array<{ instanceId: string; workflowName: string }>): Record<string, string[]> {
+  const map: Record<string, string[]> = Object.create(null)
+  for (const item of items) {
+    if (!Object.hasOwn(map, item.workflowName)) map[item.workflowName] = []
+    map[item.workflowName].push(item.instanceId)
+  }
+  return map
+}
+
 export const TaskFormModal: FC<TaskFormModalProps> = ({
   isOpen,
   onClose,
@@ -48,6 +59,11 @@ export const TaskFormModal: FC<TaskFormModalProps> = ({
   const [repoList, setRepoList] = useState<string[]>([])
   const [tagsList, setTagsList] = useState<string[]>([])
   const [relatedTaskList, setRelatedTaskList] = useState<string[]>([])
+  // 绑定工作流 / 实例（可选项）：候选来自当前项目 .workflows/（经 preload IPC 读取）
+  const [boundWorkflow, setBoundWorkflow] = useState('')
+  const [boundInstance, setBoundInstance] = useState('')
+  const [workflowOptions, setWorkflowOptions] = useState<string[]>([])
+  const [instanceOptions, setInstanceOptions] = useState<Array<{ instanceId: string; workflowName: string }>>([])
   const [status, setStatus] = useState<TaskStatus>('等待处理')
   // 任务内容编辑/预览切换（仅创建模式的内容字段）
   const [contentPreview, setContentPreview] = useState<'edit' | 'preview'>('edit')
@@ -59,8 +75,8 @@ export const TaskFormModal: FC<TaskFormModalProps> = ({
 
   // 表单实时镜像（ref）：脏检测快照必须读到重置后的值，
   // 直接闭包捕获 state 会拿到「上一次会话 → 重置」间的旧值造成误判
-  const formStateRef = useRef({ name, content, handler, repoList, tagsList, relatedTaskList, status })
-  formStateRef.current = { name, content, handler, repoList, tagsList, relatedTaskList, status }
+  const formStateRef = useRef({ name, content, handler, repoList, tagsList, relatedTaskList, boundWorkflow, boundInstance, status })
+  formStateRef.current = { name, content, handler, repoList, tagsList, relatedTaskList, boundWorkflow, boundInstance, status }
 
   const isCreate = mode === 'create'
   const taskStatus = (task?.status || '等待处理') as TaskStatus
@@ -87,6 +103,8 @@ export const TaskFormModal: FC<TaskFormModalProps> = ({
         setRepoList([])
         setTagsList([])
         setRelatedTaskList([])
+        setBoundWorkflow('')
+        setBoundInstance('')
         setStatus('等待处理')
         setContentPreview('edit')
       } else {
@@ -96,6 +114,8 @@ export const TaskFormModal: FC<TaskFormModalProps> = ({
         setRepoList(task?.relatedCodebases || [])
         setTagsList(task?.tags || [])
         setRelatedTaskList(task?.relatedTasks || [])
+        setBoundWorkflow(task?.workflow || '')
+        setBoundInstance(task?.workflowInstance || '')
         setStatus(taskStatus)
       }
       setInvalidFields(new Set())
@@ -105,6 +125,27 @@ export const TaskFormModal: FC<TaskFormModalProps> = ({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, mode, task])
+
+  // 绑定候选：打开表单时拉取工作流与实例列表（仅 Electron 环境有 electronAPI）
+  useEffect(() => {
+    if (!isOpen) return
+    const api = window.electronAPI
+    if (!api) return
+    void (async () => {
+      try {
+        const [wfRes, instRes] = await Promise.all([api.loadAllWorkflowFolders(), api.listWorkflowInstances()])
+        if (wfRes?.success && wfRes.folders) setWorkflowOptions(wfRes.folders)
+        if (instRes?.success && instRes.instances) {
+          setInstanceOptions((instRes.instances as Array<{ instanceId: string; workflowName: string }>).map(i => ({
+            instanceId: String(i.instanceId),
+            workflowName: String(i.workflowName),
+          })))
+        }
+      } catch (error) {
+        console.error('加载工作流候选失败:', error)
+      }
+    })()
+  }, [isOpen])
 
   const handleSubmit = async () => {
     if (isSubmitting) return
@@ -150,6 +191,8 @@ export const TaskFormModal: FC<TaskFormModalProps> = ({
         relatedCodebases: repoList,
         tags: tagsList,
         relatedTasks: relatedTaskList,
+        workflow: boundWorkflow,
+        workflowInstance: boundWorkflow ? boundInstance : '',
       } as CreateTaskPayload)
       if (success) addToast('任务创建成功', 'success')
     } else {
@@ -160,6 +203,8 @@ export const TaskFormModal: FC<TaskFormModalProps> = ({
         relatedCodebases: repoList,
         tags: tagsList,
         relatedTasks: relatedTaskList,
+        workflow: boundWorkflow,
+        workflowInstance: boundWorkflow ? boundInstance : '',
         status: canSelectStatus ? status : undefined,
       } as UpdateTaskPayload)
       if (success) addToast('任务更新成功', 'success')
@@ -304,6 +349,24 @@ export const TaskFormModal: FC<TaskFormModalProps> = ({
               variant="gray"
               options={taskOptions.filter(t => t !== name)}
               emptyOptionHint="暂无可关联的任务"
+            />
+          </div>
+
+          {/* 绑定工作流（可选）：虚线添加按钮 + 多级弹层——一级选工作流，展开后二级可选实例 ID */}
+          <div>
+            <label className="flex items-center gap-2 text-sm font-medium text-macos-text mb-1.5">
+              <Workflow size={16} className="text-macos-text-secondary" />
+              绑定工作流（可选）
+            </label>
+            <WorkflowBindingPicker
+              workflow={boundWorkflow}
+              instance={boundInstance}
+              workflows={workflowOptions}
+              instancesByWorkflow={buildInstancesByWorkflow(instanceOptions)}
+              onChange={({ workflow: nextWorkflow, instance: nextInstance }) => {
+                setBoundWorkflow(nextWorkflow)
+                setBoundInstance(nextInstance)
+              }}
             />
           </div>
 

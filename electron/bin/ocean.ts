@@ -6,7 +6,6 @@ import { resolveRoot, resolveAssetDir, instanceWorkflow, readOutput, logTraceCom
 import { create } from '../core/instance'
 import { list, view, search, timeline, diff, update, contextSet, contextGet } from '../core/artifact_query'
 import { genId } from '../core/state'
-import { defaultLimits } from '../core/state'
 import type { Limits } from '../core/state'
 
 import * as nodeCrud from '../core/node'
@@ -574,7 +573,10 @@ flag:
   --related-codebases <r1,r2>  关联仓库（逗号分隔 可使用ocean codebases list查看可用仓库）
   --tags <t1,t2>               标签（逗号分隔）
   --related <n1,n2>            关联任务（逗号分隔，仅收录已存在的任务）
-  --context <text>             初始上下文内容（写入名为「初始上下文」的上下文文件）
+  --context <text>             初始上下文内容（写入 context/{--context-folder}/初始上下文.md）
+  --context-folder <name>      初始上下文所在文件夹（传 --context 时必填）
+  --workflow <name>            绑定 Ocean 工作流（可选，必须是 .workflows/ 下已存在的工作流）
+  --workflow-instance <id>     绑定工作流实例（可选，必须属于所绑定工作流；不可脱离工作流单独指定）
 
 初始状态固定为「等待处理」（与桌面端一致）${common}`)
             break
@@ -593,10 +595,12 @@ flag（未提供的字段保留原值）:
   --related-codebases <r1,r2>  关联仓库（逗号分隔 可使用ocean codebases list查看可用仓库）
   --tags <t1,t2>               标签（逗号分隔）
   --related <n1,n2>            关联任务（逗号分隔）
+  --workflow <name>            绑定 Ocean 工作流（必须是 .workflows/ 下已存在的工作流）
+  --workflow-instance <id>     绑定工作流实例（必须属于所绑定工作流）
   --status <状态>             推进状态（等待处理|处理中|已完成|已取消）
 
-清空某字段用显式开关：--no-handler / --no-related-codebases / --no-tags / --no-related
-（不能传空字符串：解析器会把 --flag 后紧跟的 -- 开头内容视为另一个 flag）
+清空某字段用显式开关：--no-handler / --no-related-codebases / --no-tags / --no-related / --no-workflow / --no-workflow-instance
+（不能传空字符串：解析器会把 --flag 后紧跟的 -- 开头内容视为另一个 flag；--no-workflow 会连带清空实例）
 
 状态机（仅前进，终态锁定）:
   等待处理 → 处理中 → 已完成 | 已取消
@@ -609,9 +613,12 @@ flag（未提供的字段保留原值）:
 用法: ocean task context <list|read|save> <name> [--flags...]
 
 子命令:
-  list <name>                  列出全部上下文主题
-  read <name> --topic <t>     读取指定上下文内容
-  save <name> --topic <t>      新增/更新上下文（同名覆盖）
+  list <name>                  列出全部上下文（含文件夹列）
+  read <name> --topic <t> [--folder <f>]     读取指定上下文内容
+  save <name> --topic <t> --folder <f>      新增/更新上下文（同一路径同名覆盖）
+
+上下文文件夹（保存必填）：写入一律落 context/{folder}/{topic}.md，同一文件夹下可存多个上下文文件。
+read 不传 --folder 时只命中存量平铺上下文（context/{topic}.md，历史数据兼容读取）。
 
 save 的内容传入（仅此一种，禁用 --content-file / stdin）:
   --content <text>             上下文正文（长内容可 --content "$(cat 文件)"，开头不得含 YAML frontmatter）${common}`)

@@ -31,12 +31,19 @@ export interface TaskSummary {
   relatedCodebases: string[]
   tags: string[]
   relatedTasks: string[]
+  /** 绑定的 Ocean 工作流名称（空串 = 未绑定，可选） */
+  workflow: string
+  /** 绑定的工作流实例 ID（空串 = 未绑定，可选；填写时必须有 workflow） */
+  workflowInstance: string
   createdAt: string
   updatedAt: string
 }
 
 export interface TaskContextItem {
+  /** 上下文主题（文件名去 .md） */
   name: string
+  /** 所属文件夹（context/{folder}/{name}.md）——文件夹是唯一合法布局 */
+  folder: string
   content: string
   updatedAt: string
 }
@@ -49,6 +56,8 @@ export interface TaskTraceEvent {
   from?: string
   to?: string
   name?: string
+  /** 上下文事件所属文件夹（与 name 组成路径；历史平铺事件为 null） */
+  folder?: string | null
 }
 
 export interface TaskDetail {
@@ -64,14 +73,20 @@ export interface TaskWritePayload {
   relatedCodebases?: string[]
   tags?: string[]
   relatedTasks?: string[]
+  workflow?: string
+  workflowInstance?: string
   status?: string
-  /** 仅创建时使用：写入「初始上下文」 */
+  /** 仅创建时使用：写入「初始上下文」（需同时提供 contextFolder） */
   context?: string
+  /** 初始上下文所在文件夹（提供 context 时必填） */
+  contextFolder?: string
 }
 
 export interface TaskContextPayload {
   taskName: string
   contextName: string
+  /** 上下文文件夹（必填，单层）—— 写入一律落 context/{folder}/{topic}.md */
+  folder: string
   content: string
 }
 
@@ -185,6 +200,8 @@ interface InternalTask {
   relatedCodebases: string[]
   tags: string[]
   relatedTasks: string[]
+  workflow: string
+  workflowInstance: string
   content: string
   createdAt: string
   updatedAt: string
@@ -205,6 +222,8 @@ function readTaskFile(root: string, taskName: string): InternalTask | null {
     relatedCodebases: readTaskArrayField(frontmatter.related_codebases),
     tags: readTaskArrayField(frontmatter.tags),
     relatedTasks: readTaskArrayField(frontmatter.related_tasks),
+    workflow: frontmatter.workflow != null ? String(frontmatter.workflow).trim() : '',
+    workflowInstance: frontmatter.workflow_instance != null ? String(frontmatter.workflow_instance).trim() : '',
     content: body,
     createdAt: frontmatter.created_at != null ? String(frontmatter.created_at) : '',
     updatedAt: frontmatter.updated_at != null ? String(frontmatter.updated_at) : '',
@@ -221,9 +240,50 @@ function taskSummaryOf(task: InternalTask, dirName?: string): TaskSummary {
     relatedCodebases: task.relatedCodebases,
     tags: task.tags,
     relatedTasks: task.relatedTasks,
+    workflow: task.workflow,
+    workflowInstance: task.workflowInstance,
     createdAt: task.createdAt,
     updatedAt: task.updatedAt,
   }
+}
+
+// 工作流绑定值清洗：可选外部标识，空串表示未绑定；非空时按目录名同规则校验
+function sanitizeBindingValue(value: unknown, label: string): { ok: true; value: string } | { ok: false; error: string } {
+  if (value == null) return { ok: true, value: '' }
+  if (typeof value !== 'string') return { ok: false, error: `${label}必须是字符串` }
+  const trimmed = value.trim()
+  if (!trimmed) return { ok: true, value: '' }
+  const sanitized = sanitizeTaskName(trimmed)
+  if (!sanitized) return { ok: false, error: `${label}不能包含 / \\ .. 等非法字符` }
+  return { ok: true, value: sanitized }
+}
+
+// 读取任务全部上下文：context/*.md 为平铺（folder=null），context/{folder}/*.md 为文件夹内。
+// 仅支持单层文件夹，更深层级与既有行为一致地被忽略；非 .md 文件同样忽略。
+function readTaskContextItems(root: string, taskName: string): TaskContextItem[] {
+  const contextDir = taskContextDir(root, taskName)
+  if (!fs.existsSync(contextDir)) return []
+  const items: TaskContextItem[] = []
+  for (const entry of fs.readdirSync(contextDir, { withFileTypes: true })) {
+    // 仅认文件夹布局 context/{folder}/{topic}.md；旧的平铺文件 context/{topic}.md 既不读取也不允许更新
+    if (!entry.isDirectory()) continue
+    // 目录名复用目录名规则（拒 ./../控制字符）且不允许点开头，避免系统/隐藏目录被当成上下文夹
+    if (sanitizeTaskName(entry.name) !== entry.name || entry.name.startsWith('.')) continue
+    const folderDir = path.join(contextDir, entry.name)
+    for (const sub of fs.readdirSync(folderDir, { withFileTypes: true })) {
+      if (!sub.isFile() || !sub.name.endsWith('.md')) continue
+      const filePath = path.join(folderDir, sub.name)
+      items.push({
+        name: sub.name.slice(0, -3),
+        folder: entry.name,
+        content: fs.readFileSync(filePath, 'utf-8'),
+        updatedAt: fs.statSync(filePath).mtime.toISOString(),
+      })
+    }
+  }
+  // 排序：文件夹升序，同文件夹内按主题字典序
+  items.sort((a, b) => (a.folder !== b.folder ? (a.folder < b.folder ? -1 : 1) : a.name.localeCompare(b.name)))
+  return items
 }
 
 // 确保任务根目录存在（写入路径使用）
@@ -274,21 +334,7 @@ export async function readTaskDetail(root: string, taskName: string): Promise<Ta
     if (!name) return { success: false, error: '非法任务名称' }
     const task = readTaskFile(root, name)
     if (!task) return { success: false, error: `任务不存在: ${name}` }
-    const contextDir = taskContextDir(root, name)
-    const contexts: TaskContextItem[] = []
-    if (fs.existsSync(contextDir)) {
-      for (const entry of fs.readdirSync(contextDir, { withFileTypes: true })) {
-        if (!entry.isFile() || !entry.name.endsWith('.md')) continue
-        const filePath = path.join(contextDir, entry.name)
-        contexts.push({
-          name: entry.name.slice(0, -3),
-          content: fs.readFileSync(filePath, 'utf-8'),
-          updatedAt: fs.statSync(filePath).mtime.toISOString(),
-        })
-      }
-    }
-    contexts.sort((a, b) => a.name.localeCompare(b.name))
-    return { success: true, detail: { task: { ...taskSummaryOf(task, name), content: task.content }, contexts, trace: readTaskTraceEvents(root, name) } }
+    return { success: true, detail: { task: { ...taskSummaryOf(task, name), content: task.content }, contexts: readTaskContextItems(root, name), trace: readTaskTraceEvents(root, name) } }
   })
 }
 
@@ -301,6 +347,23 @@ export async function createTask(root: string, payload: TaskWritePayload): Promi
     if (!content) return { success: false, error: '任务内容不能为空' }
     if (fs.existsSync(taskDir(root, name))) return { success: false, error: '任务名称已存在' }
 
+    // 绑定校验必须先于任何落盘：否则被拒绝的创建会留下无 TASK.md 的幽灵目录，永久占用该任务名
+    const workflow = sanitizeBindingValue(p.workflow, '绑定工作流')
+    if (!workflow.ok) return { success: false, error: workflow.error }
+    const workflowInstance = sanitizeBindingValue(p.workflowInstance, '绑定工作流实例')
+    if (!workflowInstance.ok) return { success: false, error: workflowInstance.error }
+    // 实例是「其工作流的实例」：不允许脱离工作流单独绑定
+    if (workflowInstance.value && !workflow.value) {
+      return { success: false, error: '绑定工作流实例时必须同时绑定工作流' }
+    }
+    // 初始上下文的文件夹同样必须在落盘前校验（上方不变量：任何校验失败不得留下磁盘痕迹）
+    const contextContent = typeof p.context === 'string' ? p.context.trim() : ''
+    const contextFolderRaw = typeof p.contextFolder === 'string' ? p.contextFolder.trim() : ''
+    const contextFolder = contextFolderRaw ? sanitizeTaskName(contextFolderRaw) : null
+    if (contextContent && (!contextFolder || contextFolder.startsWith('.'))) {
+      return { success: false, error: '写入初始上下文时必须提供合法文件夹（不能为空、不能以 . 开头、不能包含 / \\ .. 等非法字符）' }
+    }
+
     ensureTasksDir(root)
     fs.mkdirSync(taskContextDir(root, name), { recursive: true })
     fs.mkdirSync(path.dirname(taskTracePath(root, name)), { recursive: true })
@@ -311,7 +374,7 @@ export async function createTask(root: string, payload: TaskWritePayload): Promi
     const tags = normalizeTaskStringArray(p.tags)
     // 关联任务：仅收录当前已存在的任务名，防止引用不存在的任务
     const relatedTasks = normalizeTaskStringArray(p.relatedTasks).filter(t => fs.existsSync(taskDir(root, t)))
-    fs.writeFileSync(taskMdPath(root, name), serializeTaskMd({
+    const frontmatter: Record<string, unknown> = {
       name,
       status: TASK_STATUS_PENDING,
       handler,
@@ -320,18 +383,22 @@ export async function createTask(root: string, payload: TaskWritePayload): Promi
       related_tasks: relatedTasks,
       created_at: now,
       updated_at: now,
-    }, content), 'utf-8')
+    }
+    // 绑定字段可选：未绑定时不写键，保持存量 TASK.md 外形
+    if (workflow.value) frontmatter.workflow = workflow.value
+    if (workflowInstance.value) frontmatter.workflow_instance = workflowInstance.value
+    fs.writeFileSync(taskMdPath(root, name), serializeTaskMd(frontmatter, content), 'utf-8')
     appendTaskTrace(root, name, { ts: now, type: 'task-created', message: '创建任务' })
 
-    // 创建时填写的任务上下文 → 初始上下文文件
-    const contextContent = typeof p.context === 'string' ? p.context.trim() : ''
-    if (contextContent) {
+    // 创建时填写的任务上下文 → 初始上下文文件（文件夹已在上方与绑定一并校验）
+    if (contextContent && contextFolder) {
       const contextName = '初始上下文'
-      fs.writeFileSync(path.join(taskContextDir(root, name), `${contextName}.md`), contextContent + '\n', 'utf-8')
-      appendTaskTrace(root, name, { ts: now, type: 'context-created', name: contextName, message: `新增上下文：${contextName}` })
+      fs.mkdirSync(path.join(taskContextDir(root, name), contextFolder), { recursive: true })
+      fs.writeFileSync(path.join(taskContextDir(root, name), contextFolder, `${contextName}.md`), contextContent + '\n', 'utf-8')
+      appendTaskTrace(root, name, { ts: now, type: 'context-created', name: contextName, folder: contextFolder, message: `新增上下文：${contextFolder}/${contextName}` })
     }
 
-    return { success: true, task: { name, status: TASK_STATUS_PENDING, handler, relatedCodebases, tags, relatedTasks, createdAt: now, updatedAt: now } }
+    return { success: true, task: { name, status: TASK_STATUS_PENDING, handler, relatedCodebases, tags, relatedTasks, workflow: workflow.value, workflowInstance: workflowInstance.value, createdAt: now, updatedAt: now } }
   })
 }
 
@@ -349,6 +416,13 @@ export async function updateTask(root: string, payload: TaskWritePayload): Promi
     const tags = normalizeTaskStringArray(p.tags)
     // 关联任务：仅收录当前已存在的任务名（排除自身）
     const relatedTasks = normalizeTaskStringArray(p.relatedTasks).filter(t => t !== name && fs.existsSync(taskDir(root, t)))
+    const workflow = sanitizeBindingValue(p.workflow, '绑定工作流')
+    if (!workflow.ok) return { success: false, error: workflow.error }
+    const workflowInstance = sanitizeBindingValue(p.workflowInstance, '绑定工作流实例')
+    if (!workflowInstance.ok) return { success: false, error: workflowInstance.error }
+    if (workflowInstance.value && !workflow.value) {
+      return { success: false, error: '绑定工作流实例时必须同时绑定工作流' }
+    }
 
     // 状态机（仅前进）：
     //   等待处理 --(手动 或 处理人由空变有自动)--> 处理中 --(手动)--> 已完成 | 已取消；
@@ -383,6 +457,8 @@ export async function updateTask(root: string, payload: TaskWritePayload): Promi
     if (JSON.stringify(relatedCodebases) !== JSON.stringify(existing.relatedCodebases)) changedFields.push('关联仓库')
     if (JSON.stringify(tags) !== JSON.stringify(existing.tags)) changedFields.push('标签')
     if (JSON.stringify(relatedTasks) !== JSON.stringify(existing.relatedTasks)) changedFields.push('关联任务')
+    if (workflow.value !== existing.workflow) changedFields.push('绑定工作流')
+    if (workflowInstance.value !== existing.workflowInstance) changedFields.push('绑定实例')
     const statusChanged = nextStatus !== existing.status
     if (!changedFields.length && !statusChanged) {
       return { success: true, task: taskSummaryOf(existing, name) }
@@ -398,6 +474,11 @@ export async function updateTask(root: string, payload: TaskWritePayload): Promi
     frontmatter.related_codebases = relatedCodebases
     frontmatter.tags = tags
     frontmatter.related_tasks = relatedTasks
+    // 绑定字段为空时删键（未绑定不落键，与创建一致）
+    if (workflow.value) frontmatter.workflow = workflow.value
+    else delete frontmatter.workflow
+    if (workflowInstance.value) frontmatter.workflow_instance = workflowInstance.value
+    else delete frontmatter.workflow_instance
     frontmatter.updated_at = now
     fs.writeFileSync(taskMdPath(root, name), serializeTaskMd(frontmatter, content), 'utf-8')
 
@@ -409,7 +490,7 @@ export async function updateTask(root: string, payload: TaskWritePayload): Promi
       appendTaskTrace(root, name, { ts: now, type: 'status-changed', from: existing.status, to: nextStatus, message: `状态变更：${existing.status} → ${nextStatus}` })
     }
 
-    return { success: true, task: { name, status: nextStatus, handler, relatedCodebases, tags, relatedTasks, createdAt: existing.createdAt, updatedAt: now } }
+    return { success: true, task: { name, status: nextStatus, handler, relatedCodebases, tags, relatedTasks, workflow: workflow.value, workflowInstance: workflowInstance.value, createdAt: existing.createdAt, updatedAt: now } }
   })
 }
 
@@ -437,15 +518,9 @@ export async function searchTasks(root: string, keyword: string, opts?: TaskSear
       // 解析只吞掉一个），不剥掉会让行号比用户看到的内容多一行。
       const stripLeadingBlank = (text: string): string => String(text).replace(/^\n+/, '')
       const sections: Array<{ where: string; text: string }> = [{ where: '任务内容', text: stripLeadingBlank(task.content) }]
-      const contextDir = taskContextDir(root, entry.name)
-      if (fs.existsSync(contextDir)) {
-        for (const ce of fs.readdirSync(contextDir, { withFileTypes: true })) {
-          if (!ce.isFile() || !ce.name.endsWith('.md')) continue
-          sections.push({
-            where: ce.name.slice(0, -3),
-            text: fs.readFileSync(path.join(contextDir, ce.name), 'utf-8'),
-          })
-        }
+      // 上下文位置标为「文件夹/主题」（平铺不加前缀），与 context list 的展示同一套路径语义
+      for (const item of readTaskContextItems(root, entry.name)) {
+        sections.push({ where: item.folder ? `${item.folder}/${item.name}` : item.name, text: item.content })
       }
 
       const matches: TaskSearchMatch[] = []
@@ -480,23 +555,42 @@ export async function saveTaskContext(root: string, payload: TaskContextPayload)
     if (!existing) return { success: false, error: `任务不存在: ${taskName}` }
     const contextName = sanitizeTaskName(p.contextName)
     if (!contextName) return { success: false, error: '上下文主题不能为空，且不能包含 / \\ .. 等非法字符' }
+    // 文件夹必填：写入一律落 context/{folder}/{topic}.md（存量平铺文件仍可读取）
+    const folderRaw = typeof p.folder === 'string' ? p.folder.trim() : ''
+    const folder = folderRaw ? sanitizeTaskName(folderRaw) : null
+    if (!folder || folder.startsWith('.')) return { success: false, error: '上下文文件夹不能为空，不能以 . 开头，且不能包含 / \\ .. 等非法字符' }
     const content = typeof p.content === 'string' ? p.content : ''
     if (!content.trim()) return { success: false, error: '上下文内容不能为空' }
 
-    const contextPath = path.join(taskContextDir(root, taskName), `${contextName}.md`)
-    const isUpdate = fs.existsSync(contextPath)
-    fs.mkdirSync(taskContextDir(root, taskName), { recursive: true })
+    const contextBaseDir = path.join(taskContextDir(root, taskName), folder)
+    // 文件夹路径被同名文件占用时无法建夹，收敛为业务错误而不是 IO 冒泡
+    if (fs.existsSync(contextBaseDir) && !fs.statSync(contextBaseDir).isDirectory()) {
+      return { success: false, error: `上下文文件夹与已有文件冲突: ${folder}` }
+    }
+    // 拒绕符号链接目录写入：否则可写到任务目录之外，而读取侧又会跳过该目录，形成隐形写入
+    if (fs.existsSync(contextBaseDir) && fs.lstatSync(contextBaseDir).isSymbolicLink()) {
+      return { success: false, error: `上下文文件夹不能是符号链接: ${folder}` }
+    }
+    const contextPath = path.join(contextBaseDir, `${contextName}.md`)
+    const isUpdate = fs.existsSync(contextPath) && fs.statSync(contextPath).isFile()
+    // 同名主题位置被文件夹占用时不能覆盖成文件
+    if (!isUpdate && fs.existsSync(contextPath)) {
+      return { success: false, error: `上下文主题与已有文件夹冲突: ${folder}/${contextName}` }
+    }
+    fs.mkdirSync(contextBaseDir, { recursive: true })
     fs.writeFileSync(contextPath, content.trim() + '\n', 'utf-8')
 
     const now = new Date().toISOString()
     const frontmatter = { ...existing._raw }
     frontmatter.updated_at = now
     fs.writeFileSync(taskMdPath(root, taskName), serializeTaskMd(frontmatter, existing.content), 'utf-8')
+    const contextPathLabel = `${folder}/${contextName}`
     appendTaskTrace(root, taskName, {
       ts: now,
       type: isUpdate ? 'context-updated' : 'context-created',
       name: contextName,
-      message: `${isUpdate ? '更新' : '新增'}上下文：${contextName}`,
+      folder,
+      message: `${isUpdate ? '更新' : '新增'}上下文：${contextPathLabel}`,
     })
     return { success: true, isUpdate }
   })

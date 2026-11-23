@@ -10,6 +10,7 @@ interface TaskContextModalProps {
 }
 
 // 上下文查看弹窗（Markdown 渲染），footer 提供编辑入口
+// 标题展示「文件夹/主题」路径（平铺上下文无文件夹前缀）
 export const TaskContextModal: FC<TaskContextModalProps> = ({ context, onClose, onEdit }) => {
   if (!context) return null
 
@@ -17,7 +18,7 @@ export const TaskContextModal: FC<TaskContextModalProps> = ({ context, onClose, 
     <Modal
       isOpen={true}
       onClose={onClose}
-      title={context.name}
+      title={`${context.folder}/${context.name}`}
       size="lg"
       layoutKey="task-context"
       persistLayout
