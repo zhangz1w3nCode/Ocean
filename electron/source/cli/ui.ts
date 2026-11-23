@@ -521,7 +521,14 @@ function formatMarkdownTable(header: string[], body: string[][], budget: number)
     out.push('（无数据）')
     return out
   }
-  for (const row of rows) out.push(...renderRow(row, false))
+  // 无边框表格同样需要在行之间划界：多行记录挨在一起时靠一条横线分割，
+  // 用暗色细线而不是 ├─┼─┤，避免方框里再套一副边框
+  const ruleWidth = needed()
+  const rule = colorEnabled() ? `\x1b[2m${'─'.repeat(ruleWidth)}\x1b[0m` : '─'.repeat(ruleWidth)
+  for (let i = 0; i < rows.length; i++) {
+    if (i > 0) out.push(rule)
+    out.push(...renderRow(rows[i], false))
+  }
   return out
 }
 
