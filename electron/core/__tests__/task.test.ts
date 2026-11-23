@@ -478,6 +478,25 @@ describe('context 文件夹', () => {
     expect(fs.existsSync(path.join(root, '.tasks', '甲', 'context', '需求.md'))).toBe(false)
   })
 
+  it('非法 context-folder 的创建在落盘前被拒绝，不残留任务目录', async () => {
+    await fail(createTask(root, { name: '丁', content: 'x', context: '背景', contextFolder: 'a/b' }), /必须提供合法文件夹/)
+    expect(fs.existsSync(path.join(root, '.tasks', '丁'))).toBe(false)
+    // 同名合法创建应成功，证明任务名未被占用
+    const ok = await unwrap(createTask(root, { name: '丁', content: 'x', context: '背景', contextFolder: '初始' }))
+    expect(ok.task.name).toBe('丁')
+  })
+
+  it('文件夹为符号链接时拒绝写入（防止写到任务目录外且读取不可见）', async () => {
+    await mk('戊')
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'ocean-outside-'))
+    fs.symlinkSync(outside, path.join(root, '.tasks', '戊', 'context', '链接夹'))
+    const r = await saveTaskContext(root, { taskName: '戊', contextName: '主题', folder: '链接夹', content: 'x' })
+    if (r.success !== false) throw new Error('预期符号链接写入被拒绝')
+    expect(r.error).toContain('符号链接')
+    expect(fs.existsSync(path.join(outside, '主题.md'))).toBe(false)
+    fs.rmSync(outside, { recursive: true, force: true })
+  })
+
   it('存量平铺 context 仍可读取（folder 为 null）', async () => {
     await mk('甲')
     const ctxDir = path.join(root, '.tasks', '甲', 'context')

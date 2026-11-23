@@ -366,6 +366,13 @@ export async function createTask(root: string, payload: TaskWritePayload): Promi
     if (workflowInstance.value && !workflow.value) {
       return { success: false, error: '绑定工作流实例时必须同时绑定工作流' }
     }
+    // 初始上下文的文件夹同样必须在落盘前校验（上方不变量：任何校验失败不得留下磁盘痕迹）
+    const contextContent = typeof p.context === 'string' ? p.context.trim() : ''
+    const contextFolderRaw = typeof p.contextFolder === 'string' ? p.contextFolder.trim() : ''
+    const contextFolder = contextFolderRaw ? sanitizeTaskName(contextFolderRaw) : null
+    if (contextContent && (!contextFolder || contextFolder.startsWith('.'))) {
+      return { success: false, error: '写入初始上下文时必须提供合法文件夹（不能为空、不能以 . 开头、不能包含 / \\ .. 等非法字符）' }
+    }
 
     ensureTasksDir(root)
     fs.mkdirSync(taskContextDir(root, name), { recursive: true })
@@ -393,14 +400,8 @@ export async function createTask(root: string, payload: TaskWritePayload): Promi
     fs.writeFileSync(taskMdPath(root, name), serializeTaskMd(frontmatter, content), 'utf-8')
     appendTaskTrace(root, name, { ts: now, type: 'task-created', message: '创建任务' })
 
-    // 创建时填写的任务上下文 → 初始上下文文件（文件夹必填，与 saveTaskContext 同规则）
-    const contextContent = typeof p.context === 'string' ? p.context.trim() : ''
-    if (contextContent) {
-      const contextFolderRaw = typeof p.contextFolder === 'string' ? p.contextFolder.trim() : ''
-      const contextFolder = contextFolderRaw ? sanitizeTaskName(contextFolderRaw) : null
-      if (!contextFolder || contextFolder.startsWith('.')) {
-        return { success: false, error: '写入初始上下文时必须提供合法文件夹（不能为空、不能以 . 开头、不能包含 / \\ .. 等非法字符）' }
-      }
+    // 创建时填写的任务上下文 → 初始上下文文件（文件夹已在上方与绑定一并校验）
+    if (contextContent && contextFolder) {
       const contextName = '初始上下文'
       fs.mkdirSync(path.join(taskContextDir(root, name), contextFolder), { recursive: true })
       fs.writeFileSync(path.join(taskContextDir(root, name), contextFolder, `${contextName}.md`), contextContent + '\n', 'utf-8')
@@ -575,6 +576,10 @@ export async function saveTaskContext(root: string, payload: TaskContextPayload)
     // 文件夹路径被同名文件占用时无法建夹，收敛为业务错误而不是 IO 冒泡
     if (fs.existsSync(contextBaseDir) && !fs.statSync(contextBaseDir).isDirectory()) {
       return { success: false, error: `上下文文件夹与已有文件冲突: ${folder}` }
+    }
+    // 拒绕符号链接目录写入：否则可写到任务目录之外，而读取侧又会跳过该目录，形成隐形写入
+    if (fs.existsSync(contextBaseDir) && fs.lstatSync(contextBaseDir).isSymbolicLink()) {
+      return { success: false, error: `上下文文件夹不能是符号链接: ${folder}` }
     }
     const contextPath = path.join(contextBaseDir, `${contextName}.md`)
     const isUpdate = fs.existsSync(contextPath) && fs.statSync(contextPath).isFile()

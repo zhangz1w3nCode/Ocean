@@ -327,9 +327,9 @@ const TaskDetail: FC<{ onEditClick: () => void }> = ({ onEditClick }) => {
                   <DetailField icon={Workflow} label="工作流">
                     {task!.workflow ? (
                       <span className="flex gap-1 overflow-hidden">
-                        <span className="text-xs px-1.5 py-0.5 rounded-md bg-indigo-50 text-indigo-600 truncate max-w-[140px]" title={task!.workflow}>{task!.workflow}</span>
+                        <span className="text-xs px-1.5 py-0.5 rounded-md bg-blue-50 text-blue-600 truncate max-w-[140px]" title={task!.workflow}>{task!.workflow}</span>
                         {task!.workflowInstance && (
-                          <span className="text-xs px-1.5 py-0.5 rounded-md bg-gray-50 text-gray-600 truncate max-w-[140px]" title={task!.workflowInstance}>{task!.workflowInstance}</span>
+                          <span className="text-xs px-1.5 py-0.5 rounded-md bg-gray-100 text-gray-600 truncate max-w-[140px]" title={task!.workflowInstance}>{task!.workflowInstance}</span>
                         )}
                       </span>
                     ) : (

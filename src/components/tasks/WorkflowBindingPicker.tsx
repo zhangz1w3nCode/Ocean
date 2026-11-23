@@ -54,7 +54,7 @@ export const WorkflowBindingPicker: FC<WorkflowBindingPickerProps> = ({
       active ? 'bg-gray-50 text-macos-text font-medium' : 'text-macos-text hover:bg-gray-50'
     }`
 
-  const instances = activeWorkflow ? instancesByWorkflow[activeWorkflow] || [] : []
+  const instances = activeWorkflow && Object.hasOwn(instancesByWorkflow, activeWorkflow) ? instancesByWorkflow[activeWorkflow] : []
 
   return (
     <div className="flex flex-wrap items-center gap-2">

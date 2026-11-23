@@ -123,6 +123,8 @@ function rejectSelfRelated(name: string, related: string[] | undefined): void {
 function validateWorkflowBinding(root: string, workflow: string | undefined, instance: string | undefined): void {
   const wf = (workflow || '').trim()
   const inst = (instance || '').trim()
+  assertBindingSyntax('工作流名称', wf)
+  assertBindingSyntax('工作流实例 ID', inst)
   if (!wf) {
     if (inst) throw new UsageError('绑定工作流实例时必须同时指定 --workflow <工作流名称>')
     return
@@ -136,6 +138,20 @@ function validateWorkflowBinding(root: string, workflow: string | undefined, ins
   if (!fs.existsSync(instDir) || !fs.statSync(instDir).isDirectory()) {
     throw new UsageError(`工作流「${wf}」下不存在实例: ${inst}（可用 ocean workflow instance list 查看）`)
   }
+}
+
+// 绑定值先按目录名规则本地拦截：保证非法输入走 UsageError(exit 2)，
+// 而不是下探到 core 后才变成 exit 1（与其它参数校验的退出码分层一致）。
+function assertBindingSyntax(label: string, value: string): void {
+  if (!value) return
+  const illegal = value.length > 100
+    || value === '.'
+    || value.includes('/')
+    || value.includes('\\')
+    || value.includes('..')
+    // eslint-disable-next-line no-control-regex
+    || /[\u0000-\u001f\u007f]/.test(value)
+  if (illegal) throw new UsageError(`${label}不能包含 / \\ .. 等非法字符，且不能超过 100 字符`)
 }
 
 // 上下文路径展示：文件夹可选，平铺不加前缀
@@ -249,17 +265,28 @@ export async function handleTask(root: string, args: Args): Promise<void> {
       if (relatedFlag !== undefined) {
         rejectSelfRelated(name, relatedFlag)
       }
-      // 绑定：未提供的字段回填原值（core 为全量覆写语义），--no-workflow / --no-workflow-instance 显式清空；
-      // 清空工作流时同时清空实例（实例不得脱离工作流存在）
+      // 绑定：未提供的字段回填原值（core 为全量覆写语义），--no-workflow / --no-workflow-instance 显式清空。
+      // 存在性校验只针对本次显式给出的值：存量绑定失效（工作流被删/改名）不得阻塞其它字段的更新。
       const workflowFlag = strFlag('workflow', args)
       const workflowInstanceFlag = strFlag('workflow-instance', args)
-      const workflowValue = cleared('workflow', args) ? '' : (workflowFlag !== undefined ? workflowFlag : current.workflow)
+      const workflowCleared = cleared('workflow', args)
+      const instanceCleared = cleared('workflow-instance', args)
+      const workflowTouched = workflowFlag !== undefined || workflowCleared
+      const instanceTouched = workflowInstanceFlag !== undefined || instanceCleared
+      const workflowValue = workflowCleared ? '' : (workflowFlag !== undefined ? workflowFlag.trim() : current.workflow)
       // 换工作流但未显式指定实例：旧实例属于原工作流，自动清空而不是报归属错误
-      const workflowChanged = workflowValue !== current.workflow
-      const workflowInstanceValue = cleared('workflow-instance', args) || (workflowChanged && workflowInstanceFlag === undefined)
+      const workflowInstanceValue = instanceCleared
         ? ''
-        : (workflowInstanceFlag !== undefined ? workflowInstanceFlag : current.workflowInstance)
-      validateWorkflowBinding(root, workflowValue, workflowValue ? workflowInstanceValue : '')
+        : (workflowInstanceFlag !== undefined
+          ? workflowInstanceFlag.trim()
+          : (workflowTouched && workflowValue !== current.workflow ? '' : current.workflowInstance))
+      // 显式给出的绑定才做归属与存在性校验（与 create 对齐：实例不得脱离工作流）
+      if (instanceTouched && !workflowValue) {
+        throw new UsageError('绑定工作流实例时必须同时指定 --workflow <工作流名称>')
+      }
+      if (workflowTouched || instanceTouched) {
+        validateWorkflowBinding(root, workflowValue, workflowValue ? workflowInstanceValue : '')
+      }
       const payload: TaskWritePayload = {
         name,
         content: content !== undefined ? content : current.content,

@@ -100,8 +100,6 @@ export async function saveTaskContext(root: string, payload: TaskContextPayload)
   if (!isNonEmptyString(payload.taskName)) return bad('任务名称不能为空')
   if (!isNonEmptyString(payload.contextName)) return bad('上下文主题不能为空')
   if (!isNonEmptyString(payload.folder)) return bad('上下文文件夹不能为空')
-  const e1 = checkOptionalString(payload.folder, '上下文文件夹')
-  if (e1) return bad(e1)
   if (typeof payload.content !== 'string' || !payload.content.trim()) return bad('上下文内容不能为空')
   return taskCore.saveTaskContext(root, payload)
 }

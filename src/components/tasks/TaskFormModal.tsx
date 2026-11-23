@@ -28,6 +28,16 @@ const STATUS_BADGE_CLASSES: Record<string, string> = {
   '已取消': 'bg-red-50 text-red-600',
 }
 
+// 工作流名 → 实例 ID 列表。用无原型对象，避免工作流名恰好是 __proto__/constructor 时命中原型链
+function buildInstancesByWorkflow(items: Array<{ instanceId: string; workflowName: string }>): Record<string, string[]> {
+  const map: Record<string, string[]> = Object.create(null)
+  for (const item of items) {
+    if (!Object.hasOwn(map, item.workflowName)) map[item.workflowName] = []
+    map[item.workflowName].push(item.instanceId)
+  }
+  return map
+}
+
 export const TaskFormModal: FC<TaskFormModalProps> = ({
   isOpen,
   onClose,
@@ -352,10 +362,7 @@ export const TaskFormModal: FC<TaskFormModalProps> = ({
               workflow={boundWorkflow}
               instance={boundInstance}
               workflows={workflowOptions}
-              instancesByWorkflow={instanceOptions.reduce<Record<string, string[]>>((acc, item) => {
-                ;(acc[item.workflowName] ||= []).push(item.instanceId)
-                return acc
-              }, {})}
+              instancesByWorkflow={buildInstancesByWorkflow(instanceOptions)}
               onChange={({ workflow: nextWorkflow, instance: nextInstance }) => {
                 setBoundWorkflow(nextWorkflow)
                 setBoundInstance(nextInstance)
