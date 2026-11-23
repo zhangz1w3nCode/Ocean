@@ -517,7 +517,7 @@ const STACK_FALLBACK_MIN_COL = 8
  * 列宽分配：短列固定为自然宽度；剩余预算在长列之间按自然宽度比例分配，
  * 低于下限（MIN_COLUMN_WIDTH）的列再被固定为下限、剩余列重新分配。
  */
-function fitWidths(natural: number[], available: number): number[] {
+function fitWidths(natural: number[], available: number, protect: boolean[] = []): number[] {
   const count = natural.length
   const naturalTotal = natural.reduce((a, b) => a + b, 0)
   if (naturalTotal <= available) return natural.slice()
@@ -530,7 +530,14 @@ function fitWidths(natural: number[], available: number): number[] {
   const pinnedTotal = natural.reduce((a, w, i) => (shortColumns[i] ? a + w : a), 0)
   const freeCount = shortColumns.filter(v => !v).length
   const pinShort = pinnedTotal + freeCount * minColumn <= available
-  const pinned = shortColumns.map(v => v && pinShort)
+  // 不可断列（ID、时间戳这类没有空白也没有 CJK 的内容）整组放得下时全部按自然宽度固定，
+  // 否则它们会被宽文本列按比例挤掉、把一个标识符切成好几行。
+  const protectTotal = natural.reduce((a, w, i) => (protect[i] ? a + w : a), 0)
+  const protectedCount = protect.filter(Boolean).length
+  const canProtect = protectedCount > 0
+    && protectTotal + (count - protectedCount) * minColumn <= available
+
+  const pinned = natural.map((w, i) => (shortColumns[i] && pinShort) || (canProtect && protect[i]))
 
   const widths = natural.slice()
   for (let round = 0; round <= count; round++) {
@@ -632,7 +639,13 @@ export function table(headers: string[], rows: string[][], options: TableOptions
       .join('\n')
   }
 
-  const widths = fitWidths(natural, available)
+  // 只看数据单元格：含空白或 CJK 就认为该列可以就地换行，否则是不可断列（ID/时间戳这类标识符）。
+  // 不能把表头算进来——表头基本都是中文，会把每一列都判成可断，保护逻辑就失效了。
+  const breakable = natural.map((_, i) =>
+    bodyText.length === 0
+      || bodyText.some(row => /\s/.test(row[i] ?? '') || CJK.test(row[i] ?? '')),
+  )
+  const widths = fitWidths(natural, available, breakable.map(v => !v))
 
   const border = (left: string, mid: string, right: string): string =>
     left + widths.map(w => CH.h.repeat(w + 2)).join(mid) + right
