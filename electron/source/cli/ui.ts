@@ -117,8 +117,10 @@ function splitGraphemes(s: string): string[] {
   return out
 }
 
-// 整个 cluster 都不占位的字符（默认可忽略 / 控制符 / 格式符 / 组合符）
-const ZERO_WIDTH_CLUSTER = /^[\p{Default_Ignorable_Code_Point}\p{Control}\p{Format}\p{Nonspacing_Mark}\p{Enclosing_Mark}\p{Surrogate}]+$/u
+// 整个 cluster 都不占位的字符（默认可忽略 / 控制符 / 格式符 / 组合符）。
+// 注意不能包含 \p{Surrogate}：孤立代理项在内存里没有宽度，但 Node 写到 stdout 时会被
+// 替换成 U+FFFD（占 1 列）；按 0 列算会让真实终端里的行宽少算，进而把边框顶破。
+const ZERO_WIDTH_CLUSTER = /^[\p{Default_Ignorable_Code_Point}\p{Control}\p{Format}\p{Nonspacing_Mark}\p{Enclosing_Mark}]+$/u
 const PICTOGRAPHIC = /\p{Extended_Pictographic}/u
 const KEYCAP = /^[\d#*]\uFE0F?\u20E3$/u
 
@@ -300,6 +302,10 @@ function sgrState(line: string): { active: string; ended: boolean } {
 function wrapOneLine(line: string, width: number): string[] {
   if (visibleWidth(line) <= width) return [line]
   const lines: string[] = []
+  // 续行沿用原行的缩进：否则代码块/mermaid 这类带缩进的内容折行后，
+  // 续行会顶格，看起来像是新的一行语句
+  const indentMatch = /^[ \t]*/.exec(line)
+  const indent = indentMatch ? indentMatch[0] : ''
   let current = ''
   let currentWidth = 0
   for (const token of tokenize(line)) {
@@ -324,15 +330,21 @@ function wrapOneLine(line: string, width: number): string[] {
     }
     if (currentWidth + tokenWidth > width) {
       lines.push(current.trimEnd())
-      current = token.text
-      currentWidth = tokenWidth
+      current = indent + token.text
+      currentWidth = visibleWidth(current)
       continue
     }
     current += token.text
     currentWidth += tokenWidth
   }
   if (current.trim()) lines.push(current.trimEnd())
-  return lines.length ? lines : ['']
+  // 缩进兜底：续行前缀 + 长 token 的组合仍可能略微超出上限，超了就退回硬断，保证不溢出
+  const safe: string[] = []
+  for (const segment of lines) {
+    if (visibleWidth(segment) <= width) safe.push(segment)
+    else safe.push(...breakToken(segment.trimStart(), width))
+  }
+  return safe.length ? safe : ['']
 }
 
 /** 中文避头尾：把行首标点上一行的末字挪下来，避免标点顶格。只作用于无 ANSI 的纯文本行。 */
@@ -450,7 +462,9 @@ function splitTableRow(line: string): string[] {
  * 内容框里再套一个带边框的表格会显得很乱，所以这里只做列对齐，不画线。
  */
 function formatMarkdownTable(header: string[], body: string[][], budget: number): string[] {
-  const columns = Math.max(header.length, 1)
+  // 列数取表头与所有数据行的最大值：行里多出来的单元格必须保留，
+  // 固定成表头长度会把它们静默丢掉（产物详情里内嵌表格就会触发）
+  const columns = Math.max(header.length, ...body.map(r => r.length), 1)
   const gap = '  '
   const normalize = (row: string[]): string[] =>
     Array.from({ length: columns }, (_, i) => row[i] ?? '')
@@ -575,6 +589,19 @@ export function box(text: string, options: { width?: number } = {}): string {
   const lines = wrapTextWithAnsi(expandTabs(text), inner)
   let widest = 0
   for (const line of lines) widest = Math.max(widest, visibleWidth(line))
+  // 兜底：上游若给出超过内宽的行（例如折叠 tab / 异常字符导致量宽与实际不符），
+  // 这里再硬断一次，保证方框宽度恒等于 min(term, MAX_CONTENT_WIDTH)，绝不溢出终端
+  if (widest > inner) {
+    const reflowed: string[] = []
+    for (const line of lines) {
+      if (visibleWidth(line) <= inner) reflowed.push(line)
+      else reflowed.push(...breakToken(line, inner))
+    }
+    lines.length = 0
+    lines.push(...reflowed)
+    widest = 0
+    for (const line of lines) widest = Math.max(widest, visibleWidth(line))
+  }
   const contentW = Math.max(widest, 1)
   const h = CH.h.repeat(contentW + 2)
   const out: string[] = [`${CH.tl}${h}${CH.tr}`]
