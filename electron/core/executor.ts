@@ -332,7 +332,7 @@ export function listWorkflows(root: string): string {
 const INSTANCE_INPUT_DISPLAY_MAX = 40
 
 function instanceCellText(text: string): string {
-  const flat = text.replace(/[\r\n]+/g, ' ').replace(/\|/g, '｜')
+  const flat = String(text ?? '').replace(/[\r\n]+/g, ' ').replace(/\|/g, '｜')
   if (flat.length <= INSTANCE_INPUT_DISPLAY_MAX) return flat
   return flat.slice(0, INSTANCE_INPUT_DISPLAY_MAX) + '…'
 }
