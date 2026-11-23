@@ -462,7 +462,21 @@ function splitTableRow(line: string): string[] {
  * 与 CLI 其它表格保持同一种视觉，不再用「无边框对齐列」。
  */
 function formatMarkdownTable(header: string[], body: string[][], budget: number): string[] {
+  const columns = header.length
   if (body.length === 0) return ['（无数据）']
+
+  // 列数过多时硬压成每列几个字符毫无可读性，改成逐条「字段: 值」纵向排列
+  if (columns * 8 > budget) {
+    const out: string[] = []
+    for (let r = 0; r < body.length; r++) {
+      if (r > 0) out.push('')
+      for (let c = 0; c < columns; c++) {
+        const value = body[r][c] ?? ''
+        out.push(`${header[c] || `列${c + 1}`}: ${value}`.trimEnd())
+      }
+    }
+    return out
+  }
   return table(header, body, { width: budget }).split('\n')
 }
 
@@ -490,10 +504,37 @@ export function renderMarkdown(text: string, width: number, tableBudget = width)
     }
     if (TABLE_ROW_LINE.test(line) && i + 1 < source.length && TABLE_SEP_LINE.test(source[i + 1])) {
       const header = splitTableRow(line)
+      const columns = header.length
+      // 某行单元格数多于列数，说明单元格里有未转义的 `|`（markdown 表格本身无法表达）。
+      // 把多出来的片段合并回「合并后总长最大」的那一段——通常就是被 | 拆开的那句正文，
+      // 这样既不会凭空多出空列头，也不会把数值挂到错误的列下。
+      const normalizeRow = (cells: string[]): string[] => {
+        let out = cells.slice()
+        let surplus = out.length - columns
+        while (surplus > 0) {
+          let bestStart = 0
+          let bestLen = -1
+          for (let s = 0; s + surplus < out.length; s++) {
+            const len = out.slice(s, s + surplus + 1).reduce((a, b) => a + b.length, 0)
+            if (len > bestLen) {
+              bestLen = len
+              bestStart = s
+            }
+          }
+          out = [
+            ...out.slice(0, bestStart),
+            out.slice(bestStart, bestStart + surplus + 1).join(' | '),
+            ...out.slice(bestStart + surplus + 1),
+          ]
+          surplus = out.length - columns
+        }
+        while (out.length < columns) out.push('')
+        return out
+      }
       const body: string[][] = []
       let j = i + 2
       while (j < source.length && TABLE_ROW_LINE.test(source[j])) {
-        body.push(splitTableRow(source[j]))
+        body.push(normalizeRow(splitTableRow(source[j])))
         j++
       }
       out.push(...formatMarkdownTable(header, body, tableBudget))
