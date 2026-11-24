@@ -79,9 +79,13 @@ declare global {
       listKnowledgeFolders: () => Promise<{ success: boolean; folders?: KnowledgeFolder[]; error?: string }>
       loadKnowledgeBaseline: (name: string) => Promise<{ success: boolean; content?: string | null; error?: string }>
       // 资产审核与 .ocean git 托管（P3/P4）
-      loadPendingAssets: () => Promise<{ success: boolean; items?: PendingAssetItem[]; error?: string }>
-      loadAssetRaw: (refPath: string) => Promise<{ success: boolean; content?: string | null; error?: string }>
-      setAssetReviewStatus: (refPath: string, reviewStatus: 'pending' | 'validated' | 'rejected', versionBump?: boolean, reason?: string) => Promise<{ success: boolean; error?: string }>
+      reviewList: (status?: 'pending' | 'rejected') => Promise<{ success: boolean; items?: PendingAssetItem[]; error?: string }>
+      reviewApprove: (type: string, name: string, message?: string) => Promise<{ success: boolean; version?: number; error?: string }>
+      reviewReject: (type: string, name: string, reason: string) => Promise<{ success: boolean; error?: string }>
+      reviewRestore: (type: string, name: string) => Promise<{ success: boolean; error?: string }>
+      reviewDiff: (type: string, name: string) => Promise<ReviewDiffResult>
+      reviewSnapshot: (type: string, name: string) => Promise<{ success: boolean; content?: string | null; error?: string }>
+      loadFormalRaw: (refPath: string) => Promise<{ success: boolean; content?: string | null; mtime?: string | null; error?: string }>
       loadAssetBaseline: (refPath: string) => Promise<{ success: boolean; content?: string | null; error?: string }>
       assetGitStatus: () => Promise<{ success: boolean; managed: boolean; branch: string | null; hasCommits: boolean; error?: string }>
       assetGitInit: () => Promise<{ success: boolean; branch?: string; hasCommits?: boolean; error?: string }>
@@ -100,7 +104,7 @@ declare global {
       knowledgeGitRollback: (name: string) => Promise<{ success: boolean; action?: 'restored' | 'deleted'; error?: string }>
       loadKnowledgeGitConfig: () => Promise<{ success: boolean; config?: KnowledgeGitConfig | null; error?: string }>
       saveKnowledgeGitConfig: (config: KnowledgeGitConfig) => Promise<{ success: boolean; error?: string }>
-      // 资产审核与 .ocean git 托管（P3/P4）的类型声明见上方 loadPendingAssets 起
+      // 资产审核与 .ocean git 托管（P3/P4）的类型声明见上方 reviewList 起
       // 技能文件相关（目录结构，存储在 skills 目录）
       createSkillDirectory: (name: string, input: any) => Promise<{ success: boolean; error?: string }>
       saveSkillFile: (name: string, content: string) => Promise<{ success: boolean; error?: string }>
@@ -1159,15 +1163,8 @@ export const saveWorkflowToFolder = async (workflow: any, nodes: any[], edges: a
     // 2. 保存 WORKFLOW.md
     // 实时读取资产来源并刷新缓存（不依赖缓存），保证局部节点引用路径与主进程实际目录一致
     await loadAssetRootFromProject()
-    // 重生成视为更新：reviewStatus 回 pending；version 跨编辑保留（从旧文件 frontmatter 读取）
-    let existingVersion: number | undefined
-    const oldMdResult = await window.electronAPI!.loadWorkflowMd(workflow.name)
-    if (oldMdResult.success && oldMdResult.content) {
-      const fmMatch = oldMdResult.content.match(/^---\n([\s\S]*?)\n---/)
-      const vm = fmMatch ? fmMatch[1].match(/^version: ?(\d+)/m) : null
-      if (vm) existingVersion = parseInt(vm[1], 10)
-    }
-    const mdContent = generateWorkflowMdContent(workflow, nodes, validEdges, { version: existingVersion })
+    // 队列模型：保存即写入草稿快照（主进程路由），frontmatter 由生成器输出 reviewStatus: pending，不带 version
+    const mdContent = generateWorkflowMdContent(workflow, nodes, validEdges)
     const mdResult = await window.electronAPI!.saveWorkflowMd(workflow.name, mdContent)
     if (!mdResult.success) {
       console.error('保存 WORKFLOW.md 失败:', mdResult.error)
@@ -1198,7 +1195,7 @@ export const saveWorkflowToFolder = async (workflow: any, nodes: any[], edges: a
 /**
  * 从文件夹结构加载工作流
  */
-export const loadWorkflowFromFolder = async (name: string): Promise<any | null> => {
+export const loadWorkflowFromFolder = async (name: string, opts?: { draft?: boolean }): Promise<any | null> => {
   if (!isElectron()) {
     // 浏览器环境：从 localStorage 加载
     try {
@@ -1224,16 +1221,23 @@ export const loadWorkflowFromFolder = async (name: string): Promise<any | null> 
   }
 
   // Electron 环境：从文件夹加载
+  // draft=false（默认，列表）：读取正式位置（永远存最近过审版本）
+  // draft=true（编辑器打开）：读取最新草稿快照（无草稿时回落正式）——由主进程草稿感知 IPC 提供
+  const draft = !!opts?.draft
   try {
     // 1. 加载 WORKFLOW.md
-    const mdResult = await window.electronAPI!.loadWorkflowMd(name)
+    const mdResult = draft
+      ? await window.electronAPI!.loadWorkflowMd(name)
+      : await loadFormalRaw(`workflows/${name}/WORKFLOW.md`).then((r) => ({ success: true, content: r.content, error: undefined, mtime: r.mtime }))
     if (!mdResult.success || !mdResult.content) {
-      console.error('加载 WORKFLOW.md 失败:', mdResult.error)
+      console.error('加载 WORKFLOW.md 失败:', (mdResult as any).error)
       return null
     }
 
     // 2. 加载 flow.json
-    const flowResult = await window.electronAPI!.loadWorkflowFlowJson(name)
+    const flowResult = draft
+      ? await window.electronAPI!.loadWorkflowFlowJson(name)
+      : await loadFormalRaw(`workflows/${name}/meta-data/flow.json`).then((r) => ({ success: true, content: r.content, error: undefined, mtime: r.mtime }))
     let nodes: any[] = []
     let edges: any[] = []
 
@@ -1252,7 +1256,10 @@ export const loadWorkflowFromFolder = async (name: string): Promise<any | null> 
               const nodeName = node.data.nodeDefName || node.data.nodeRefPath.split('/').pop()?.replace('.md', '')
 
               if (nodeName) {
-                const nodeFileResult = await window.electronAPI!.loadNodeFile(nodeName)
+                // draft 模式走草稿感知 IPC（节点可能是草稿）；formal 模式读正式位置
+                const nodeFileResult = draft
+                  ? await window.electronAPI!.loadNodeFile(nodeName)
+                  : await loadFormalRaw(`nodes/${nodeName}.md`).then((r) => ({ success: true, content: r.content, mtime: r.mtime }))
 
                 if (nodeFileResult.success && nodeFileResult.content) {
                   // 解析节点文件内容
@@ -1360,14 +1367,14 @@ export const loadAllWorkflowFolders = async (): Promise<any[]> => {
 
     const workflows: any[] = []
     for (const folderName of result.folders) {
+      // 列表读取正式位置（正式永远存最近过审版本）
       const workflow = await loadWorkflowFromFolder(folderName)
       if (workflow) {
         workflows.push(workflow)
       }
     }
 
-    // 门控（D13）：仅加载审核通过的工作流（含引用选择器在内的全部消费端共用此数据源）
-    return workflows.filter((wf: any) => wf.reviewStatus === 'validated')
+    return workflows
   } catch (error) {
     console.error('加载工作流文件夹列表失败:', error)
     return []
@@ -1656,9 +1663,9 @@ export const loadNodeFilesFromLocal = async (): Promise<any[]> => {
       const nodes: any[] = []
 
       for (const fileName of result.files) {
-        const nodeName = fileName.replace(/\.md$/, '')
-        const contentResult = await window.electronAPI!.loadNodeFile(nodeName)
-        if (contentResult.success && contentResult.content) {
+        // 列表读取一律正式位置（正式永远存最近过审版本）
+        const contentResult = await loadFormalRaw(`nodes/${fileName}`)
+        if (contentResult.content) {
           const node = parseNodeMarkdown(contentResult.content, fileName)
           nodes.push({
             ...node,
@@ -1668,8 +1675,7 @@ export const loadNodeFilesFromLocal = async (): Promise<any[]> => {
         }
       }
 
-      // 门控（D13）：仅加载审核通过的节点（编辑器全局节点选择器与列表页共用此数据源）
-      return nodes.filter((nd: any) => nd.reviewStatus === 'validated')
+      return nodes
     }
     return []
   } catch (error) {
@@ -1834,8 +1840,9 @@ export const loadResourceFilesFromLocal = async (): Promise<any[]> => {
       for (const fileName of result.files) {
         // fileName 格式为 "rule.md"，需要去掉 .md 后缀作为资源名称
         const resourceName = fileName.replace(/\.md$/, '')
-        const contentResult = await window.electronAPI!.loadResourceFile(resourceName)
-        if (contentResult.success && contentResult.content) {
+        // 列表读取一律正式位置（正式永远存最近过审版本）
+        const contentResult = await loadFormalRaw(`resources/${fileName}`)
+        if (contentResult.content) {
           const { metadata, body } = parseFrontmatter(contentResult.content)
 
           resources.push({
@@ -1852,8 +1859,7 @@ export const loadResourceFilesFromLocal = async (): Promise<any[]> => {
         }
       }
 
-      // 门控（D13）：仅加载审核通过的资源文件
-      return resources.filter((r: any) => r.reviewStatus === 'validated')
+      return resources
     }
     return []
   } catch (error) {
@@ -1992,8 +1998,9 @@ export const loadAgentFilesFromLocal = async (): Promise<any[]> => {
 
       for (const fileName of result.files) {
         const agentName = fileName.replace(/\.md$/, '')
-        const contentResult = await window.electronAPI!.loadAgentFile(agentName)
-        if (contentResult.success && contentResult.content) {
+        // 列表读取一律正式位置（正式永远存最近过审版本）
+        const contentResult = await loadFormalRaw(`agents/${fileName}`)
+        if (contentResult.content) {
           const { metadata, body } = parseSubAgentFrontmatter(contentResult.content)
 
           agents.push({
@@ -2013,8 +2020,7 @@ export const loadAgentFilesFromLocal = async (): Promise<any[]> => {
         }
       }
 
-      // 门控（D13）：仅加载审核通过的智能体，未通过/已驳回只在审核页可见
-      return agents.filter((a: any) => a.reviewStatus === 'validated')
+      return agents
     }
     return []
   } catch (error) {
@@ -2245,8 +2251,9 @@ export const loadKnowledgeFilesFromLocal = async (): Promise<any[]> => {
 
         // 文件路径不含 .md 后缀（如 "backend/api" 或 "root-doc"）
         const knowledgePath = fileName.replace(/\.md$/, '')
-        const contentResult = await window.electronAPI!.loadKnowledgeFile(knowledgePath)
-        if (contentResult.success && contentResult.content) {
+        // 列表读取一律正式位置（正式永远存最近过审版本）
+        const contentResult = await loadFormalRaw(`knowledges/${fileName}`)
+        if (contentResult.content) {
           const { metadata, body } = parseKnowledgeFrontmatter(contentResult.content)
 
           // 从文件路径中提取 category（子目录路径）
@@ -2274,8 +2281,7 @@ export const loadKnowledgeFilesFromLocal = async (): Promise<any[]> => {
         }
       }
 
-      // 门控（D13）：仅加载审核通过的知识（兼容旧 status 字段）
-      return knowledges.filter((k: any) => k.reviewStatus === 'validated')
+      return knowledges
     }
     return []
   } catch (error) {
@@ -2573,38 +2579,72 @@ export const rollbackKnowledgeGit = async (
 // 读取知识库 git 配置（LLM 提交信息开关与提示词）
 // ===== 资产审核与 .ocean git 托管封装（P3/P4） =====
 
-export const loadPendingAssetsFromLocal = async (): Promise<PendingAssetItem[]> => {
+// 审核队列封装（type+name 寻址；实现见 core/review.cjs，与 CLI `ocean review` 共用）
+export const reviewList = async (status?: 'pending' | 'rejected'): Promise<PendingAssetItem[]> => {
   if (!isElectron()) return []
   try {
-    const result = await window.electronAPI!.loadPendingAssets()
+    const result = await window.electronAPI!.reviewList(status)
     return result.success && result.items ? result.items : []
   } catch {
     return []
   }
 }
 
-export const loadAssetRawFromLocal = async (refPath: string): Promise<string | null> => {
+export const reviewApprove = async (type: string, name: string, message?: string): Promise<{ success: boolean; version?: number; error?: string }> => {
+  if (!isElectron()) return { success: false, error: '网页端不支持' }
+  try {
+    return await window.electronAPI!.reviewApprove(type, name, message)
+  } catch (e: any) {
+    return { success: false, error: e?.message || String(e) }
+  }
+}
+
+export const reviewReject = async (type: string, name: string, reason: string): Promise<{ success: boolean; error?: string }> => {
+  if (!isElectron()) return { success: false, error: '网页端不支持' }
+  try {
+    return await window.electronAPI!.reviewReject(type, name, reason)
+  } catch (e: any) {
+    return { success: false, error: e?.message || String(e) }
+  }
+}
+
+export const reviewRestore = async (type: string, name: string): Promise<{ success: boolean; error?: string }> => {
+  if (!isElectron()) return { success: false, error: '网页端不支持' }
+  try {
+    return await window.electronAPI!.reviewRestore(type, name)
+  } catch (e: any) {
+    return { success: false, error: e?.message || String(e) }
+  }
+}
+
+export const reviewDiff = async (type: string, name: string): Promise<ReviewDiffResult> => {
+  if (!isElectron()) return { success: false, error: '网页端不支持' }
+  try {
+    return await window.electronAPI!.reviewDiff(type, name)
+  } catch (e: any) {
+    return { success: false, error: e?.message || String(e) }
+  }
+}
+
+export const reviewSnapshot = async (type: string, name: string): Promise<string | null> => {
   if (!isElectron()) return null
   try {
-    const result = await window.electronAPI!.loadAssetRaw(refPath)
+    const result = await window.electronAPI!.reviewSnapshot(type, name)
     return result.success ? result.content ?? null : null
   } catch {
     return null
   }
 }
 
-export const setAssetReviewStatusToLocal = async (
-  refPath: string,
-  reviewStatus: 'pending' | 'validated' | 'rejected',
-  versionBump = false,
-  reason?: string
-): Promise<boolean> => {
-  if (!isElectron()) return false
+// 正式文件原文读取（列表加载专用；refPath 为 .ocean 相对路径；正式位置永远存最近过审版本）
+export const loadFormalRaw = async (refPath: string): Promise<{ content: string | null; mtime: string | null }> => {
+  if (!isElectron()) return { content: null, mtime: null }
   try {
-    const result = await window.electronAPI!.setAssetReviewStatus(refPath, reviewStatus, versionBump, reason)
-    return result.success
+    const result = await window.electronAPI!.loadFormalRaw(refPath)
+    if (!result.success) return { content: null, mtime: null }
+    return { content: result.content ?? null, mtime: result.mtime ?? null }
   } catch {
-    return false
+    return { content: null, mtime: null }
   }
 }
 
@@ -4041,15 +4081,10 @@ export const loadSkillFilesFromLocal = async (): Promise<any[]> => {
       const skills: any[] = []
 
       for (const dirName of result.directories) {
-        // 加载 SKILL.md
-        const contentResult = await window.electronAPI!.loadSkillFile(dirName)
-        if (contentResult.success && contentResult.content) {
+        // 列表读取一律正式位置（正式永远存最近过审版本）；资源清单编辑弹窗打开时会经草稿感知通道重取
+        const contentResult = await loadFormalRaw(`skills/${dirName}/SKILL.md`)
+        if (contentResult.content) {
           const { metadata, body } = parseSkillFrontmatter(contentResult.content)
-
-          // 加载资源文件列表
-          const scripts = await loadResourceList(dirName, 'scripts')
-          const references = await loadResourceList(dirName, 'references')
-          const examples = await loadResourceList(dirName, 'examples')
 
           skills.push({
             id: `skill-${Date.now()}-${Math.random().toString(36).slice(2)}`,
@@ -4059,17 +4094,16 @@ export const loadSkillFilesFromLocal = async (): Promise<any[]> => {
             reviewStatus: metadata.reviewStatus === 'validated' ? 'validated' : 'pending',
             version: parseInt(metadata.version, 10) || undefined,
             content: body,
-            scripts,
-            references,
-            examples,
+            scripts: [],
+            references: [],
+            examples: [],
             createdAt: contentResult.mtime || new Date().toISOString(),
             updatedAt: contentResult.mtime || new Date().toISOString(),
           })
         }
       }
 
-      // 门控（D13）：仅加载审核通过的技能
-      return skills.filter((sk: any) => sk.reviewStatus === 'validated')
+      return skills
     }
     return []
   } catch (error) {
@@ -4229,16 +4263,35 @@ export interface KnowledgeGitConfig {
   llmModel?: string
 }
 
-// 资产审核待审条目（load-pending-assets 返回）
+// 资产审核队列条目（review-list 返回；G11：不含磁盘路径）
 export interface PendingAssetItem {
   type: 'skill' | 'agent' | 'node' | 'resource' | 'workflow' | 'task' | 'knowledge' | 'codebase'
   name: string
-  refPath: string // 相对 .ocean 的路径
-  description: string
+  ts: string // 被审核快照的时间戳（该资产最早一条 pending/rejected）
   reviewStatus: 'pending' | 'rejected'
   rejectReason?: string // 审核不通过理由（rejected 时存在）
-  version?: number | null // 当前版本号（审核通过 +1）
-  mtime: string | null
+  description: string
+  baseVersion: number | null // 正式位置版本（无正式文件为 null）
+  pendingCount: number // 该资产 pending 快照数
+  isNew: boolean // 正式位置不存在 → 新建资产
+  version?: number | null // 兼容旧字段：含义同 baseVersion
+}
+
+// 审核对比结果（review-diff 返回；formal/draft 为双方主文件全文，含 frontmatter）
+export interface ReviewDiffResult {
+  success: boolean
+  error?: string
+  type?: string
+  name?: string
+  isNew?: boolean
+  hasBaseline?: boolean
+  reviewStatus?: string
+  version?: number | null
+  changed?: boolean
+  diff?: string
+  content?: string
+  formal?: string | null
+  draft?: string | null
 }
 
 // 资产 git 托管 + LLM 提交信息配置（.ocean/asset-git.json，进 gitignore 黑名单不入库）

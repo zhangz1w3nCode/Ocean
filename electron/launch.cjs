@@ -7,6 +7,8 @@ const child_process = require('child_process')
 const os = require('os')
 // 网页端宿主：自己注册 web-server-* IPC handler；在网页端子进程内自动禁用
 require('./server/webServerHost.cjs')
+// 资产审核共享模块（暂存队列模型）：主进程 IPC 与 CLI 共用同一份实现
+const review = require('./core/review.cjs')
 
 let mainWindow = null
 let currentProjectPath = null  // 当前项目路径
@@ -163,6 +165,41 @@ const getNodeDefinitionsFilePath = () => {
   return path.join(getNodesDir(), 'definitions.json')
 }
 
+// ===== 审核队列读写目标解析（G3：编辑写快照；编辑读：有草稿读草稿否则正式；列表枚举/读取一律正式） =====
+// 编辑写入路径：无草稿则新建快照（skill/workflow 以正式目录为基底），返回快照内 rel 的绝对路径
+const editWritePath = (type, name, rel) => {
+  const target = review.resolveEditTarget(getProjectRoot(), type, name)
+  if (target.error) throw new Error(target.error)
+  const filePath = path.join(target.dir, rel)
+  fs.mkdirSync(path.dirname(filePath), { recursive: true })
+  return filePath
+}
+// 编辑资产根目录：草稿优先，否则正式（不创建任何目录）
+const editAssetDir = (type, name) => {
+  const root = getProjectRoot()
+  const draft = review.latestDraft(root, type, name)
+  if (draft) return draft.dir
+  const ref = review.resolveRef(root, type, name)
+  if (ref.error) throw new Error(ref.error)
+  return path.dirname(path.join(review.oceanDir(root), ref.refPath))
+}
+// 编辑读取路径：草稿优先，否则正式
+const editReadPath = (type, name, rel) => path.join(editAssetDir(type, name), rel)
+// 编辑目录列表（skill 子资源、工作流局部节点）：草稿优先，否则正式
+const editListDir = (type, name, rel) => path.join(editAssetDir(type, name), rel)
+// 正式删除（G8）：删正式文件/目录 + 提交删除（托管时）+ 丢弃全部快照
+const formalDelete = (type, name) => {
+  const root = getProjectRoot()
+  const ref = review.resolveRef(root, type, name)
+  if (ref.error) throw new Error(ref.error)
+  const dirBased = type === 'skill' || type === 'workflow' || type === 'codebase'
+  const rel = dirBased ? path.dirname(ref.refPath) : ref.refPath
+  const target = path.join(review.oceanDir(root), rel)
+  if (fs.existsSync(target)) fs.rmSync(target, { recursive: true, force: true })
+  review.commitFormalDeletion(root, rel)
+  review.discardSnapshots(root, type, name)
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1280,
@@ -297,33 +334,15 @@ const getWorkflowMetaDataPath = (name) => {
   return path.join(getWorkflowFolderPath(name), 'meta-data')
 }
 
-// 创建工作流文件夹
+// 创建工作流文件夹（队列模型：草稿快照在首次保存时创建，不再预建正式目录）
 ipcMain.handle('create-workflow-folder', (_, name) => {
-  try {
-    const folderPath = getWorkflowFolderPath(name)
-    const metaDataPath = getWorkflowMetaDataPath(name)
-
-    // 创建工作流文件夹
-    if (!fs.existsSync(folderPath)) {
-      fs.mkdirSync(folderPath, { recursive: true })
-    }
-
-    // 创建meta-data目录
-    if (!fs.existsSync(metaDataPath)) {
-      fs.mkdirSync(metaDataPath, { recursive: true })
-    }
-
-    return { success: true, folderPath }
-  } catch (error) {
-    console.error('创建工作流文件夹失败:', error)
-    return { success: false, error: String(error) }
-  }
+  return { success: true, folderPath: getWorkflowFolderPath(name) }
 })
 
 // 加载工作流文件夹的WORKFLOW.md内容
 ipcMain.handle('load-workflow-md', (_, name) => {
   try {
-    const filePath = path.join(getWorkflowFolderPath(name), 'WORKFLOW.md')
+    const filePath = editReadPath('workflow', name, 'WORKFLOW.md')
     if (!fs.existsSync(filePath)) {
       return { success: true, content: null, mtime: null }
     }
@@ -339,12 +358,7 @@ ipcMain.handle('load-workflow-md', (_, name) => {
 // 保存工作流文件夹的WORKFLOW.md内容
 ipcMain.handle('save-workflow-md', (_, name, content) => {
   try {
-    const folderPath = getWorkflowFolderPath(name)
-    // 确保文件夹存在
-    if (!fs.existsSync(folderPath)) {
-      fs.mkdirSync(folderPath, { recursive: true })
-    }
-    const filePath = path.join(folderPath, 'WORKFLOW.md')
+    const filePath = editWritePath('workflow', name, 'WORKFLOW.md')
     fs.writeFileSync(filePath, content, 'utf-8')
     return { success: true }
   } catch (error) {
@@ -356,7 +370,7 @@ ipcMain.handle('save-workflow-md', (_, name, content) => {
 // 加载工作流的flow.json
 ipcMain.handle('load-workflow-flow-json', (_, name) => {
   try {
-    const filePath = path.join(getWorkflowMetaDataPath(name), 'flow.json')
+    const filePath = editReadPath('workflow', name, path.join('meta-data', 'flow.json'))
     if (!fs.existsSync(filePath)) {
       return { success: true, content: null, mtime: null }
     }
@@ -372,12 +386,7 @@ ipcMain.handle('load-workflow-flow-json', (_, name) => {
 // 保存工作流的flow.json
 ipcMain.handle('save-workflow-flow-json', (_, name, content) => {
   try {
-    const metaDataPath = getWorkflowMetaDataPath(name)
-    // 确保meta-data文件夹存在
-    if (!fs.existsSync(metaDataPath)) {
-      fs.mkdirSync(metaDataPath, { recursive: true })
-    }
-    const filePath = path.join(metaDataPath, 'flow.json')
+    const filePath = editWritePath('workflow', name, path.join('meta-data', 'flow.json'))
     fs.writeFileSync(filePath, content, 'utf-8')
     return { success: true }
   } catch (error) {
@@ -406,10 +415,7 @@ ipcMain.handle('load-all-workflow-folders', () => {
 // 删除工作流文件夹
 ipcMain.handle('delete-workflow-folder', (_, name) => {
   try {
-    const folderPath = getWorkflowFolderPath(name)
-    if (fs.existsSync(folderPath)) {
-      fs.rmSync(folderPath, { recursive: true, force: true })
-    }
+    formalDelete('workflow', name)
     return { success: true }
   } catch (error) {
     console.error('删除工作流文件夹失败:', error)
@@ -424,6 +430,13 @@ ipcMain.handle('rename-workflow-folder', (_, oldName, newName) => {
     const newPath = getWorkflowFolderPath(newName)
     if (fs.existsSync(oldPath)) {
       fs.renameSync(oldPath, newPath)
+    }
+    // 队列内同名草稿一并跟随改名
+    const qOld = path.join(review.queueDir(getProjectRoot()), 'workflows', oldName)
+    const qNew = path.join(review.queueDir(getProjectRoot()), 'workflows', newName)
+    if (fs.existsSync(qOld) && !fs.existsSync(qNew)) {
+      fs.mkdirSync(path.dirname(qNew), { recursive: true })
+      fs.renameSync(qOld, qNew)
     }
     return { success: true }
   } catch (error) {
@@ -792,9 +805,7 @@ ipcMain.handle('unsubscribe-instance-detail', () => {
 // 保存节点文件（Markdown格式，以名称命名）
 ipcMain.handle('save-node-file', (_, name, content) => {
   try {
-    const nodesDir = getNodesDir()
-    const fileName = `${name}.md`
-    const filePath = path.join(nodesDir, fileName)
+    const filePath = editWritePath('node', name, `${name}.md`)
     fs.writeFileSync(filePath, content, 'utf-8')
     return { success: true }
   } catch (error) {
@@ -806,8 +817,7 @@ ipcMain.handle('save-node-file', (_, name, content) => {
 // 加载单个节点文件内容
 ipcMain.handle('load-node-file', (_, name) => {
   try {
-    const nodesDir = getNodesDir()
-    const filePath = path.join(nodesDir, `${name}.md`)
+    const filePath = editReadPath('node', name, `${name}.md`)
     if (!fs.existsSync(filePath)) {
       return { success: true, content: null, mtime: null }
     }
@@ -823,11 +833,7 @@ ipcMain.handle('load-node-file', (_, name) => {
 // 删除单个节点文件
 ipcMain.handle('delete-node-file', (_, name) => {
   try {
-    const nodesDir = getNodesDir()
-    const filePath = path.join(nodesDir, `${name}.md`)
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath)
-    }
+    formalDelete('node', name)
     return { success: true }
   } catch (error) {
     console.error('删除节点文件失败:', error)
@@ -862,13 +868,7 @@ const getWorkflowLocalNodesPath = (workflowName) => {
 // 保存局部节点文件
 ipcMain.handle('save-local-node', (_, workflowName, nodeName, content) => {
   try {
-    const nodesDir = getWorkflowLocalNodesPath(workflowName)
-    // 确保nodes目录存在
-    if (!fs.existsSync(nodesDir)) {
-      fs.mkdirSync(nodesDir, { recursive: true })
-    }
-    const fileName = `${nodeName}.md`
-    const filePath = path.join(nodesDir, fileName)
+    const filePath = editWritePath('workflow', workflowName, path.join('nodes', `${nodeName}.md`))
     fs.writeFileSync(filePath, content, 'utf-8')
     return { success: true }
   } catch (error) {
@@ -880,8 +880,7 @@ ipcMain.handle('save-local-node', (_, workflowName, nodeName, content) => {
 // 加载局部节点文件
 ipcMain.handle('load-local-node', (_, workflowName, nodeName) => {
   try {
-    const nodesDir = getWorkflowLocalNodesPath(workflowName)
-    const filePath = path.join(nodesDir, `${nodeName}.md`)
+    const filePath = editReadPath('workflow', workflowName, path.join('nodes', `${nodeName}.md`))
     if (!fs.existsSync(filePath)) {
       return { success: true, content: null, mtime: null }
     }
@@ -897,7 +896,7 @@ ipcMain.handle('load-local-node', (_, workflowName, nodeName) => {
 // 加载所有局部节点文件列表
 ipcMain.handle('load-all-local-nodes', (_, workflowName) => {
   try {
-    const nodesDir = getWorkflowLocalNodesPath(workflowName)
+    const nodesDir = editListDir('workflow', workflowName, 'nodes')
     if (!fs.existsSync(nodesDir)) {
       return { success: true, files: [] }
     }
@@ -914,8 +913,8 @@ ipcMain.handle('load-all-local-nodes', (_, workflowName) => {
 // 删除局部节点文件
 ipcMain.handle('delete-local-node', (_, workflowName, nodeName) => {
   try {
-    const nodesDir = getWorkflowLocalNodesPath(workflowName)
-    const filePath = path.join(nodesDir, `${nodeName}.md`)
+    // 编辑类删除：在快照内删除（无草稿则先以正式为基底建快照，正式不受影响）
+    const filePath = editWritePath('workflow', workflowName, path.join('nodes', `${nodeName}.md`))
     if (fs.existsSync(filePath)) {
       fs.unlinkSync(filePath)
     }
@@ -931,10 +930,7 @@ ipcMain.handle('delete-local-node', (_, workflowName, nodeName) => {
 // 保存资源文件（Markdown格式，以名称命名）
 ipcMain.handle('save-resource-file', (_, name, content) => {
   try {
-    const resourcesDir = getResourcesDir()
-    // 文件名使用 名称.md 格式
-    const fileName = `${name}.md`
-    const filePath = path.join(resourcesDir, fileName)
+    const filePath = editWritePath('resource', name, `${name}.md`)
     fs.writeFileSync(filePath, content, 'utf-8')
     return { success: true }
   } catch (error) {
@@ -946,8 +942,7 @@ ipcMain.handle('save-resource-file', (_, name, content) => {
 // 加载单个资源文件内容
 ipcMain.handle('load-resource-file', (_, name) => {
   try {
-    const resourcesDir = getResourcesDir()
-    const filePath = path.join(resourcesDir, `${name}.md`)
+    const filePath = editReadPath('resource', name, `${name}.md`)
     if (!fs.existsSync(filePath)) {
       return { success: true, content: null, mtime: null }
     }
@@ -963,11 +958,7 @@ ipcMain.handle('load-resource-file', (_, name) => {
 // 删除单个资源文件
 ipcMain.handle('delete-resource-file', (_, name) => {
   try {
-    const resourcesDir = getResourcesDir()
-    const filePath = path.join(resourcesDir, `${name}.md`)
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath)
-    }
+    formalDelete('resource', name)
     return { success: true }
   } catch (error) {
     console.error('删除资源文件失败:', error)
@@ -997,9 +988,7 @@ ipcMain.handle('load-all-resource-files', () => {
 // 保存智能体文件（Markdown格式，以名称命名）
 ipcMain.handle('save-agent-file', (_, name, content) => {
   try {
-    const agentsDir = getAgentsDir()
-    const fileName = `${name}.md`
-    const filePath = path.join(agentsDir, fileName)
+    const filePath = editWritePath('agent', name, `${name}.md`)
     fs.writeFileSync(filePath, content, 'utf-8')
     return { success: true }
   } catch (error) {
@@ -1011,8 +1000,7 @@ ipcMain.handle('save-agent-file', (_, name, content) => {
 // 加载单个智能体文件内容
 ipcMain.handle('load-agent-file', (_, name) => {
   try {
-    const agentsDir = getAgentsDir()
-    const filePath = path.join(agentsDir, `${name}.md`)
+    const filePath = editReadPath('agent', name, `${name}.md`)
     if (!fs.existsSync(filePath)) {
       return { success: true, content: null, mtime: null }
     }
@@ -1028,11 +1016,7 @@ ipcMain.handle('load-agent-file', (_, name) => {
 // 删除单个智能体文件
 ipcMain.handle('delete-agent-file', (_, name) => {
   try {
-    const agentsDir = getAgentsDir()
-    const filePath = path.join(agentsDir, `${name}.md`)
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath)
-    }
+    formalDelete('agent', name)
     return { success: true }
   } catch (error) {
     console.error('删除智能体文件失败:', error)
@@ -1083,13 +1067,8 @@ const scanDirRecursive = (dir, baseDir = dir, result = []) => {
 // 保存知识库文件（Markdown格式，支持子目录路径，如 "backend/api"）
 ipcMain.handle('save-knowledge-file', (_, name, content) => {
   try {
-    const knowledgesDir = getKnowledgesDir()
-    const filePath = path.join(knowledgesDir, `${name}.md`)
-    // 自动创建中间目录
-    const dirPath = path.dirname(filePath)
-    if (!fs.existsSync(dirPath)) {
-      fs.mkdirSync(dirPath, { recursive: true })
-    }
+    // name 可含 domain 子目录（如 "backend/api"）；主文件取名称末段
+    const filePath = editWritePath('knowledge', name, `${String(name).split('/').pop()}.md`)
     fs.writeFileSync(filePath, content, 'utf-8')
     return { success: true }
   } catch (error) {
@@ -1101,8 +1080,7 @@ ipcMain.handle('save-knowledge-file', (_, name, content) => {
 // 加载单个知识库文件内容（支持子目录路径，如 "backend/api"）
 ipcMain.handle('load-knowledge-file', (_, name) => {
   try {
-    const knowledgesDir = getKnowledgesDir()
-    const filePath = path.join(knowledgesDir, `${name}.md`)
+    const filePath = editReadPath('knowledge', name, `${String(name).split('/').pop()}.md`)
     if (!fs.existsSync(filePath)) {
       return { success: true, content: null, mtime: null }
     }
@@ -1118,11 +1096,7 @@ ipcMain.handle('load-knowledge-file', (_, name) => {
 // 删除单个知识库文件（支持子目录路径）
 ipcMain.handle('delete-knowledge-file', (_, name) => {
   try {
-    const knowledgesDir = getKnowledgesDir()
-    const filePath = path.join(knowledgesDir, `${name}.md`)
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath)
-    }
+    formalDelete('knowledge', name)
     return { success: true }
   } catch (error) {
     console.error('删除知识库文件失败:', error)
@@ -1468,8 +1442,7 @@ ipcMain.handle('get-knowledge-baseline', (_, name) => {
   }
 })
 
-// ===== 资产审核与 .ocean git 托管（实现见 core/review.cjs，CLI `ocean review` 与此处共用） =====
-const review = require('./core/review.cjs')
+// ===== 资产审核与 .ocean git 托管（实现见 core/review.cjs） =====
 
 ipcMain.handle('asset-git-status', () => review.gitStatus(getProjectRoot()))
 ipcMain.handle('asset-git-init', () => review.gitInit(getProjectRoot()))
@@ -1500,12 +1473,47 @@ ipcMain.handle('save-asset-git-config', (_, config) => {
 
 ipcMain.handle('asset-git-commit', (_, refPath, message) => review.gitCommit(getProjectRoot(), refPath, message))
 ipcMain.handle('asset-git-rollback', (_, refPath) => review.gitRollback(getProjectRoot(), refPath))
-ipcMain.handle('load-pending-assets', () => review.listReviewAssets(getProjectRoot()))
-ipcMain.handle('load-asset-raw', (_, refPath) => review.readAssetRaw(getProjectRoot(), refPath))
-ipcMain.handle('set-asset-review-status', (_, refPath, reviewStatus, versionBump, reason) =>
-  review.setReviewStatus(getProjectRoot(), refPath, reviewStatus, versionBump, reason))
 // 一键同步；可传 {type, name} 仅物化单个 skill/agent（审核通过自动同步用）
 ipcMain.handle('sync-approved-assets', (_, only) => review.syncApprovedAssets(getProjectRoot(), only))
+
+// 审核队列 IPC（薄包装共享模块；G11：以 type+name 寻址，输出不暴露磁盘路径）
+ipcMain.handle('review-list', (_, status) => review.listQueue(getProjectRoot(), status))
+ipcMain.handle('review-approve', (_, type, name, message) => review.approveAsset(getProjectRoot(), type, name, message))
+ipcMain.handle('review-reject', (_, type, name, reason) => review.rejectAsset(getProjectRoot(), type, name, reason))
+ipcMain.handle('review-restore', (_, type, name) => review.restoreAsset(getProjectRoot(), type, name))
+ipcMain.handle('review-snapshot', (_, type, name) => review.readSnapshot(getProjectRoot(), type, name))
+// diff 附带双方正文（仅主文件，供审核弹窗渲染对比；不含路径信息）
+ipcMain.handle('review-diff', (_, type, name) => {
+  try {
+    const root = getProjectRoot()
+    const d = review.diffAsset(root, type, name)
+    if (!d.success) return d
+    const ref = review.resolveRef(root, type, name)
+    let formal = null
+    if (!ref.error) {
+      const formalPath = review.resolveReadPath(root, ref.refPath)
+      if (fs.existsSync(formalPath)) formal = fs.readFileSync(formalPath, 'utf-8')
+    }
+    const snap = review.readSnapshot(root, type, name)
+    return { ...d, formal, draft: snap.success ? snap.content ?? null : null }
+  } catch (error) {
+    return { success: false, error: String(error) }
+  }
+})
+// 正式文件原文读取（供列表加载；refPath 为 .ocean 相对路径）
+ipcMain.handle('load-formal-raw', (_, refPath) => {
+  try {
+    const filePath = review.resolveReadPath(getProjectRoot(), refPath)
+    if (!fs.existsSync(filePath)) {
+      return { success: true, content: null, mtime: null }
+    }
+    const content = fs.readFileSync(filePath, 'utf-8')
+    const stats = fs.statSync(filePath)
+    return { success: true, content, mtime: stats.mtime.toISOString() }
+  } catch (error) {
+    return { success: false, error: String(error), content: null, mtime: null }
+  }
+})
 
 // 加载所有知识库文件列表（递归扫描子目录，返回相对路径格式的文件名）
 ipcMain.handle('load-all-knowledge-files', () => {
@@ -3169,18 +3177,20 @@ ipcMain.handle('load-knowledge-template-file', async (_, templateType) => {
 
 // ===== 技能文件相关 IPC =====
 
-// 创建技能目录结构
+// 创建技能目录结构（队列模型：新技能只进快照，审核通过后才落正式目录）
 ipcMain.handle('create-skill-directory', (_, name, input) => {
   try {
-    const skillsDir = getSkillsDir()
-    const skillDir = path.join(skillsDir, name)
-
-    if (fs.existsSync(skillDir)) {
+    const root = getProjectRoot()
+    if (review.latestDraft(root, 'skill', name)) {
+      return { success: false, error: '技能已有待审核快照' }
+    }
+    const ref = review.resolveRef(root, 'skill', name)
+    if (!ref.error && fs.existsSync(path.join(review.oceanDir(root), ref.refPath))) {
       return { success: false, error: '技能目录已存在' }
     }
-
-    // 创建目录结构
-    fs.mkdirSync(skillDir, { recursive: true })
+    const snap = review.newSnapshotDir(root, 'skill', name)
+    if (snap.error) return { success: false, error: snap.error }
+    const skillDir = snap.dir
 
     // 创建子目录
     const subDirs = ['scripts', 'references', 'examples']
@@ -3188,10 +3198,11 @@ ipcMain.handle('create-skill-directory', (_, name, input) => {
       fs.mkdirSync(path.join(skillDir, subDir), { recursive: true })
     }
 
-    // 创建 SKILL.md 文件
+    // 创建 SKILL.md 文件（新建即 pending，不写 version——version 由审核通过时写入）
     const skillMdContent = `---
 name: ${name}
 description: ${input.description || ''}
+reviewStatus: pending
 ---
 ${input.content || ''}`
     fs.writeFileSync(path.join(skillDir, 'SKILL.md'), skillMdContent, 'utf-8')
@@ -3223,12 +3234,7 @@ ${input.content || ''}`
 // 保存技能 SKILL.md 文件
 ipcMain.handle('save-skill-file', (_, name, content) => {
   try {
-    const skillsDir = getSkillsDir()
-    const skillDir = path.join(skillsDir, name)
-    if (!fs.existsSync(skillDir)) {
-      fs.mkdirSync(skillDir, { recursive: true })
-    }
-    const filePath = path.join(skillDir, 'SKILL.md')
+    const filePath = editWritePath('skill', name, 'SKILL.md')
     fs.writeFileSync(filePath, content, 'utf-8')
     return { success: true }
   } catch (error) {
@@ -3240,8 +3246,7 @@ ipcMain.handle('save-skill-file', (_, name, content) => {
 // 加载技能 SKILL.md 文件
 ipcMain.handle('load-skill-file', (_, name) => {
   try {
-    const skillsDir = getSkillsDir()
-    const filePath = path.join(skillsDir, name, 'SKILL.md')
+    const filePath = editReadPath('skill', name, 'SKILL.md')
     if (!fs.existsSync(filePath)) {
       return { success: true, content: null, mtime: null }
     }
@@ -3257,11 +3262,7 @@ ipcMain.handle('load-skill-file', (_, name) => {
 // 删除技能目录
 ipcMain.handle('delete-skill-directory', (_, name) => {
   try {
-    const skillsDir = getSkillsDir()
-    const skillDir = path.join(skillsDir, name)
-    if (fs.existsSync(skillDir)) {
-      fs.rmSync(skillDir, { recursive: true, force: true })
-    }
+    formalDelete('skill', name)
     return { success: true }
   } catch (error) {
     console.error('删除技能目录失败:', error)
@@ -3291,8 +3292,7 @@ ipcMain.handle('load-all-skill-directories', () => {
 // 保存技能资源文件
 ipcMain.handle('save-skill-resource', (_, skillName, resourceType, fileName, content) => {
   try {
-    const subDir = getSkillSubDir(skillName, resourceType)
-    const filePath = path.join(subDir, fileName)
+    const filePath = editWritePath('skill', skillName, path.join(resourceType, fileName))
     fs.writeFileSync(filePath, content, 'utf-8')
     return { success: true }
   } catch (error) {
@@ -3304,8 +3304,7 @@ ipcMain.handle('save-skill-resource', (_, skillName, resourceType, fileName, con
 // 加载技能资源文件
 ipcMain.handle('load-skill-resource', (_, skillName, resourceType, fileName) => {
   try {
-    const skillsDir = getSkillsDir()
-    const filePath = path.join(skillsDir, skillName, resourceType, fileName)
+    const filePath = editReadPath('skill', skillName, path.join(resourceType, fileName))
     if (!fs.existsSync(filePath)) {
       return { success: true, content: null }
     }
@@ -3320,8 +3319,8 @@ ipcMain.handle('load-skill-resource', (_, skillName, resourceType, fileName) => 
 // 删除技能资源文件
 ipcMain.handle('delete-skill-resource', (_, skillName, resourceType, fileName) => {
   try {
-    const skillsDir = getSkillsDir()
-    const filePath = path.join(skillsDir, skillName, resourceType, fileName)
+    // 编辑类删除：在快照内删除（无草稿则先以正式为基底建快照，正式不受影响）
+    const filePath = editWritePath('skill', skillName, path.join(resourceType, fileName))
     if (fs.existsSync(filePath)) {
       fs.unlinkSync(filePath)
     }
@@ -3335,8 +3334,7 @@ ipcMain.handle('delete-skill-resource', (_, skillName, resourceType, fileName) =
 // 列出技能资源文件
 ipcMain.handle('list-skill-resources', (_, skillName, resourceType) => {
   try {
-    const skillsDir = getSkillsDir()
-    const subDirPath = path.join(skillsDir, skillName, resourceType)
+    const subDirPath = editListDir('skill', skillName, resourceType)
     if (!fs.existsSync(subDirPath)) {
       return { success: true, files: [] }
     }

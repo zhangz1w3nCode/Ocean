@@ -4,16 +4,13 @@ import ReactDiffViewer from 'react-diff-viewer-continued'
 import { Loader2, ShieldCheck, Undo2, RotateCcw } from 'lucide-react'
 import { Modal, Button } from '../ui'
 import type { PendingAssetItem } from '../../utils/storage'
-import {
-  loadAssetBaselineFromLocal,
-  loadAssetRawFromLocal,
-} from '../../utils/storage'
+import { reviewDiff } from '../../utils/storage'
 
 interface AssetReviewModalProps {
   isOpen: boolean
   onClose: () => void
   asset: PendingAssetItem | null
-  /** 当前审核视图：pending=待审核（驳回/通过），rejected=已驳回（恢复待审/通过） */
+  /** 当前审核视图：pending=待审核（驳回/通过），rejected=已驳回（恢复待审） */
   mode: 'pending' | 'rejected'
   onApprove: () => Promise<void> | void
   onReject: () => Promise<void> | void
@@ -35,25 +32,29 @@ export const AssetReviewModal: FC<AssetReviewModalProps> = ({
   onReject,
   onRestore,
 }) => {
-  const [baseline, setBaseline] = useState<string | null | undefined>(undefined)
+  const [formalBody, setFormalBody] = useState<string | null>(null)
+  const [draftBody, setDraftBody] = useState('')
+  const [version, setVersion] = useState<number | null>(null)
+  const [isNew, setIsNew] = useState(false)
   const [loading, setLoading] = useState(true)
   const [approving, setApproving] = useState(false)
   const [rejecting, setRejecting] = useState(false)
   const [restoring, setRestoring] = useState(false)
-  const [currentBody, setCurrentBody] = useState('')
 
   useEffect(() => {
     if (!isOpen || !asset) return
     let cancelled = false
 
     setLoading(true)
-    setBaseline(undefined)
-    Promise.all([loadAssetBaselineFromLocal(asset.refPath), loadAssetRawFromLocal(asset.refPath)])
-      .then(([base, current]) => {
+    setFormalBody(null)
+    reviewDiff(asset.type, asset.name)
+      .then((r) => {
         if (cancelled) return
-        setBaseline(base === null ? null : stripFrontmatter(base ?? ''))
-        if (current !== null) {
-          setCurrentBody(stripFrontmatter(current))
+        if (r.success) {
+          setIsNew(!!r.isNew)
+          setVersion(r.version ?? null)
+          setFormalBody(r.formal ? stripFrontmatter(r.formal) : null)
+          setDraftBody(r.draft != null ? stripFrontmatter(r.draft) : r.content ? stripFrontmatter(r.content) : '')
         }
         setLoading(false)
       })
@@ -68,7 +69,7 @@ export const AssetReviewModal: FC<AssetReviewModalProps> = ({
 
   if (!asset) return null
 
-  const hasBaseline = baseline !== null && baseline !== undefined
+  const hasBaseline = formalBody !== null
 
   return (
     <Modal
@@ -156,12 +157,14 @@ export const AssetReviewModal: FC<AssetReviewModalProps> = ({
       <div className="space-y-3">
         <div className="flex items-center gap-2 text-xs text-macos-text-secondary flex-wrap">
           <span className="px-2 py-0.5 bg-gray-100 rounded font-mono">{asset.type}</span>
-          <span className="font-mono">{asset.refPath}</span>
           {mode === 'rejected' && (
             <span className="px-2 py-0.5 bg-red-50 text-red-600 rounded text-xs">已驳回</span>
           )}
-          {asset.version != null && (
-            <span className="px-2 py-0.5 bg-gray-50 text-macos-text-tertiary rounded text-xs font-mono">v{asset.version}</span>
+          {!isNew && version != null && (
+            <span className="px-2 py-0.5 bg-gray-50 text-macos-text-tertiary rounded text-xs font-mono">v{version}</span>
+          )}
+          {asset.pendingCount > 1 && (
+            <span className="px-2 py-0.5 bg-amber-50 text-amber-600 rounded text-xs">待审 {asset.pendingCount} 版</span>
           )}
         </div>
         {mode === 'rejected' && asset.rejectReason && (
@@ -176,8 +179,8 @@ export const AssetReviewModal: FC<AssetReviewModalProps> = ({
         ) : hasBaseline ? (
           <div className="border border-gray-100 rounded-lg overflow-hidden">
             <ReactDiffViewer
-              oldValue={baseline ?? ''}
-              newValue={currentBody}
+              oldValue={formalBody ?? ''}
+              newValue={draftBody}
               splitView
               useDarkTheme={false}
             />
@@ -185,9 +188,9 @@ export const AssetReviewModal: FC<AssetReviewModalProps> = ({
         ) : (
           <div className="border border-gray-100 rounded-lg overflow-hidden">
             <div className="px-3 py-1.5 bg-gray-50 text-xs text-macos-text-secondary border-b border-gray-100">
-              新资产（无 git 基线）
+              新建资产（正式位置尚无过审版本）
             </div>
-            <pre className="p-3 text-xs whitespace-pre-wrap max-h-[50vh] overflow-y-auto">{currentBody}</pre>
+            <pre className="p-3 text-xs whitespace-pre-wrap max-h-[50vh] overflow-y-auto">{draftBody}</pre>
           </div>
         )}
       </div>

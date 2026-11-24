@@ -84,9 +84,14 @@ const electronAPI = {
   saveKnowledgeGitConfig: (config) => ipcRenderer.invoke('save-knowledge-git-config', config),
 
   // 资产审核与 .ocean git 托管（P3/P4）
-  loadPendingAssets: () => ipcRenderer.invoke('load-pending-assets'),
-  loadAssetRaw: (refPath) => ipcRenderer.invoke('load-asset-raw', refPath),
-  setAssetReviewStatus: (refPath, reviewStatus, versionBump, reason) => ipcRenderer.invoke('set-asset-review-status', refPath, reviewStatus, versionBump, reason),
+  // 审核队列（type+name 寻址，不暴露路径）
+  reviewList: (status) => ipcRenderer.invoke('review-list', status),
+  reviewApprove: (type, name, message) => ipcRenderer.invoke('review-approve', type, name, message),
+  reviewReject: (type, name, reason) => ipcRenderer.invoke('review-reject', type, name, reason),
+  reviewRestore: (type, name) => ipcRenderer.invoke('review-restore', type, name),
+  reviewDiff: (type, name) => ipcRenderer.invoke('review-diff', type, name),
+  reviewSnapshot: (type, name) => ipcRenderer.invoke('review-snapshot', type, name),
+  loadFormalRaw: (refPath) => ipcRenderer.invoke('load-formal-raw', refPath),
   loadAssetBaseline: (refPath) => ipcRenderer.invoke('get-asset-baseline', refPath),
   assetGitStatus: () => ipcRenderer.invoke('asset-git-status'),
   assetGitInit: () => ipcRenderer.invoke('asset-git-init'),

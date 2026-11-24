@@ -7,16 +7,10 @@ import { useToastStore } from '../stores/toastStore'
 import { Card, Dropdown, Modal, Textarea, Button } from '../components/ui'
 import type { PendingAssetItem } from '../utils/storage'
 import {
-  loadAssetBaselineFromLocal,
-  loadAssetRawFromLocal,
-  setAssetReviewStatusToLocal,
-  commitAssetGit,
-  loadAssetGitConfig,
-  loadAssetGitStatus,
-  resolveKnowledgeGitProvider,
-  syncApprovedAssetsToLocal,
+  reviewApprove,
+  reviewReject,
+  reviewRestore,
 } from '../utils/storage'
-import { generateKnowledgeCommitMessage } from '../utils/knowledgeGit'
 
 const typeLabels: Record<string, string> = {
   skill: '技能',
@@ -27,11 +21,6 @@ const typeLabels: Record<string, string> = {
   task: '任务',
   knowledge: '知识',
   codebase: '代码库',
-}
-
-const statusLabels: Record<string, string> = {
-  pending: '待审核',
-  rejected: '已驳回',
 }
 
 const typeIcons: Record<string, typeof Box> = {
@@ -45,7 +34,7 @@ const typeIcons: Record<string, typeof Box> = {
   codebase: Code,
 }
 
-// 资产卡片：结构与视觉对齐 KnowledgeCard（图标盒 + 17px 粗名 + 灰底信息块）
+// 资产卡片：结构与视觉对齐 KnowledgeCard（图标盒 + 17px 粗名 + 灰底信息块；G11：不展示路径）
 const AssetCard: FC<{ asset: PendingAssetItem; onClick?: () => void }> = ({ asset, onClick }) => {
   const Icon = typeIcons[asset.type] || Box
   const isRejected = asset.reviewStatus === 'rejected'
@@ -76,9 +65,18 @@ const AssetCard: FC<{ asset: PendingAssetItem; onClick?: () => void }> = ({ asse
             <span className="inline-flex items-center px-2 py-0.5 bg-red-50 text-red-600 rounded-full text-xs">
               已驳回
             </span>
+          ) : asset.isNew ? (
+            <span className="inline-flex items-center px-2 py-0.5 bg-blue-50 text-blue-600 rounded-full text-xs">
+              新建
+            </span>
           ) : (
             <span className="inline-flex items-center px-2 py-0.5 bg-amber-50 text-amber-600 rounded-full text-xs">
               待审核
+            </span>
+          )}
+          {!isRejected && asset.pendingCount > 1 && (
+            <span className="inline-flex items-center px-2 py-0.5 bg-amber-50 text-amber-600 rounded-full text-xs">
+              待审 {asset.pendingCount} 版
             </span>
           )}
         </div>
@@ -86,9 +84,11 @@ const AssetCard: FC<{ asset: PendingAssetItem; onClick?: () => void }> = ({ asse
 
       {/* 信息预览区 - 浅灰色背景 */}
       <div className="flex-1 mx-4 mb-4 mt-0 p-4 rounded-lg bg-gray-50">
-        <p className="text-xs text-gray-500 font-mono truncate mb-1.5" title={asset.refPath}>
-          {asset.refPath}
-        </p>
+        {isRejected && asset.rejectReason ? (
+          <p className="text-xs text-red-600 leading-relaxed line-clamp-2 mb-1.5">
+            不通过理由：{asset.rejectReason}
+          </p>
+        ) : null}
         <p className="text-xs text-gray-500 leading-relaxed line-clamp-2">
           {asset.description || '暂无描述'}
         </p>
@@ -143,7 +143,7 @@ export const AssetReviewPage: FC = () => {
       return (
         a.name.toLowerCase().includes(q) ||
         a.description.toLowerCase().includes(q) ||
-        a.refPath.toLowerCase().includes(q)
+        (a.rejectReason || '').toLowerCase().includes(q)
       )
     })
   }, [reviewAssets, searchQuery, typeFilter, statusFilter])
@@ -152,66 +152,20 @@ export const AssetReviewPage: FC = () => {
     await loadReviewAssets()
   }
 
+  // 审核通过：共享模块内完成正式落盘 + version+1 + git 提交 + skill/agent 自动物化
   const handleApprove = async (asset: PendingAssetItem) => {
-    // 1) reviewStatus → validated + version+1 写盘
-    const ok = await setAssetReviewStatusToLocal(asset.refPath, 'validated', true)
-    if (!ok) {
-      addToast('审核失败，请重试', 'error')
-      return
-    }
-
-    // 2) git 托管时提交（LLM 提交信息可选）
-    const status = await loadAssetGitStatus()
-    if (!status.managed) {
-      addToast('审核通过', 'success')
-      closeReview()
-      await refreshAll()
-      return
-    }
-
-    let message = ''
-    try {
-      const gitConfig = await loadAssetGitConfig()
-      if (gitConfig.llmCommitMessageEnabled) {
-        const resolved = await resolveKnowledgeGitProvider(gitConfig.llmProviderId, gitConfig.llmModel)
-        if (resolved) {
-          const [baselineRaw, currentRaw] = await Promise.all([
-            loadAssetBaselineFromLocal(asset.refPath),
-            loadAssetRawFromLocal(asset.refPath),
-          ])
-          const generated = await generateKnowledgeCommitMessage(
-            resolved.provider,
-            resolved.model,
-            gitConfig.llmCommitMessagePrompt,
-            baselineRaw,
-            currentRaw ?? '',
-          )
-          if (generated) message = generated
-        } else {
-          addToast('未找到可用的 LLM，改用默认提交信息', 'warning')
-        }
-      }
-    } catch (error) {
-      console.error('生成提交信息失败，改用默认信息:', error)
-    }
-
-    const commitResult = await commitAssetGit(asset.refPath, message)
-    if (commitResult.success) {
-      addToast('审核通过', 'success')
+    const result = await reviewApprove(asset.type, asset.name)
+    if (result.success) {
+      addToast(`审核通过（v${result.version ?? '-'}）`, 'success')
     } else {
-      addToast(`审核通过，但提交失败：${commitResult.error || '未知错误'}`, 'error')
-    }
-
-    // 3) skill/agent 审核通过后自动物化到运行时目录（单项：新增/覆盖，不做删除对齐）
-    if (asset.type === 'skill' || asset.type === 'agent') {
-      const synced = await syncApprovedAssetsToLocal({ type: asset.type, name: asset.name })
-      if (!synced) addToast('审核通过，但物化到运行时目录失败', 'error')
+      addToast(`审核通过失败：${result.error || '未知错误'}`, 'error')
+      return
     }
     closeReview()
     await refreshAll()
   }
 
-  // 审核不通过：必填理由，标记 rejected（内容保留；重新编辑会自动回到待审核）
+  // 审核不通过：必填理由，写入最早 pending 快照（正式位置不动）
   const handleConfirmReject = async () => {
     const reason = rejectReason.trim()
     if (!reason) {
@@ -219,13 +173,13 @@ export const AssetReviewPage: FC = () => {
       return
     }
     if (!reviewing) return
-    const ok = await setAssetReviewStatusToLocal(reviewing.refPath, 'rejected', false, reason)
-    if (ok) {
+    const result = await reviewReject(reviewing.type, reviewing.name, reason)
+    if (result.success) {
       addToast('已标记审核不通过，可在状态筛选「已驳回」中查看', 'success')
       setRejectConfirmOpen(false)
       setRejectReason('')
     } else {
-      addToast('操作失败，请重试', 'error')
+      addToast(`操作失败：${result.error || '未知错误'}`, 'error')
       return
     }
     closeReview()
@@ -235,11 +189,12 @@ export const AssetReviewPage: FC = () => {
   // 已驳回 → 恢复待审
   const handleRestore = async () => {
     if (!reviewing) return
-    const ok = await setAssetReviewStatusToLocal(reviewing.refPath, 'pending', false)
-    if (ok) {
+    const result = await reviewRestore(reviewing.type, reviewing.name)
+    if (result.success) {
       addToast('已恢复待审核', 'success')
     } else {
-      addToast('操作失败，请重试', 'error')
+      addToast(`操作失败：${result.error || '未知错误'}`, 'error')
+      return
     }
     closeReview()
     await refreshAll()
@@ -292,7 +247,7 @@ export const AssetReviewPage: FC = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
               {filteredAssets.map((asset) => (
                 <AssetCard
-                  key={`${asset.type}-${asset.refPath}`}
+                  key={`${asset.type}-${asset.name}-${asset.ts}`}
                   asset={asset}
                   onClick={() => openReview(asset)}
                 />
@@ -350,7 +305,7 @@ export const AssetReviewPage: FC = () => {
       >
         <div className="space-y-2">
           <div className="text-xs text-macos-text-secondary">
-            标记为「已驳回」后将保留内容与理由；重新编辑该资产会自动回到待审核，恢复待审后需重新审核（不可直接流转到审核通过）。
+            驳回将作用于最早进入队列的待审快照；正式位置不受影响，重新编辑会生成新的待审快照。
           </div>
           <Textarea
             value={rejectReason}
