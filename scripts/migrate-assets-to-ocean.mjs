@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // 资产迁移脚本：把项目根的资产目录迁入 .ocean/ 资产源区，并改写数据文件中的旧路径引用。
 // 用法：
-//   node scripts/migrate-assets-to-ocean.mjs [--root <项目根>] [--write]
+//   node scripts/migrate-assets-to-ocean.mjs [--root <项目根>] [--write] [--backfill] [--adopt]
 // 默认 dry-run（只打印将要执行的动作，不落盘）；加 --write 才真正执行。脚本幂等，可重复运行。
 //
 // 动作清单：
@@ -10,6 +10,11 @@
 //   3. copy   .pi/skills/* -> .ocean/skills/、.pi/agents/*.md -> .ocean/agents/（运行时目录保留，等首次同步对齐；同名冲突以源区为准跳过）
 //   4. rewrite 所有 flow.json（含实例快照）的 nodeRefPath：.nodes/ .workflows/ 前缀 -> .ocean/...
 //   5. rewrite md 文件（WORKFLOW.md 表格 / wiki-link / 反引号路径）中 .nodes/ .workflows/ .resources/ .knowledges/ 前缀 -> .ocean/...
+//   6. --backfill 存量回填：全部资产补 reviewStatus: validated + version: 1（知识按存量 status 映射）
+//   7. --adopt  审核队列收编：把正式位置中 reviewStatus 为 pending/rejected 的资产搬入
+//             .ocean/reviewQueue/<type>/<nameKey>/<ts>/ 快照目录（G1/G2）；正式位置仅保留过审版本。
+//             skill/workflow/codebase 整目录搬迁；task 仅搬 TASK.md（context/trace 留原处）；
+//             其余单文件搬迁（knowledge 含 domain 子目录，搬迁后清理空父目录）。
 
 import * as fs from 'node:fs'
 import * as path from 'node:path'
@@ -18,6 +23,7 @@ import { fileURLToPath } from 'node:url'
 const argv = process.argv.slice(2)
 const write = argv.includes('--write')
 const backfill = argv.includes('--backfill')
+const adopt = argv.includes('--adopt')
 const rootIdx = argv.indexOf('--root')
 const root = path.resolve(rootIdx >= 0 ? argv[rootIdx + 1] : process.cwd())
 
@@ -198,9 +204,106 @@ if (backfill) {
   }
 }
 
+// --- 7: --adopt 审核队列收编（G1/G2）：正式位置 pending/rejected 资产 → reviewQueue 快照 ---
+
+const ADOPT_TYPE_DIRS = ['skills', 'agents', 'nodes', 'resources', 'workflows', 'tasks', 'knowledges', 'codebases']
+const ADOPT_MAIN_FILE = { skills: 'SKILL.md', workflows: 'WORKFLOW.md', tasks: 'TASK.md', codebases: 'README.md' }
+// 整目录搬迁的类型；tasks 仅搬 TASK.md（G10 例外：context/trace 留原处）；其余单文件
+const ADOPT_DIR_MOVE = new Set(['skills', 'workflows', 'codebases'])
+
+function parseFmReviewStatus(text) {
+  const m = String(text).match(/^---\n([\s\S]*?)\n---/)
+  if (!m) return null
+  const rs = m[1].match(/^reviewStatus:\s*(\S+)/m)
+  if (!rs) return null
+  const v = rs[1].replace(/^['"]|['"]$/g, '')
+  return (v === 'pending' || v === 'rejected' || v === 'validated') ? v : null
+}
+
+// 时间戳（G2）：YYYYMMDDHHmmssSSS，同毫秒冲突追加零填充序号，保证唯一且字典序即时间序
+function adoptNextTs(baseDir) {
+  const d = new Date()
+  const p = (n, w = 2) => String(n).padStart(w, '0')
+  const ms = `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}${p(d.getMilliseconds(), 3)}`
+  if (!exists(path.join(baseDir, ms))) return ms
+  for (let i = 1; i <= 9999; i++) {
+    const cand = `${ms}-${p(i, 4)}`
+    if (!exists(path.join(baseDir, cand))) return cand
+  }
+  throw new Error('adopt 时间戳冲突无法消解（同一毫秒内超过 9999 个快照）')
+}
+
+function removeEmptyDirsUpTo(dir, stopDir) {
+  // 从 dir 向上删除空目录，直到 stopDir（不含）或遇到非空目录
+  let cur = dir
+  while (cur && cur !== stopDir && cur.length > stopDir.length) {
+    try {
+      const entries = fs.readdirSync(cur)
+      if (entries.length > 0) break
+      fs.rmdirSync(cur)
+    } catch { break }
+    cur = path.dirname(cur)
+  }
+}
+
+// 扫描正式位置，收集待 adopt 的资产
+function collectAdoptPlan() {
+  const plan = []
+  const oceanBase = path.join(root, '.ocean')
+
+  for (const typeDir of ADOPT_TYPE_DIRS) {
+    const base = path.join(oceanBase, typeDir)
+    if (!exists(base)) continue
+    const mainFile = ADOPT_MAIN_FILE[typeDir]
+
+    if (typeDir === 'knowledges') {
+      // 递归扫描（nameKey 允许含 '/'，如 ocean/功能设计）
+      const walk = (dir, rel) => {
+        for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+          if (e.name === '.DS_Store' || e.name === '.git') continue
+          const full = path.join(dir, e.name)
+          const relPath = rel ? `${rel}/${e.name}` : e.name
+          if (e.isDirectory()) { walk(full, relPath); continue }
+          if (!e.name.endsWith('.md')) continue
+          const status = parseFmReviewStatus(fs.readFileSync(full, 'utf-8'))
+          if (status !== 'pending' && status !== 'rejected') continue
+          plan.push({ typeDir, nameKey: relPath.replace(/\.md$/, ''), status, srcAbs: full, srcDir: path.dirname(full) })
+        }
+      }
+      walk(base, '')
+    } else if (mainFile) {
+      // 目录型资产（skills/workflows/tasks/codebases）
+      for (const e of fs.readdirSync(base, { withFileTypes: true })) {
+        if (!e.isDirectory() || e.name === '.DS_Store' || e.name === '.git') continue
+        const mainAbs = path.join(base, e.name, mainFile)
+        if (!exists(mainAbs)) continue
+        const status = parseFmReviewStatus(fs.readFileSync(mainAbs, 'utf-8'))
+        if (status !== 'pending' && status !== 'rejected') continue
+        plan.push({ typeDir, nameKey: e.name, status, srcAbs: mainAbs, srcDir: path.join(base, e.name) })
+      }
+    } else {
+      // 单文件型资产（agents/nodes/resources）
+      for (const e of fs.readdirSync(base, { withFileTypes: true })) {
+        if (!e.isFile() || !e.name.endsWith('.md') || e.name === '.DS_Store') continue
+        const full = path.join(base, e.name)
+        const status = parseFmReviewStatus(fs.readFileSync(full, 'utf-8'))
+        if (status !== 'pending' && status !== 'rejected') continue
+        plan.push({ typeDir, nameKey: e.name.replace(/\.md$/, ''), status, srcAbs: full, srcDir: base })
+      }
+    }
+  }
+  return plan
+}
+
+let adopted = 0
+let adoptPlan = []
+if (adopt) {
+  adoptPlan = collectAdoptPlan()
+}
+
 // --- 执行 ---
 log(`root: ${root}`)
-log(`mode: ${write ? 'WRITE（落盘）' : 'DRY-RUN（只打印，不落盘；加 --write 执行）'}${backfill ? ' + BACKFILL（回填 reviewStatus/version）' : ''}`)
+log(`mode: ${write ? 'WRITE（落盘）' : 'DRY-RUN（只打印，不落盘；加 --write 执行）'}${backfill ? ' + BACKFILL（回填 reviewStatus/version）' : ''}${adopt ? ' + ADOPT（收编 pending/rejected 资产入审核队列）' : ''}`)
 log('')
 
 let moved = 0, copied = 0, skipped = 0, kept = 0
@@ -250,8 +353,39 @@ for (const f of rewrites.markdown) {
   }
 }
 
+// --- adopt 执行（在迁移/回填/改写之后：操作对象是已在 .ocean/ 内的文件） ---
+for (const item of adoptPlan) {
+  const queueBase = path.join(root, '.ocean', 'reviewQueue', item.typeDir, item.nameKey)
+  const ts = adoptNextTs(queueBase)
+  const snapDir = path.join(queueBase, ts)
+  const isDirMove = ADOPT_DIR_MOVE.has(item.typeDir)
+  const dstDisplay = `.ocean/reviewQueue/${item.typeDir}/${item.nameKey}/${ts}`
+  log(`[ADOPT] ${item.typeDir}/${item.nameKey} (${item.status}) -> ${dstDisplay}`)
+  if (!write) { adopted++; continue }
+
+  fs.mkdirSync(queueBase, { recursive: true })
+  if (isDirMove) {
+    // skill/workflow/codebase：整目录搬迁
+    fs.renameSync(item.srcDir, snapDir)
+  } else if (item.typeDir === 'tasks') {
+    // task（G10 例外）：仅搬 TASK.md，context/trace 留原处，不删任务目录
+    fs.mkdirSync(snapDir, { recursive: true })
+    fs.renameSync(item.srcAbs, path.join(snapDir, 'TASK.md'))
+  } else {
+    // 单文件资产（agents/nodes/resources/knowledges）
+    fs.mkdirSync(snapDir, { recursive: true })
+    const fileName = path.basename(item.srcAbs)
+    fs.renameSync(item.srcAbs, path.join(snapDir, fileName))
+    // knowledge 含 domain 子目录：搬迁后清理空父目录
+    if (item.typeDir === 'knowledges') {
+      removeEmptyDirsUpTo(path.dirname(item.srcAbs), path.join(root, '.ocean', 'knowledges'))
+    }
+  }
+  adopted++
+}
+
 log('')
-log(`摘要: 待执行动作 ${actions.length} 条（move/copy/skip/keep），flow.json 改写 ${flowChanged} 个，md 改写 ${mdChanged} 个${backfill ? `，回填 ${backfilled} 个` : ''}`)
+log(`摘要: 待执行动作 ${actions.length} 条（move/copy/skip/keep），flow.json 改写 ${flowChanged} 个，md 改写 ${mdChanged} 个${backfill ? `，回填 ${backfilled} 个` : ''}${adopt ? `，收编 ${adopted} 个` : ''}`)
 if (write) {
   log(`落盘: moved=${moved} copied=${copied} skipped=${skipped} kept=${kept}, flowJson 写回 ${flowChanged}, md 写回 ${mdChanged}`)
 } else {
