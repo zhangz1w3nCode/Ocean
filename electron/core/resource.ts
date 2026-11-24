@@ -1,6 +1,10 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
-import { readReviewStatus, assertOperable } from './reviewStatus'
+// 暂存队列模型：正式位置只存过审版本；create/update 只写 reviewQueue 快照（G3）
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const review = require('./review.cjs')
+
+const TYPE = 'resource'
 
 export function dir(root: string): string {
   return path.join(root, '.ocean', 'resources')
@@ -12,53 +16,64 @@ export function list(root: string): string[] {
   return fs.readdirSync(d)
     .filter(f => f.endsWith('.md'))
     .map(f => f.replace(/\.md$/, ''))
-    .filter(name => readReviewStatus(path.join(d, `${name}.md`)) === 'validated')
     .sort()
 }
 
 export function read(root: string, name: string): string {
-  const filePath = path.join(dir(root), `${name}.md`)
-  assertOperable(readReviewStatus(filePath), `资源 ${name}`)
-  return fs.readFileSync(filePath, 'utf-8')
+  const ref = review.resolveRef(root, TYPE, name)
+  if (ref.error) throw new Error(ref.error)
+  return fs.readFileSync(review.resolveReadPath(root, ref.refPath), 'utf-8')
 }
 
 export function create(root: string, name: string, content: string, opts?: {
   type?: string
   description?: string
 }): void {
-  const d = dir(root)
-  const filePath = path.join(d, `${name}.md`)
-  if (fs.existsSync(filePath)) throw new Error(`资源已存在: ${name}`)
+  const ref = review.resolveRef(root, TYPE, name)
+  if (ref.error) throw new Error(ref.error)
+  if (fs.existsSync(review.resolveReadPath(root, ref.refPath))) throw new Error(`资源已存在: ${name}`)
   const type = opts?.type || 'rule'
   const id = `${name}-${Date.now()}`
   let fm = `---\nid: ${id}\ntype: ${type}\n`
   if (opts?.description) fm += `description: ${opts.description}\n`
-  fm += `reviewStatus: pending\nversion: 1\n`
+  fm += `reviewStatus: pending\n`
   fm += `---\n\n${content}\n`
-  fs.mkdirSync(d, { recursive: true })
-  fs.writeFileSync(filePath, fm, 'utf-8')
+  const snap = review.newSnapshotDir(root, TYPE, name)
+  if (snap.error) throw new Error(snap.error)
+  fs.writeFileSync(path.join(snap.dir, `${name}.md`), fm, 'utf-8')
 }
 
 export function update(root: string, name: string, content: string, opts?: {
   type?: string
   description?: string
 }): void {
-  const filePath = path.join(dir(root), `${name}.md`)
-  if (!fs.existsSync(filePath)) throw new Error(`资源不存在: ${name}`)
-  const raw = fs.readFileSync(filePath, 'utf-8')
+  const ref = review.resolveRef(root, TYPE, name)
+  if (ref.error) throw new Error(ref.error)
+  const formalPath = review.resolveReadPath(root, ref.refPath)
+  const draft = review.latestDraft(root, TYPE, name)
+  const basePath = draft ? draft.mainFile : formalPath
+  if (!fs.existsSync(basePath)) throw new Error(`资源不存在: ${name}`)
+  const raw = fs.readFileSync(basePath, 'utf-8')
   const { fields } = parseFrontmatter(raw)
-  assertOperable(fields.reviewStatus === 'validated' ? 'validated' : fields.reviewStatus === 'rejected' ? 'rejected' : 'pending', `资源 ${name}`)
   if (opts?.type) fields.type = opts.type
   if (opts?.description) fields.description = opts.description
   fields.reviewStatus = 'pending'
+  delete fields.rejectReason
+  delete fields.version
   const updated = buildFrontmatter(fields, content)
-  fs.writeFileSync(filePath, updated, 'utf-8')
+  const snap = review.newSnapshotDir(root, TYPE, name)
+  if (snap.error) throw new Error(snap.error)
+  fs.writeFileSync(path.join(snap.dir, `${name}.md`), updated, 'utf-8')
 }
 
 export function del(root: string, name: string): void {
-  const filePath = path.join(dir(root), `${name}.md`)
-  assertOperable(readReviewStatus(filePath), `资源 ${name}`)
+  const ref = review.resolveRef(root, TYPE, name)
+  if (ref.error) throw new Error(ref.error)
+  const filePath = review.resolveReadPath(root, ref.refPath)
   if (fs.existsSync(filePath)) fs.unlinkSync(filePath)
+  const c = review.commitFormalDeletion(root, ref.refPath)
+  if (!c.success) throw new Error(c.error || '提交删除失败')
+  review.discardSnapshots(root, TYPE, name)
 }
 
 // --- frontmatter helpers ---

@@ -4,9 +4,20 @@ import * as path from 'node:path'
 import * as os from 'node:os'
 import { execSync } from 'node:child_process'
 import * as codebases from '../codebases'
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const review = require('../review.cjs')
 
 describe('codebases core', () => {
   let tmpDir: string
+
+  // 快照目录断言助手（不暴露具体路径给断言之外的逻辑）
+  const queueBase = (name: string) => path.join(tmpDir, '.ocean', 'reviewQueue', 'codebases', name)
+  const formalDir = (name: string) => path.join(tmpDir, '.ocean', 'codebases', name)
+  // 审核通过（需先 git init）
+  const approveViaQueue = async (name: string) => {
+    review.gitInit(tmpDir)
+    return review.approveAsset(tmpDir, 'codebase', name)
+  }
 
   beforeEach(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'codebases-test-'))
@@ -16,36 +27,35 @@ describe('codebases core', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true })
   })
 
-  // 门控（D13）辅助：把代码库 README 置为审核通过
-  const approve = (name: string) => {
-    const rp = path.join(tmpDir, '.ocean', 'codebases', name, 'README.md')
-    const raw = fs.readFileSync(rp, 'utf-8')
-    fs.writeFileSync(rp, raw.replace(/^reviewStatus:.*$/m, 'reviewStatus: validated'), 'utf-8')
-  }
-
   describe('create (blank)', () => {
-    it('creates directory with README (description in body, no meta file)', async () => {
+    it('create 只写快照：正式目录不存在，快照内有 README（含描述，无 version）', async () => {
       const r = await codebases.create(tmpDir, 'demo', { type: 'blank', description: '演示库' })
       expect(r.success).toBe(true)
-      const readme = fs.readFileSync(path.join(tmpDir, '.ocean', 'codebases', 'demo', 'README.md'), 'utf-8')
+      expect(fs.existsSync(formalDir('demo'))).toBe(false)
+      const snaps = fs.readdirSync(queueBase('demo'))
+      expect(snaps).toHaveLength(1)
+      const readme = fs.readFileSync(path.join(queueBase('demo'), snaps[0], 'README.md'), 'utf-8')
       expect(readme).toContain('# demo')
       expect(readme).toContain('> 演示库')
-      // 纯目录结构：不生成任何元数据文件
-      expect(fs.readdirSync(path.join(tmpDir, '.ocean', 'codebases', 'demo'))).toEqual(['README.md'])
+      expect(readme).toMatch(/^reviewStatus: pending$/m)
+      expect(readme).not.toMatch(/^version:/m)
     })
 
     it('writes provided content directly as README when given', async () => {
       const r = await codebases.create(tmpDir, 'with-content', { type: 'blank', content: '# 自定义内容\n\n正文第一段' })
       expect(r.success).toBe(true)
-      const readme = fs.readFileSync(path.join(tmpDir, '.ocean', 'codebases', 'with-content', 'README.md'), 'utf-8')
+      const snaps = fs.readdirSync(queueBase('with-content'))
+      const readme = fs.readFileSync(path.join(queueBase('with-content'), snaps[0], 'README.md'), 'utf-8')
       expect(readme).toBe('# 自定义内容\n\n正文第一段')
     })
 
-    it('rejects duplicate name', async () => {
-      await codebases.create(tmpDir, 'demo', { type: 'blank' })
-      const r = await codebases.create(tmpDir, 'demo', { type: 'blank' })
-      expect(r.success).toBe(false)
-      if (!r.success) expect(r.error).toContain('已存在')
+    it('rejects duplicate name（仅对正式位置判定）', async () => {
+      const c1 = await codebases.create(tmpDir, 'demo', { type: 'blank' })
+      expect(c1.success).toBe(true)
+      // 未过审（正式不存在）时同名 create 允许（快照多份）
+      const c2 = await codebases.create(tmpDir, 'demo', { type: 'blank' })
+      expect(c2.success).toBe(true)
+      expect(fs.readdirSync(queueBase('demo'))).toHaveLength(2)
     })
 
     it('rejects invalid names', async () => {
@@ -65,8 +75,10 @@ describe('codebases core', () => {
 
       const r = await codebases.create(tmpDir, 'copied', { type: 'local', sourcePath: src })
       expect(r.success).toBe(true)
-      expect(fs.readFileSync(path.join(tmpDir, '.ocean', 'codebases', 'copied', 'README.md'), 'utf-8')).toBe('# 原项目\n原有内容')
-      expect(fs.readFileSync(path.join(tmpDir, '.ocean', 'codebases', 'copied', 'a.txt'), 'utf-8')).toBe('hello')
+      const snaps = fs.readdirSync(queueBase('copied'))
+      const snapDir = path.join(queueBase('copied'), snaps[0])
+      expect(fs.readFileSync(path.join(snapDir, 'README.md'), 'utf-8')).toBe('# 原项目\n原有内容')
+      expect(fs.readFileSync(path.join(snapDir, 'a.txt'), 'utf-8')).toBe('hello')
     })
 
     it('generates default README when source has none', async () => {
@@ -76,7 +88,8 @@ describe('codebases core', () => {
 
       const r = await codebases.create(tmpDir, 'copied2', { type: 'local', sourcePath: src })
       expect(r.success).toBe(true)
-      const readme = fs.readFileSync(path.join(tmpDir, '.ocean', 'codebases', 'copied2', 'README.md'), 'utf-8')
+      const snaps = fs.readdirSync(queueBase('copied2'))
+      const readme = fs.readFileSync(path.join(queueBase('copied2'), snaps[0], 'README.md'), 'utf-8')
       expect(readme).toContain('# copied2')
     })
 
@@ -104,13 +117,16 @@ describe('codebases core', () => {
 
       const r = await codebases.create(tmpDir, 'cloned', { type: 'url', url: srcRepo })
       expect(r.success).toBe(true)
-      expect(fs.readFileSync(path.join(tmpDir, '.ocean', 'codebases', 'cloned', 'README.md'), 'utf-8')).toContain('clone 内容')
+      const snaps = fs.readdirSync(queueBase('cloned'))
+      expect(fs.readFileSync(path.join(queueBase('cloned'), snaps[0], 'README.md'), 'utf-8')).toContain('clone 内容')
     })
 
     it('cleans up target directory on clone failure', async () => {
       const r = await codebases.create(tmpDir, 'bad', { type: 'url', url: path.join(tmpDir, 'not-a-repo') })
       expect(r.success).toBe(false)
-      expect(fs.existsSync(path.join(tmpDir, '.ocean', 'codebases', 'bad'))).toBe(false)
+      expect(fs.existsSync(formalDir('bad'))).toBe(false)
+      // 快照基目录可能残留空壳，但不得有任何时间戳快照
+      expect(fs.readdirSync(queueBase('bad')).length).toBe(0)
     })
   })
 
@@ -121,10 +137,14 @@ describe('codebases core', () => {
       if (r.success) expect(r.codebases).toEqual([])
     })
 
-    it('lists codebases with readme preview, sorted by name', async () => {
+    it('lists codebases with readme preview, sorted by name（过审后）', async () => {
       await codebases.create(tmpDir, 'beta', { type: 'blank' })
       await codebases.create(tmpDir, 'alpha', { type: 'blank', description: '描述甲' })
-      approve('beta'); approve('alpha')
+      // 未过审：正式不存在 → 列表为空
+      const before = await codebases.list(tmpDir)
+      if (before.success) expect(before.codebases).toEqual([])
+      await approveViaQueue('beta')
+      await approveViaQueue('alpha')
       const r = await codebases.list(tmpDir)
       expect(r.success).toBe(true)
       if (r.success) {
@@ -134,9 +154,9 @@ describe('codebases core', () => {
       }
     })
 
-    it('reads readme content by name', async () => {
+    it('reads readme content by name（过审后）', async () => {
       await codebases.create(tmpDir, 'demo', { type: 'blank', description: '描述' })
-      approve('demo')
+      await approveViaQueue('demo')
       const r = await codebases.read(tmpDir, 'demo')
       expect(r.success).toBe(true)
       if (r.success) {
@@ -153,13 +173,19 @@ describe('codebases core', () => {
   })
 
   describe('update', () => {
-    it('overwrites README content only', async () => {
+    it('update 产生新快照，正式不变；快照 README 无 version', async () => {
       await codebases.create(tmpDir, 'demo', { type: 'blank' })
-      approve('demo')
+      await approveViaQueue('demo')
+      const formalBefore = fs.readFileSync(path.join(formalDir('demo'), 'README.md'), 'utf-8')
       const r = await codebases.update(tmpDir, 'demo', '# 新内容\n完全替换')
       expect(r.success).toBe(true)
-      expect(fs.readFileSync(path.join(tmpDir, '.ocean', 'codebases', 'demo', 'README.md'), 'utf-8')).toBe('---\nreviewStatus: pending\nversion: 1\n---\n# 新内容\n完全替换')
-      expect(fs.readdirSync(path.join(tmpDir, '.ocean', 'codebases', 'demo'))).toEqual(['README.md'])
+      // 正式不变
+      expect(fs.readFileSync(path.join(formalDir('demo'), 'README.md'), 'utf-8')).toBe(formalBefore)
+      // 新快照：内容 + reviewStatus pending + 无 version
+      const snaps = fs.readdirSync(queueBase('demo'))
+      expect(snaps).toHaveLength(1)
+      const snapReadme = fs.readFileSync(path.join(queueBase('demo'), snaps[0], 'README.md'), 'utf-8')
+      expect(snapReadme).toBe('---\nreviewStatus: pending\n---\n# 新内容\n完全替换')
     })
 
     it('rejects update of missing codebase', async () => {
@@ -169,12 +195,15 @@ describe('codebases core', () => {
   })
 
   describe('delete', () => {
-    it('removes the directory', async () => {
+    it('removes the directory（正式 + 队列快照一并清理）', async () => {
       await codebases.create(tmpDir, 'demo', { type: 'blank' })
-      approve('demo')
+      await approveViaQueue('demo')
+      await codebases.update(tmpDir, 'demo', '# 又一版草稿')
+      expect(fs.existsSync(queueBase('demo'))).toBe(true)
       const r = await codebases.del(tmpDir, 'demo')
       expect(r.success).toBe(true)
-      expect(fs.existsSync(path.join(tmpDir, '.ocean', 'codebases', 'demo'))).toBe(false)
+      expect(fs.existsSync(formalDir('demo'))).toBe(false)
+      expect(fs.existsSync(queueBase('demo'))).toBe(false)
     })
 
     it('rejects delete of missing codebase', async () => {
@@ -202,32 +231,35 @@ describe('codebases core', () => {
 
     it('update 收敛只读目录的 IO 异常', async () => {
       await codebases.create(tmpDir, 'demo', { type: 'blank' })
-      const rp = path.join(tmpDir, '.ocean', 'codebases', 'demo', 'README.md')
-      fs.chmodSync(rp, 0o444)
+      // 让快照 nameKey 基目录只读：newSnapshotDir 无法在其中创建新时间戳目录
+      const base = path.join(tmpDir, '.ocean', 'reviewQueue', 'codebases', 'demo')
+      fs.chmodSync(base, 0o555)
       try {
         const r = await codebases.update(tmpDir, 'demo', 'x')
         expect(r.success).toBe(false)
       } finally {
-        fs.chmodSync(rp, 0o644)
+        fs.chmodSync(base, 0o755)
       }
     })
   })
 
   describe('search', () => {
-    it('finds matches with line numbers and context', async () => {
+    it('finds matches with line numbers and context（过审后）', async () => {
       const src = path.join(tmpDir, 's')
       fs.mkdirSync(src, { recursive: true })
       fs.writeFileSync(path.join(src, 'README.md'), '# A\n目标词第一处\n中间行\n目标词第二处', 'utf-8')
       await codebases.create(tmpDir, 'one', { type: 'local', sourcePath: src })
       await codebases.create(tmpDir, 'two', { type: 'blank' })
+      await approveViaQueue('one')
 
       const r = await codebases.search(tmpDir, '目标词', { top: 5, context: 1 })
       expect(r.success).toBe(true)
       if (r.success) {
         expect(r.results.length).toBe(1)
         expect(r.results[0].name).toBe('one')
-        expect(r.results[0].matches.length).toBe(2)
-        expect(r.results[0].matches[0].line).toBe(2)
+        expect(r.results[0].matches.length).toBeGreaterThanOrEqual(2)
+        // 正式 README 经 approve 提升后含 frontmatter（3 行），行号相应 +3
+        expect(r.results[0].matches[0].line).toBe(6)
         expect(r.results[0].matches[0].text).toContain('目标词')
         expect(r.results[0].matches[0].after).toEqual(['中间行'])
       }

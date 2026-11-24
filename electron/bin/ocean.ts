@@ -703,7 +703,7 @@ flag:
 存储: .codebases/{name}/（README.md）`)
       break
     case 'review':
-      out(`ocean review — 资产审核（与桌面端「审核」页同语义；CLI 侧查看 pending/rejected 资产的唯一通道）
+      out(`ocean review — 资产审核（与桌面端「审核」页同语义；CLI 侧查看审核队列的唯一通道）
 
 用法: ocean review <subcommand> <type> <name> [--flags...]
 
@@ -711,19 +711,21 @@ flag:
   knowledge 名称可带 domain 子目录，如: ocean review diff knowledge ocean/功能设计
 
 子命令:
-  list [--status pending|rejected] [--type <type>]   列出待审/已驳回资产
-  show <type> <name>                  查看资产全文（含 frontmatter）
-  diff <type> <name>                  待审版本 vs 上次审核通过版本（.ocean git HEAD）的正文 diff
-  approve <type> <name> [--message]   审核通过：version+1、托管时 git 提交；skill/agent 自动物化到运行时目录
-  reject <type> <name> --reason "…"   审核不通过（理由必填），标记 rejected
-  restore <type> <name>               已驳回 → 恢复待审
-  sync                                一键同步：全部 validated 的 skill/agent 物化到运行时目录（含删除对齐）
-  init                                开启 .ocean git 托管（diff/approve 提交的基线来源）
+  list [--status pending|rejected] [--type <type>]   列出审核队列（每资产一条，取最早一条）
+  show <type> <name>                  查看最早待审快照全文（含 frontmatter）
+  diff <type> <name>                  最早待审快照 vs 正式位置（已审核通过版本）的正文 diff
+  approve <type> <name> [--message]   审核通过：最早快照提升到正式位置，正式 version+1（新建为 1），
+                                       git 提交，删除该快照；skill/agent 自动物化到运行时目录
+  reject <type> <name> --reason "…"   审核不通过（理由必填）：最早待审快照标记 rejected 并留存
+  restore <type> <name>               最早已驳回快照 → 恢复待审
+  sync                                一键同步：全部正式 skill/agent 物化到运行时目录（含删除对齐）
+  init                                开启 .ocean git 托管（approve 提交所需）
 
 说明:
+  - 暂存队列模型：创建/编辑只进 .ocean/reviewQueue 时间戳快照，正式位置永远是最近过审版本
+  - 每个资产同时可有多份快照，审核按进入顺序（最早优先，FIFO）逐条处理
+  - 审核通过必须已开启 git 托管（review init）
   - 输出不包含磁盘路径，资产以 <type> <name> 寻址
-  - 全部类型的 diff 基线统一为 .ocean git HEAD（上次审核通过版本）；未开启托管或从未过审则输出全文并标注无基线
-  - 审核通过后 version 自增 1（新建资产 version 从 1 起）
   --json                       JSON 格式输出`)
       break
     case 'config':
@@ -1587,41 +1589,40 @@ function handleReview(root: string, args: ReturnType<typeof parseArgs>): void {
   const name = args.positional[1]
   const json = !!flags.json
   const statusLabel = (s: string) => (s === 'rejected' ? '已驳回' : s === 'validated' ? '已通过' : '待审核')
+  const iLabel = (isNew: boolean) => (isNew ? '新建' : '存量')
 
   switch (cmd) {
     case 'list': {
       const status = flags.status === 'rejected' ? 'rejected' : flags.status === 'pending' ? 'pending' : undefined
-      const r = review.listReviewAssets(root, status)
+      const r = review.listQueue(root, status)
       if (!r.success) throw new Error(r.error || '列举失败')
       let items = r.items
       if (typeof flags.type === 'string') items = items.filter((i: any) => i.type === flags.type)
-      const rows = items.map((i: any) => [i.type, i.name, statusLabel(i.reviewStatus), i.version == null ? '-' : String(i.version), (i.rejectReason || i.description || '').slice(0, 40)])
-      if (json) { printJson({ items: items.map((i: any) => ({ type: i.type, name: i.name, reviewStatus: i.reviewStatus, version: i.version, rejectReason: i.rejectReason || undefined, description: i.description || undefined })) }); break }
-      printDataTable(['类型', '名称', '状态', '版本', '理由/描述'], rows)
+      const rows = items.map((i: any) => [i.type, i.name, iLabel(i.isNew), statusLabel(i.reviewStatus), String(i.pendingCount), i.baseVersion == null ? '-' : String(i.baseVersion), (i.rejectReason || i.description || '').slice(0, 40)])
+      if (json) { printJson({ items: items.map((i: any) => ({ type: i.type, name: i.name, isNew: i.isNew, reviewStatus: i.reviewStatus, pendingCount: i.pendingCount, baseVersion: i.baseVersion, rejectReason: i.rejectReason || undefined, description: i.description || undefined })) }); break }
+      printDataTable(['类型', '名称', '资产', '状态', '待审快照', '正式版本', '理由/描述'], rows)
       break
     }
     case 'show': {
       if (!type || !name) throw new UsageError('用法: ocean review show <type> <name>')
-      const ref = review.resolveRef(root, type, name)
-      if (ref.error) throw new Error(ref.error)
-      const r = review.readAssetRaw(root, ref.refPath)
+      const r = review.readSnapshot(root, type, name)
       if (!r.success) throw new Error(r.error || '读取失败')
-      if (r.content == null) throw new Error(`${review.typeLabel(type)} ${name} 不存在`)
+      if (r.content == null) throw new Error(`${review.typeLabel(type)} ${name} 无待审核快照`)
       rawOut(r.content)
       break
     }
     case 'diff': {
       if (!type || !name) throw new UsageError('用法: ocean review diff <type> <name>')
-      const r = review.diffAgainstHead(root, type, name)
+      const r = review.diffAsset(root, type, name)
       if (!r.success) throw new Error(r.error || 'diff 失败')
-      if (json) { printJson({ type: r.type, name: r.name, reviewStatus: r.reviewStatus, version: r.version, hasBaseline: r.hasBaseline, changed: r.hasBaseline ? r.changed : undefined, note: r.note, diff: r.diff, content: r.hasBaseline ? undefined : r.content }); break }
-      out(`${review.typeLabel(r.type)} ${r.name}  状态=${statusLabel(r.reviewStatus)}  版本=${r.version ?? '-'}`)
-      if (!r.hasBaseline) {
-        out(`（${r.note}，以下为全文）`)
+      if (json) { printJson({ type: r.type, name: r.name, isNew: r.isNew, version: r.version, changed: r.isNew ? undefined : r.changed, diff: r.diff, content: r.isNew ? r.content : undefined }); break }
+      out(`${review.typeLabel(r.type)} ${r.name}  ${iLabel(r.isNew)}  正式版本=${r.version ?? '-'}`)
+      if (r.isNew) {
+        out('（新建资产，正式位置尚无过审版本，以下为快照全文）')
         rawOut(r.content)
         break
       }
-      if (!r.changed) { out('与上次审核通过版本无正文差异'); break }
+      if (!r.changed) { out('与已审核通过版本无正文差异'); break }
       rawOut(r.diff)
       break
     }
@@ -1639,20 +1640,16 @@ function handleReview(root: string, args: ReturnType<typeof parseArgs>): void {
       if (!type || !name) throw new UsageError('用法: ocean review reject <type> <name> --reason "…"')
       const reason = typeof flags.reason === 'string' ? flags.reason.trim() : ''
       if (!reason) throw new UsageError('审核不通过必须填写理由：--reason "…"')
-      const ref = review.resolveRef(root, type, name)
-      if (ref.error) throw new Error(ref.error)
-      const r = review.setReviewStatus(root, ref.refPath, 'rejected', false, reason)
+      const r = review.rejectAsset(root, type, name, reason)
       if (!r.success) throw new Error(r.error || '操作失败')
-      json ? printJson({ action: 'rejected', type: ref.type, name: ref.name }) : printAction('rejected', { type: ref.type, name: ref.name })
+      json ? printJson({ action: 'rejected', type, name }) : printAction('rejected', { type, name })
       break
     }
     case 'restore': {
       if (!type || !name) throw new UsageError('用法: ocean review restore <type> <name>')
-      const ref = review.resolveRef(root, type, name)
-      if (ref.error) throw new Error(ref.error)
-      const r = review.setReviewStatus(root, ref.refPath, 'pending', false)
+      const r = review.restoreAsset(root, type, name)
       if (!r.success) throw new Error(r.error || '操作失败')
-      json ? printJson({ action: 'restored', type: ref.type, name: ref.name }) : printAction('restored', { type: ref.type, name: ref.name })
+      json ? printJson({ action: 'restored', type, name }) : printAction('restored', { type, name })
       break
     }
     case 'sync': {

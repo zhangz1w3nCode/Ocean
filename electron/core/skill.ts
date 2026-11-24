@@ -1,6 +1,10 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
-import { readReviewStatus, assertOperable } from './reviewStatus'
+// 暂存队列模型：正式位置只存过审版本；create/update 只写 reviewQueue 快照（G3）
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const review = require('./review.cjs')
+
+const TYPE = 'skill'
 
 export function baseDir(root: string): string {
   return path.join(root, '.ocean', 'skills')
@@ -12,48 +16,60 @@ export function list(root: string): string[] {
   return fs.readdirSync(d, { withFileTypes: true })
     .filter(e => e.isDirectory())
     .map(e => e.name)
-    .filter(name => readReviewStatus(path.join(d, name, 'SKILL.md')) === 'validated')
     .sort()
 }
 
 export function read(root: string, name: string): string {
-  const filePath = path.join(baseDir(root), name, 'SKILL.md')
-  assertOperable(readReviewStatus(filePath), `技能 ${name}`)
-  return fs.readFileSync(filePath, 'utf-8')
+  // 读取一律正式位置（G7）：正式文件即最近过审版本
+  const ref = review.resolveRef(root, TYPE, name)
+  if (ref.error) throw new Error(ref.error)
+  return fs.readFileSync(review.resolveReadPath(root, ref.refPath), 'utf-8')
 }
 
 export function create(root: string, name: string, content: string, description: string): void {
   if (!description || !description.trim()) {
     throw new Error('技能描述为必填项（与 GUI ApplyModal.tsx:148 验证一致）')
   }
-  const d = baseDir(root)
-  const skillDir = path.join(d, name)
-  if (fs.existsSync(skillDir)) throw new Error(`技能目录已存在: ${name}`)
+  const ref = review.resolveRef(root, TYPE, name)
+  if (ref.error) throw new Error(ref.error)
+  if (fs.existsSync(review.resolveReadPath(root, ref.refPath))) throw new Error(`技能目录已存在: ${name}`)
 
-  fs.mkdirSync(skillDir, { recursive: true })
+  const snap = review.newSnapshotDir(root, TYPE, name)
+  if (snap.error) throw new Error(snap.error)
   for (const subDir of ['scripts', 'references', 'examples']) {
-    fs.mkdirSync(path.join(skillDir, subDir), { recursive: true })
+    fs.mkdirSync(path.join(snap.dir, subDir), { recursive: true })
   }
-
-  const skillMd = `---\nname: ${name}\ndescription: ${description}\nreviewStatus: pending\nversion: 1\n---\n${content}\n`
-  fs.writeFileSync(path.join(skillDir, 'SKILL.md'), skillMd, 'utf-8')
+  const skillMd = `---\nname: ${name}\ndescription: ${description}\nreviewStatus: pending\n---\n${content}\n`
+  fs.writeFileSync(path.join(snap.dir, 'SKILL.md'), skillMd, 'utf-8')
 }
 
 export function update(root: string, name: string, content: string): void {
-  const filePath = path.join(baseDir(root), name, 'SKILL.md')
-  if (!fs.existsSync(filePath)) throw new Error(`技能不存在: ${name}`)
-  const raw = fs.readFileSync(filePath, 'utf-8')
+  const ref = review.resolveRef(root, TYPE, name)
+  if (ref.error) throw new Error(ref.error)
+  const formalPath = review.resolveReadPath(root, ref.refPath)
+  const draft = review.latestDraft(root, TYPE, name)
+  const basePath = draft ? draft.mainFile : formalPath
+  if (!fs.existsSync(basePath)) throw new Error(`技能不存在: ${name}`)
+  const raw = fs.readFileSync(basePath, 'utf-8')
   const { fields } = parseFrontmatter(raw)
-  assertOperable(fields.reviewStatus === 'validated' ? 'validated' : fields.reviewStatus === 'rejected' ? 'rejected' : 'pending', `技能 ${name}`)
   fields.reviewStatus = 'pending'
+  delete fields.rejectReason
+  delete fields.version
+
+  const snap = review.newSnapshotDir(root, TYPE, name)
+  if (snap.error) throw new Error(snap.error)
   const updated = buildFrontmatter(fields, content)
-  fs.writeFileSync(filePath, updated, 'utf-8')
+  fs.writeFileSync(path.join(snap.dir, 'SKILL.md'), updated, 'utf-8')
 }
 
 export function del(root: string, name: string): void {
-  const skillDir = path.join(baseDir(root), name)
-  assertOperable(readReviewStatus(path.join(skillDir, 'SKILL.md')), `技能 ${name}`)
+  const ref = review.resolveRef(root, TYPE, name)
+  if (ref.error) throw new Error(ref.error)
+  const skillDir = review.resolveReadPath(root, `skills/${name}`)
   if (fs.existsSync(skillDir)) fs.rmSync(skillDir, { recursive: true, force: true })
+  const c = review.commitFormalDeletion(root, `skills/${name}`)
+  if (!c.success) throw new Error(c.error || '提交删除失败')
+  review.discardSnapshots(root, TYPE, name)
 }
 
 // --- frontmatter helpers ---

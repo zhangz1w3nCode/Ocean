@@ -1,6 +1,8 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
-import { readReviewStatus, assertOperable } from './reviewStatus'
+// 暂存队列模型：正式位置只存过审版本；create/update 只写 reviewQueue 快照（G3）
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const review = require('./review.cjs')
 import { spawn } from 'node:child_process'
 
 export type CodebaseSource = 'url' | 'blank' | 'local'
@@ -59,7 +61,7 @@ function ensureDir(root: string): void {
 
 // 空项目或无 README 的克隆/复制目标生成默认 README；描述写入正文
 function defaultReadme(name: string, description?: string): string {
-  const lines = ['---', 'reviewStatus: pending', 'version: 1', '---', '', `# ${name}`, '']
+  const lines = ['---', 'reviewStatus: pending', '---', '', `# ${name}`, '']
   if (description && description.trim()) {
     lines.push(`> ${description.trim()}`, '')
   }
@@ -78,14 +80,19 @@ function readmeReviewStatus(rp: string): 'pending' | 'validated' {
   }
 }
 
-// 更新 README 时确保 frontmatter 带有 reviewStatus: pending（缺失则注入，已有则重置——更新即回未通过）
+// 更新 README 时确保 frontmatter 带有 reviewStatus: pending（快照不写 version/rejectReason）
 function ensureReadmeReviewStatusPending(content: string): string {
   const m = content.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/)
   if (m) {
-    const fm = m[1].replace(/^reviewStatus:.*$/m, '').trimEnd()
+    let fm = m[1]
+      .replace(/^reviewStatus:.*$/m, '')
+      .replace(/^rejectReason:.*$/m, '')
+      .replace(/^version:.*$/m, '')
+      .replace(/\n{2,}/g, '\n')
+      .trim()
     return `---\n${fm ? fm + '\n' : ''}reviewStatus: pending\n---\n${m[2]}`
   }
-  return `---\nreviewStatus: pending\nversion: 1\n---\n${content}`
+  return `---\nreviewStatus: pending\n---\n${content}`
 }
 
 // IO 异常收敛统一契约：任何 fs/spawn 异常都转为 { success: false, error }，不向调用方抛出
@@ -132,7 +139,7 @@ export async function list(root: string): Promise<CodebaseResult<{ codebases: Co
       reviewStatus = readmeReviewStatus(rp)
       preview = raw.replace(/^---\n[\s\S]*?\n---\n?/, '').replace(/[#*`>]/g, '').trim().slice(0, PREVIEW_LENGTH)
     }
-    if (reviewStatus === 'validated') codebases.push({ name: entry.name, preview, reviewStatus })
+    codebases.push({ name: entry.name, preview, reviewStatus })
   }
   codebases.sort((a, b) => a.name.localeCompare(b.name))
     return { success: true, codebases }
@@ -146,11 +153,6 @@ export async function read(root: string, name: string): Promise<CodebaseResult<{
   if (!fs.existsSync(cd)) return { success: false, error: `代码库不存在: ${name}` }
   const rp = readmePath(root, name)
   if (!fs.existsSync(rp)) return { success: false, error: `代码库缺少 README.md: ${name}` }
-    try {
-      assertOperable(readReviewStatus(rp), `代码库 ${name}`)
-    } catch (e: any) {
-      return { success: false, error: e.message }
-    }
     const content = fs.readFileSync(rp, 'utf-8')
     return { success: true, name, content }
   })
@@ -160,8 +162,11 @@ export async function create(root: string, name: string, opts: CreateCodebaseOpt
   return guard<{ name: string }>(async (): Promise<CodebaseResult<{ name: string }>> => {
   if (!validName(name)) return { success: false, error: `非法的代码库名称: ${name ?? ''}` }
   ensureDir(root)
-  const target = codebaseDir(root, name)
-  if (fs.existsSync(target)) return { success: false, error: `代码库已存在: ${name}` }
+  // create 写快照（G3）；重名仅对正式位置判定（快照可有多份草稿）
+  if (fs.existsSync(codebaseDir(root, name))) return { success: false, error: `代码库已存在: ${name}` }
+  const snap = review.newSnapshotDir(root, 'codebase', name)
+  if (snap.error) return { success: false, error: snap.error }
+  const target = snap.dir
 
   const description = (opts.description || '').trim()
 
@@ -173,8 +178,8 @@ export async function create(root: string, name: string, opts: CreateCodebaseOpt
       if (fs.existsSync(target)) fs.rmSync(target, { recursive: true, force: true })
       return { success: false, error: `git clone 失败: ${r.message}` }
     }
-    if (!fs.existsSync(readmePath(root, name))) {
-      fs.writeFileSync(readmePath(root, name), defaultReadme(name, description), 'utf-8')
+    if (!fs.existsSync(path.join(target, README_FILE))) {
+      fs.writeFileSync(path.join(target, README_FILE), defaultReadme(name, description), 'utf-8')
     }
   } else if (opts.type === 'local') {
     const sourcePath = (opts.sourcePath || '').trim()
@@ -192,13 +197,13 @@ export async function create(root: string, name: string, opts: CreateCodebaseOpt
       if (fs.existsSync(target)) fs.rmSync(target, { recursive: true, force: true })
       return { success: false, error: `复制失败: ${e.message}` }
     }
-    if (!fs.existsSync(readmePath(root, name))) {
-      fs.writeFileSync(readmePath(root, name), defaultReadme(name, description), 'utf-8')
+    if (!fs.existsSync(path.join(target, README_FILE))) {
+      fs.writeFileSync(path.join(target, README_FILE), defaultReadme(name, description), 'utf-8')
     }
   } else {
     fs.mkdirSync(target, { recursive: true })
     // 空项目：content 直接作为 README 内容；未提供则生成默认模板
-    fs.writeFileSync(readmePath(root, name), (opts.content ?? defaultReadme(name, description)), 'utf-8')
+    fs.writeFileSync(path.join(target, README_FILE), (opts.content ?? defaultReadme(name, description)), 'utf-8')
   }
 
     return { success: true, name }
@@ -208,11 +213,14 @@ export async function create(root: string, name: string, opts: CreateCodebaseOpt
 export async function update(root: string, name: string, content: string): Promise<CodebaseResult<{ name: string }>> {
   return guard<{ name: string }>(async () => {
   if (!validName(name)) return { success: false, error: `非法的代码库名称: ${name}` }
-  const rp = readmePath(root, name)
-  if (!fs.existsSync(rp)) return { success: false, error: `代码库不存在: ${name}` }
+  const formal = readmePath(root, name)
+  const draft = review.latestDraft(root, 'codebase', name)
+  const basePath = draft ? path.join(draft.dir, README_FILE) : formal
+  if (!fs.existsSync(basePath)) return { success: false, error: `代码库不存在: ${name}` }
   if (typeof content !== 'string') return { success: false, error: 'README 内容必须是字符串' }
-  assertOperable(readReviewStatus(rp), `代码库 ${name}`)
-  fs.writeFileSync(rp, ensureReadmeReviewStatusPending(content), 'utf-8')
+  const snap = review.newSnapshotDir(root, 'codebase', name)
+  if (snap.error) return { success: false, error: snap.error }
+  fs.writeFileSync(path.join(snap.dir, README_FILE), ensureReadmeReviewStatusPending(content), 'utf-8')
   return { success: true, name }
   })
 }
@@ -222,8 +230,10 @@ export async function del(root: string, name: string): Promise<CodebaseResult<{ 
   if (!validName(name)) return { success: false, error: `非法的代码库名称: ${name}` }
   const target = codebaseDir(root, name)
   if (!fs.existsSync(target)) return { success: false, error: `代码库不存在: ${name}` }
-  assertOperable(readReviewStatus(readmePath(root, name)), `代码库 ${name}`)
   fs.rmSync(target, { recursive: true, force: true })
+  const c = review.commitFormalDeletion(root, `codebases/${name}`)
+  if (!c.success) return { success: false, error: c.error || '提交删除失败' }
+  review.discardSnapshots(root, 'codebase', name)
   return { success: true, name }
   })
 }

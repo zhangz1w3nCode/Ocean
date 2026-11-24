@@ -4,7 +4,7 @@
  */
 
 
-export const generateWorkflowMdContent = (workflow: any, nodes: any[], edges: any[], meta?: { reviewStatus?: string; version?: number }): string => {
+export const generateWorkflowMdContent = (workflow: any, nodes: any[], edges: any[], meta?: { reviewStatus?: string }): string => {
   // 构建节点和边的映射关系
   const nodeMap = new Map<string, any>()
   const outgoingEdges = new Map<string, any[]>()
@@ -186,7 +186,6 @@ export const generateWorkflowMdContent = (workflow: any, nodes: any[], edges: an
     lines.push(`description: ${workflow.description}`)
   }
   lines.push(`reviewStatus: ${meta?.reviewStatus || 'pending'}`)
-  lines.push(`version: ${meta?.version != null ? meta.version : 1}`)
   lines.push('---')
   lines.push('')
 

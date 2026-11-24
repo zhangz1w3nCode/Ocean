@@ -1,6 +1,8 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
-import { readReviewStatus, assertOperable } from './reviewStatus'
+// 暂存队列模型：正式位置只存过审版本；图编辑命令操作 reviewQueue 快照（G3/G7）
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const review = require('./review.cjs')
 import dagre from '@dagrejs/dagre'
 import { generateWorkflowMd } from './workflow-md-generator'
 
@@ -9,6 +11,30 @@ import { generateWorkflowMd } from './workflow-md-generator'
 function workflowDir(root: string, name: string): string {
   return path.join(root, '.ocean', 'workflows', name)
 }
+
+// 编辑目标目录（G3）：有快照复用最新一份（图编辑命令连续修改不新建），无快照且正式存在则新建快照
+function editDir(root: string, name: string): string {
+  const t = review.resolveEditTarget(root, 'workflow', name)
+  if (t.error) throw new Error(t.error)
+  return t.dir
+}
+
+// 编辑目标目录，但要求资产存在（正式或快照至少其一），否则抛「工作流不存在」
+function editDirOfExisting(root: string, name: string): string {
+  const t = review.resolveEditTarget(root, 'workflow', name)
+  if (t.error) throw new Error(t.error)
+  if (!t.formalExists && t.isNewSnapshot) {
+    // resolveEditTarget 刚建了空快照：既无正式也无既有快照 → 不存在，清掉刚建的空目录
+    try { fs.rmdirSync(t.dir) } catch { /* 非空则保留 */ }
+    throw new Error(`工作流不存在: ${name}`)
+  }
+  return t.dir
+}
+
+// 快照内的 flow.json / WORKFLOW.md / nodes/ 路径
+function snapFlowJsonPath(dir: string): string { return path.join(dir, 'meta-data', 'flow.json') }
+function snapMdPath(dir: string): string { return path.join(dir, 'WORKFLOW.md') }
+function snapNodesDir(dir: string): string { return path.join(dir, 'nodes') }
 
 function flowJsonPath(root: string, name: string): string {
   return path.join(workflowDir(root, name), 'meta-data', 'flow.json')
@@ -25,13 +51,23 @@ function localNodesDir(root: string, name: string): string {
 // --- flow.json read/write ---
 
 function readFlowJson(root: string, name: string): any {
+  // 图编辑读取：优先最新快照，否则正式
+  const p = flowJsonPath(root, name)
+  const t = review.latestDraft(root, 'workflow', name)
+  const readFrom = t ? snapFlowJsonPath(t.dir) : p
+  if (!fs.existsSync(readFrom)) throw new Error(`工作流不存在: ${name}`)
+  return JSON.parse(fs.readFileSync(readFrom, 'utf-8'))
+}
+
+// 正式 flow.json 读取（消费侧：doctor / readFlow / rename）
+function readFormalFlowJson(root: string, name: string): any {
   const p = flowJsonPath(root, name)
   if (!fs.existsSync(p)) throw new Error(`工作流不存在: ${name}`)
   return JSON.parse(fs.readFileSync(p, 'utf-8'))
 }
 
-function writeFlowJson(root: string, name: string, flow: any): void {
-  const p = flowJsonPath(root, name)
+function writeFlowJsonTo(dir: string, flow: any): void {
+  const p = snapFlowJsonPath(dir)
   fs.mkdirSync(path.dirname(p), { recursive: true })
   fs.writeFileSync(p, JSON.stringify(flow, null, 2), 'utf-8')
 }
@@ -39,9 +75,7 @@ function writeFlowJson(root: string, name: string, flow: any): void {
 // --- workflow folder CRUD ---
 
 export function create(root: string, name: string): void {
-  const dir = workflowDir(root, name)
-  if (fs.existsSync(dir)) throw new Error(`工作流已存在: ${name}`)
-  fs.mkdirSync(path.join(dir, 'meta-data'), { recursive: true })
+  if (fs.existsSync(workflowDir(root, name))) throw new Error(`工作流已存在: ${name}`)
   const flow = {
     name,
     description: '',
@@ -54,13 +88,18 @@ export function create(root: string, name: string): void {
     ],
     edges: [],
   }
-  writeFlowJson(root, name, flow)
+  const dir = editDir(root, name)
+  writeFlowJsonTo(dir, flow)
+  // 主文件（WORKFLOW.md）同步生成：快照识别与审核列表都依赖主文件存在
+  fs.writeFileSync(snapMdPath(dir), generateWorkflowMd(flow, flow.nodes, flow.edges), 'utf-8')
 }
 
 export function del(root: string, name: string): void {
   const dir = workflowDir(root, name)
-  assertOperable(readReviewStatus(workflowMdPath(root, name)), `工作流 ${name}`)
   if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true })
+  const c = review.commitFormalDeletion(root, `workflows/${name}`)
+  if (!c.success) throw new Error(c.error || '提交删除失败')
+  review.discardSnapshots(root, 'workflow', name)
 }
 
 export function rename(root: string, oldName: string, newName: string): void {
@@ -69,21 +108,25 @@ export function rename(root: string, oldName: string, newName: string): void {
   if (!fs.existsSync(oldDir)) throw new Error(`工作流不存在: ${oldName}`)
   if (fs.existsSync(newDir)) throw new Error(`工作流已存在: ${newName}`)
   fs.renameSync(oldDir, newDir)
-  // update name in flow.json
-  const flow = readFlowJson(root, newName)
+  // update name in flow.json（正式）
+  const flow = readFormalFlowJson(root, newName)
   flow.name = newName
-  writeFlowJson(root, newName, flow)
+  fs.mkdirSync(path.dirname(flowJsonPath(root, newName)), { recursive: true })
+  fs.writeFileSync(flowJsonPath(root, newName), JSON.stringify(flow, null, 2), 'utf-8')
+  // 队列子树同步改名（草稿不丢）
+  const qOld = path.join(review.queueDir(root), 'workflows', oldName)
+  const qNew = path.join(review.queueDir(root), 'workflows', newName)
+  if (fs.existsSync(qOld) && !fs.existsSync(qNew)) fs.renameSync(qOld, qNew)
 }
 
 export function readWorkflowMd(root: string, name: string): string {
   const p = workflowMdPath(root, name)
   if (!fs.existsSync(p)) throw new Error(`WORKFLOW.md 不存在: ${name}`)
-  assertOperable(readReviewStatus(p), `工作流 ${name}`)
   return fs.readFileSync(p, 'utf-8')
 }
 
 export function readFlow(root: string, name: string): string {
-  return JSON.stringify(readFlowJson(root, name), null, 2)
+  return JSON.stringify(readFormalFlowJson(root, name), null, 2)
 }
 
 // --- graph editing ---
@@ -95,6 +138,7 @@ export function addNode(root: string, wfName: string, type: string, label: strin
   description?: string
 }): string {
   const flow = readFlowJson(root, wfName)
+  const dir = editDirOfExisting(root, wfName)
   const id = `${type}-${Date.now()}`
 
   let data: any
@@ -120,12 +164,13 @@ export function addNode(root: string, wfName: string, type: string, label: strin
   const lastX = flow.nodes.reduce((max: number, n: any) => Math.max(max, n.position?.x || 0), 0)
   const node = { id, type, position: { x: lastX + 280, y: 250 }, data }
   flow.nodes.push(node)
-  writeFlowJson(root, wfName, flow)
+  writeFlowJsonTo(dir, flow)
   return id
 }
 
 export function connect(root: string, wfName: string, fromId: string, toId: string, branchName?: string): string {
   const flow = readFlowJson(root, wfName)
+  const dir = editDirOfExisting(root, wfName)
   const fromNode = flow.nodes.find((n: any) => n.id === fromId)
   const toNode = flow.nodes.find((n: any) => n.id === toId)
   if (!fromNode) throw new Error(`节点不存在: ${fromId}`)
@@ -144,12 +189,13 @@ export function connect(root: string, wfName: string, fromId: string, toId: stri
   }
 
   flow.edges.push(edge)
-  writeFlowJson(root, wfName, flow)
+  writeFlowJsonTo(dir, flow)
   return edgeId
 }
 
 export function addBranch(root: string, wfName: string, nodeId: string, name: string, description?: string): string {
   const flow = readFlowJson(root, wfName)
+  const dir = editDirOfExisting(root, wfName)
   const node = flow.nodes.find((n: any) => n.id === nodeId)
   if (!node) throw new Error(`节点不存在: ${nodeId}`)
   if (node.type !== 'decision') throw new Error(`节点不是 decision 类型: ${nodeId}`)
@@ -176,20 +222,22 @@ export function addBranch(root: string, wfName: string, nodeId: string, name: st
     }
   }
 
-  writeFlowJson(root, wfName, flow)
+  writeFlowJsonTo(dir, flow)
   return branchId
 }
 
 export function removeNode(root: string, wfName: string, nodeId: string): void {
   const flow = readFlowJson(root, wfName)
+  const dir = editDirOfExisting(root, wfName)
   flow.nodes = flow.nodes.filter((n: any) => n.id !== nodeId)
   // delete associated edges (与 GUI flowEditorStore.ts:124-128 一致)
   flow.edges = flow.edges.filter((e: any) => e.source !== nodeId && e.target !== nodeId)
-  writeFlowJson(root, wfName, flow)
+  writeFlowJsonTo(dir, flow)
 }
 
 export function disconnect(root: string, wfName: string, fromId: string, toId: string, branchName?: string): void {
   const flow = readFlowJson(root, wfName)
+  const dir = editDirOfExisting(root, wfName)
   flow.edges = flow.edges.filter((e: any) => {
     if (e.source !== fromId || e.target !== toId) return true
     if (branchName) {
@@ -203,7 +251,7 @@ export function disconnect(root: string, wfName: string, fromId: string, toId: s
     }
     return false // delete matching edge
   })
-  writeFlowJson(root, wfName, flow)
+  writeFlowJsonTo(dir, flow)
 }
 
 // --- list operations ---
@@ -229,7 +277,8 @@ export function listEdges(root: string, wfName: string): string {
 // --- generate WORKFLOW.md ---
 
 export function generate(root: string, wfName: string): void {
-  assertOperable(readReviewStatus(workflowMdPath(root, wfName)), `工作流 ${wfName}`)
+  // 生成 = 一次保存：读取最新快照（否则正式）的 flow，写入新快照
+  const prevDraft = review.latestDraft(root, 'workflow', wfName)
   const flow = readFlowJson(root, wfName)
 
   // dagre auto-layout (dagre bundled by esbuild, see build:electron)
@@ -257,8 +306,16 @@ export function generate(root: string, wfName: string): void {
     }
   }
 
+  // 新快照：先按正式基底建立（newSnapshotDir），若此前有更新的草稿快照则以其为基底覆盖（局部节点等草稿文件不丢）
+  const dir = review.newSnapshotDir(root, 'workflow', wfName)
+  if (dir.error) throw new Error(dir.error)
+  if (prevDraft && prevDraft.dir !== dir.dir) {
+    fs.rmSync(dir.dir, { recursive: true, force: true })
+    fs.cpSync(prevDraft.dir, dir.dir, { recursive: true })
+  }
+
   // save local nodes (与 GUI 保存一致)
-  const lnd = localNodesDir(root, wfName)
+  const lnd = snapNodesDir(dir.dir)
   for (const node of flow.nodes) {
     if (node.type === 'local' && node.data?.localNodeName && node.data?.content) {
       fs.mkdirSync(lnd, { recursive: true })
@@ -266,20 +323,13 @@ export function generate(root: string, wfName: string): void {
     }
   }
 
-  // generate WORKFLOW.md（重生成视为更新：reviewStatus 回 pending；version 跨编辑保留，由审核动作递增）
+  // generate WORKFLOW.md（快照 frontmatter 只写 reviewStatus，version 由审核通过时在正式文件维护）
   if (!flow.name) flow.name = wfName
-  let existingVersion: number | undefined
-  const mdPath = workflowMdPath(root, wfName)
-  if (fs.existsSync(mdPath)) {
-    const fmMatch = fs.readFileSync(mdPath, 'utf-8').match(/^---\n([\s\S]*?)\n---/)
-    const vm = fmMatch ? fmMatch[1].match(/^version: ?(\d+)/m) : null
-    if (vm) existingVersion = parseInt(vm[1], 10)
-  }
-  const md = generateWorkflowMd(flow, flow.nodes, flow.edges, { version: existingVersion })
-  fs.writeFileSync(mdPath, md, 'utf-8')
+  const md = generateWorkflowMd(flow, flow.nodes, flow.edges)
+  fs.writeFileSync(snapMdPath(dir.dir), md, 'utf-8')
 
-  // write cleaned flow.json back
-  writeFlowJson(root, wfName, flow)
+  // write cleaned flow.json back（快照内）
+  writeFlowJsonTo(dir.dir, flow)
 }
 
 // --- doctor (11 checks, ported from GUI validateWorkflow + CLI extensions) ---
@@ -446,7 +496,8 @@ export function doctor(root: string, wfName: string, json: boolean = false): str
 // --- local node CRUD ---
 
 export function listLocalNodes(root: string, wfName: string): string[] {
-  const d = localNodesDir(root, wfName)
+  const t = review.resolveEditTarget(root, 'workflow', wfName)
+  const d = t.error ? localNodesDir(root, wfName) : snapNodesDir(t.dir)
   if (!fs.existsSync(d)) return []
   return fs.readdirSync(d)
     .filter(f => f.endsWith('.md'))
@@ -455,12 +506,14 @@ export function listLocalNodes(root: string, wfName: string): string[] {
 }
 
 export function readLocalNode(root: string, wfName: string, nodeName: string): string {
-  const p = path.join(localNodesDir(root, wfName), `${nodeName}.md`)
+  const t = review.resolveEditTarget(root, 'workflow', wfName)
+  const d = t.error ? localNodesDir(root, wfName) : snapNodesDir(t.dir)
+  const p = path.join(d, `${nodeName}.md`)
   return fs.readFileSync(p, 'utf-8')
 }
 
 export function createLocalNode(root: string, wfName: string, nodeName: string, content: string): void {
-  const d = localNodesDir(root, wfName)
+  const d = snapNodesDir(editDirOfExisting(root, wfName))
   const p = path.join(d, `${nodeName}.md`)
   if (fs.existsSync(p)) throw new Error(`局部节点已存在: ${nodeName}`)
   fs.mkdirSync(d, { recursive: true })
@@ -468,7 +521,7 @@ export function createLocalNode(root: string, wfName: string, nodeName: string, 
 }
 
 export function delLocalNode(root: string, wfName: string, nodeName: string): void {
-  const p = path.join(localNodesDir(root, wfName), `${nodeName}.md`)
+  const p = path.join(snapNodesDir(editDirOfExisting(root, wfName)), `${nodeName}.md`)
   if (fs.existsSync(p)) fs.unlinkSync(p)
 }
 

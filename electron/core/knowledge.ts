@@ -1,6 +1,8 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
-import { readReviewStatus, assertOperable } from './reviewStatus'
+// 暂存队列模型：正式位置只存过审版本；create/update 只写 reviewQueue 快照（G3）
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const review = require('./review.cjs')
 
 const EXCLUDED_DIRS = new Set(['.git', '.svn', '.hg', '.DS_Store', 'node_modules'])
 
@@ -13,8 +15,7 @@ export function list(root: string): string[] {
   if (!fs.existsSync(d)) return []
   const result: string[] = []
   scanDir(d, d, result)
-  // 门控（D13）：仅列出审核通过的知识（兼容旧 status 字段）
-  return result.filter(rel => readReviewStatus(path.join(d, rel.endsWith('.md') ? rel : `${rel}.md`), true) === 'validated').sort()
+  return result.sort()
 }
 
 function scanDir(dir: string, baseDir: string, result: string[]): void {
@@ -33,7 +34,6 @@ function scanDir(dir: string, baseDir: string, result: string[]): void {
 
 export function read(root: string, relPath: string): string {
   const filePath = path.join(dir(root), relPath.endsWith('.md') ? relPath : `${relPath}.md`)
-  assertOperable(readReviewStatus(filePath, true), `知识 ${relPath}`)
   return fs.readFileSync(filePath, 'utf-8')
 }
 
@@ -53,27 +53,27 @@ export function create(root: string, relPath: string, content: string, opts?: {
   if (opts?.tags && opts.tags.length > 0) {
     fm += `tags: [${opts.tags.join(', ')}]\n`
   }
-  // 新建知识默认待审核
-  fm += `reviewStatus: pending\nversion: 1\n`
+  // 新建知识默认待审核（快照不写 version，由审核通过时在正式文件维护）
+  fm += `reviewStatus: pending\n`
   fm += `---\n\n${content}\n`
-  fs.mkdirSync(path.dirname(filePath), { recursive: true })
-  fs.writeFileSync(filePath, fm, 'utf-8')
+  const nameKey = path.relative(d, filePath).replace(/\.md$/, '')
+  const snap = review.newSnapshotDir(root, 'knowledge', nameKey)
+  if (snap.error) throw new Error(snap.error)
+  fs.writeFileSync(path.join(snap.dir, `${name}.md`), fm, 'utf-8')
 }
 
 export function update(root: string, relPath: string, content: string, opts?: {
   summary?: string
   tags?: string[]
 }): void {
-  const filePath = path.join(dir(root), relPath.endsWith('.md') ? relPath : `${relPath}.md`)
-  if (!fs.existsSync(filePath)) throw new Error(`知识不存在: ${relPath}`)
-  const raw = fs.readFileSync(filePath, 'utf-8')
+  const d = dir(root)
+  const filePath = path.join(d, relPath.endsWith('.md') ? relPath : `${relPath}.md`)
+  const nameKey = path.relative(d, filePath).replace(/\.md$/, '')
+  const draft = review.latestDraft(root, 'knowledge', nameKey)
+  const basePath = draft ? draft.mainFile : filePath
+  if (!fs.existsSync(basePath)) throw new Error(`知识不存在: ${relPath}`)
+  const raw = fs.readFileSync(basePath, 'utf-8')
   const { fields } = parseFrontmatter(raw)
-  assertOperable(
-    fields.reviewStatus === 'validated' || fields.status === 'validated'
-      ? 'validated'
-      : fields.reviewStatus === 'rejected' ? 'rejected' : 'pending',
-    `知识 ${relPath}`,
-  )
   if (opts?.summary !== undefined) {
     if (opts.summary) {
       fields.summary = opts.summary
@@ -90,23 +90,31 @@ export function update(root: string, relPath: string, content: string, opts?: {
       delete fields.tags
     }
   }
-  // 更新后回退为待审核
+  // 更新后回退为待审核（快照不写 version，删除驳回理由）
   fields.reviewStatus = 'pending'
+  delete fields.rejectReason
+  delete fields.version
   // domain 字段与文件实际位置保持一致（兼容无 domain 字段的历史知识）
-  const fileDomain = path.dirname(path.relative(dir(root), filePath))
+  const fileDomain = path.dirname(path.relative(d, filePath))
   if (fileDomain !== '.') {
     fields.domain = fileDomain
   } else {
     delete fields.domain
   }
   const updated = buildFrontmatter(fields, content)
-  fs.writeFileSync(filePath, updated, 'utf-8')
+  const snap = review.newSnapshotDir(root, 'knowledge', nameKey)
+  if (snap.error) throw new Error(snap.error)
+  fs.writeFileSync(path.join(snap.dir, `${path.basename(filePath, '.md')}.md`), updated, 'utf-8')
 }
 
 export function del(root: string, relPath: string): void {
-  const filePath = path.join(dir(root), relPath.endsWith('.md') ? relPath : `${relPath}.md`)
-  assertOperable(readReviewStatus(filePath, true), `知识 ${relPath}`)
+  const d = dir(root)
+  const filePath = path.join(d, relPath.endsWith('.md') ? relPath : `${relPath}.md`)
+  const rel = path.relative(d, filePath).split(path.sep).join('/')
   if (fs.existsSync(filePath)) fs.unlinkSync(filePath)
+  const c = review.commitFormalDeletion(root, `knowledges/${rel}`)
+  if (!c.success) throw new Error(c.error || '提交删除失败')
+  review.discardSnapshots(root, 'knowledge', rel.replace(/\.md$/, ''))
 }
 
 // --- domain 管理（domain 即 .knowledges 下的文件夹）---
@@ -216,6 +224,13 @@ export function updateDomain(root: string, oldName: string, newName: string): vo
   if (oldDir.startsWith(newDir + path.sep)) throw new Error('新 domain 不能是旧 domain 的父路径')
   fs.mkdirSync(path.dirname(newDir), { recursive: true })
   fs.renameSync(oldDir, newDir)
+  // 队列内对应 nameKey 子树同步改名（草稿不丢）
+  const qOld = path.join(review.queueDir(root), 'knowledges', oldName)
+  const qNew = path.join(review.queueDir(root), 'knowledges', newName)
+  if (fs.existsSync(qOld) && !fs.existsSync(qNew)) {
+    fs.mkdirSync(path.dirname(qNew), { recursive: true })
+    fs.renameSync(qOld, qNew)
+  }
   // 刷新受影响知识的 domain 字段与子树内部 wikilink（含子目录）
   refreshDomainFields(d, newDir, oldName, newName)
   // 重写子树外其他知识中指向旧 domain 的 wikilink
@@ -320,7 +335,7 @@ export interface KnowledgeSearchResult {
   matches: KnowledgeSearchMatch[] // 命中上下文
 }
 
-// 全文检索已审核通过（reviewStatus=validated）的知识，返回标题/元数据/摘要/命中上下文，不返回文档原文。
+// 全文检索知识（正式位置即最近过审版本），返回标题/元数据/摘要/命中上下文，不返回文档原文。
 export function search(root: string, keyword: string, opts?: { top?: number; context?: number }): KnowledgeSearchResult[] {
   if (!keyword || keyword.trim() === '') return []
   const top = typeof opts?.top === 'number' && opts.top >= 0 ? opts.top : 5
@@ -339,7 +354,6 @@ export function search(root: string, keyword: string, opts?: { top?: number; con
       continue
     }
     const { fields, body } = parseFrontmatter(raw)
-    if ((fields.reviewStatus || (fields.status as string | undefined) || '').trim() !== 'validated') continue
 
     const lines = body.split('\n')
     const matches: KnowledgeSearchMatch[] = []

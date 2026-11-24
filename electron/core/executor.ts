@@ -10,7 +10,6 @@ import {
   sortedJsonStringifyCompact, serializeProcessStateJson,
 } from './state'
 import { writeDetail, writeError, hasDetail } from './artifact'
-import { readReviewStatus } from './reviewStatus'
 import { checkStepLimit, checkLoopLimit, checkRetryLimit } from './limits'
 import {
   loadLlmReviewConfig, resolveLlmProvider, checkArtifactWithLLM,
@@ -323,8 +322,6 @@ export function listWorkflows(root: string): string {
   const names: string[] = []
   for (const entry of fs.readdirSync(base, { withFileTypes: true })) {
     if (entry.isDirectory() && fs.existsSync(path.join(base, entry.name, 'meta-data', 'flow.json'))) {
-      // 门控（D13）：仅列出审核通过的工作流
-      if (readReviewStatus(path.join(base, entry.name, 'WORKFLOW.md')) !== 'validated') continue
       names.push(entry.name)
     }
   }

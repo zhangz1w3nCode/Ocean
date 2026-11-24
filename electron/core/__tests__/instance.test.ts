@@ -90,10 +90,10 @@ describe('instance flow.json snapshot', () => {
     fs.mkdirSync(metaDir, { recursive: true })
     sourceFlowPath = path.join(metaDir, 'flow.json')
     writeSourceFlow()
-    // 门控（D13）：实例化要求工作流已审核通过——测试种子直接置 validated
+    // 正式位置即过审版本（G7 无门控）；WORKFLOW.md 供 instance.md 快照复制
     fs.writeFileSync(
       path.join(root, '.ocean', 'workflows', workflow, 'WORKFLOW.md'),
-      '---\ntype: workflow\nname: ' + workflow + '\nreviewStatus: validated\n---\n# ' + workflow + '\n',
+      '---\ntype: workflow\nname: ' + workflow + '\nreviewStatus: validated\nversion: 1\n---\n# ' + workflow + '\n',
       'utf-8',
     )
   })
@@ -242,10 +242,10 @@ describe('trace.jsonl node_id', () => {
     fs.mkdirSync(metaDir, { recursive: true })
     sourceFlowPath = path.join(metaDir, 'flow.json')
     fs.writeFileSync(sourceFlowPath, flowJson(), 'utf-8')
-    // 门控（D13）：实例化要求工作流已审核通过
+    // 正式位置即过审版本（G7 无门控）；WORKFLOW.md 供 instance.md 快照复制
     fs.writeFileSync(
       path.join(root, '.ocean', 'workflows', workflow, 'WORKFLOW.md'),
-      '---\ntype: workflow\nname: ' + workflow + '\nreviewStatus: validated\n---\n# ' + workflow + '\n',
+      '---\ntype: workflow\nname: ' + workflow + '\nreviewStatus: validated\nversion: 1\n---\n# ' + workflow + '\n',
       'utf-8',
     )
   })
