@@ -417,3 +417,35 @@ describe('syncApprovedAssets（全量幂等 / 单项不做删除对齐）', () =
     expect(review.syncApprovedAssets(tmpDir, { type: 'node', name: 'x' }).success).toBe(false)
   })
 })
+
+describe('resolveSaveTarget（G3：每次保存新快照，同一保存会话内复用）', () => {
+  it('无快照 → 新建；3s 内再次保存 → 复用同一快照；超过窗口 → 新快照', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 10, 25, 10, 0, 0, 0))
+    try {
+      write('.ocean/nodes/sv.md', `---\nname: sv\nreviewStatus: validated\nversion: 1\n---\n正文\n`)
+      const a = review.resolveSaveTarget(tmpDir, 'node', 'sv')
+      expect(a.isNewSnapshot).toBe(true)
+      fs.writeFileSync(a.mainFile, '---\nname: sv\nreviewStatus: pending\n---\n草稿1\n')
+      vi.setSystemTime(new Date(2026, 10, 25, 10, 0, 2, 0))
+      const b = review.resolveSaveTarget(tmpDir, 'node', 'sv')
+      expect(b.reusedInSession).toBe(true)
+      expect(b.ts).toBe(a.ts)
+      vi.setSystemTime(new Date(2026, 10, 25, 10, 0, 5, 0))
+      const c = review.resolveSaveTarget(tmpDir, 'node', 'sv')
+      expect(c.isNewSnapshot).toBe(true)
+      expect(c.ts > a.ts).toBe(true)
+      // 刚创建但主文件尚未写入的快照对读取方不可见（无效快照被跳过）
+      expect(review.resolveEditTarget(tmpDir, 'node', 'sv').ts).toBe(a.ts)
+      fs.writeFileSync(c.mainFile, '---\nname: sv\nreviewStatus: pending\n---\n草稿2\n')
+      // 编辑读取目标为最新有效快照（不新建）
+      const e = review.resolveEditTarget(tmpDir, 'node', 'sv')
+      expect(e.isNewSnapshot).toBe(false)
+      expect(e.ts).toBe(c.ts)
+      // 两次独立保存 = 两份快照（FIFO：a 先审）
+      expect(review.listQueue(tmpDir).items.find((i: any) => i.name === 'sv').pendingCount).toBe(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})

@@ -174,6 +174,14 @@ const editWritePath = (type, name, rel) => {
   fs.mkdirSync(path.dirname(filePath), { recursive: true })
   return filePath
 }
+// 主文件保存路径（G3）：每次保存新快照；同一保存会话（3s 内）的多次主文件写入复用同一快照
+const saveWritePath = (type, name, rel) => {
+  const target = review.resolveSaveTarget(getProjectRoot(), type, name)
+  if (target.error) throw new Error(target.error)
+  const filePath = path.join(target.dir, rel)
+  fs.mkdirSync(path.dirname(filePath), { recursive: true })
+  return filePath
+}
 // 编辑资产根目录：草稿优先，否则正式（不创建任何目录）
 const editAssetDir = (type, name) => {
   const root = getProjectRoot()
@@ -358,7 +366,7 @@ ipcMain.handle('load-workflow-md', (_, name) => {
 // 保存工作流文件夹的WORKFLOW.md内容
 ipcMain.handle('save-workflow-md', (_, name, content) => {
   try {
-    const filePath = editWritePath('workflow', name, 'WORKFLOW.md')
+    const filePath = saveWritePath('workflow', name, 'WORKFLOW.md')
     fs.writeFileSync(filePath, content, 'utf-8')
     return { success: true }
   } catch (error) {
@@ -386,7 +394,7 @@ ipcMain.handle('load-workflow-flow-json', (_, name) => {
 // 保存工作流的flow.json
 ipcMain.handle('save-workflow-flow-json', (_, name, content) => {
   try {
-    const filePath = editWritePath('workflow', name, path.join('meta-data', 'flow.json'))
+    const filePath = saveWritePath('workflow', name, path.join('meta-data', 'flow.json'))
     fs.writeFileSync(filePath, content, 'utf-8')
     return { success: true }
   } catch (error) {
@@ -805,7 +813,7 @@ ipcMain.handle('unsubscribe-instance-detail', () => {
 // 保存节点文件（Markdown格式，以名称命名）
 ipcMain.handle('save-node-file', (_, name, content) => {
   try {
-    const filePath = editWritePath('node', name, `${name}.md`)
+    const filePath = saveWritePath('node', name, `${name}.md`)
     fs.writeFileSync(filePath, content, 'utf-8')
     return { success: true }
   } catch (error) {
@@ -930,7 +938,7 @@ ipcMain.handle('delete-local-node', (_, workflowName, nodeName) => {
 // 保存资源文件（Markdown格式，以名称命名）
 ipcMain.handle('save-resource-file', (_, name, content) => {
   try {
-    const filePath = editWritePath('resource', name, `${name}.md`)
+    const filePath = saveWritePath('resource', name, `${name}.md`)
     fs.writeFileSync(filePath, content, 'utf-8')
     return { success: true }
   } catch (error) {
@@ -988,7 +996,7 @@ ipcMain.handle('load-all-resource-files', () => {
 // 保存智能体文件（Markdown格式，以名称命名）
 ipcMain.handle('save-agent-file', (_, name, content) => {
   try {
-    const filePath = editWritePath('agent', name, `${name}.md`)
+    const filePath = saveWritePath('agent', name, `${name}.md`)
     fs.writeFileSync(filePath, content, 'utf-8')
     return { success: true }
   } catch (error) {
@@ -1068,7 +1076,7 @@ const scanDirRecursive = (dir, baseDir = dir, result = []) => {
 ipcMain.handle('save-knowledge-file', (_, name, content) => {
   try {
     // name 可含 domain 子目录（如 "backend/api"）；主文件取名称末段
-    const filePath = editWritePath('knowledge', name, `${String(name).split('/').pop()}.md`)
+    const filePath = saveWritePath('knowledge', name, `${String(name).split('/').pop()}.md`)
     fs.writeFileSync(filePath, content, 'utf-8')
     return { success: true }
   } catch (error) {
@@ -3234,7 +3242,7 @@ ${input.content || ''}`
 // 保存技能 SKILL.md 文件
 ipcMain.handle('save-skill-file', (_, name, content) => {
   try {
-    const filePath = editWritePath('skill', name, 'SKILL.md')
+    const filePath = saveWritePath('skill', name, 'SKILL.md')
     fs.writeFileSync(filePath, content, 'utf-8')
     return { success: true }
   } catch (error) {

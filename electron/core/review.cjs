@@ -474,7 +474,14 @@ function resolveReadPath(root, refPath) {
   if (!rel) throw new Error('非法的资产路径')
   return path.join(oceanDir(root), rel)
 }
-// 编辑目标（G3）：有快照读最新一份（继续改），否则新建快照
+// 时间戳 → 本地时间（YYYYMMDDHHmmssSSS，可带 -NNNN 冲突后缀）
+function tsToDate(ts) {
+  const m = String(ts).match(/^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})(\d{3})/)
+  if (!m) return null
+  return new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6], +m[7])
+}
+// 编辑目标（G3）：有快照读/改最新一份（继续改），否则新建快照。
+// 用于：编辑读取、子文件写入（skill 资源 / 工作流局部节点）、CLI 工作流图编辑命令的连续修改。
 function resolveEditTarget(root, type, name) {
   const r = resolveRef(root, type, name)
   if (r.error) return { error: r.error }
@@ -483,6 +490,33 @@ function resolveEditTarget(root, type, name) {
   const latest = latestDraft(root, r.type, r.name)
   if (latest) {
     return { dir: latest.dir, ts: latest.ts, mainFile: latest.mainFile, mainRel: latest.mainRel, isNewSnapshot: false, formalExists }
+  }
+  const s = newSnapshotDir(root, r.type, r.name)
+  if (s.error) return { error: s.error }
+  return { dir: s.dir, ts: s.ts, mainFile: path.join(s.dir, snapshotMainRel(r.type, r.name)), mainRel: snapshotMainRel(r.type, r.name), isNewSnapshot: true, formalExists }
+}
+
+// 时间戳 → 本地时间（YYYYMMDDHHmmssSSS，可带 -NNNN 冲突后缀）
+function tsToDate(ts) {
+  const m = String(ts).match(/^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})(\d{3})/)
+  if (!m) return null
+  return new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6], +m[7])
+}
+// 主文件保存目标（G3）：每次"保存"产生新快照，不覆盖既有快照。
+// 同一次保存会话内的多次主文件写入（如工作流编辑器一次保存写 WORKFLOW.md + flow.json）应落到同一快照：
+// 最新快照若在 reuseWindowMs（默认 3000ms）内刚创建则复用，否则新建。
+function resolveSaveTarget(root, type, name, opts) {
+  const r = resolveRef(root, type, name)
+  if (r.error) return { error: r.error }
+  const formalMain = path.join(oceanDir(root), r.refPath)
+  const formalExists = fs.existsSync(formalMain)
+  const windowMs = opts && typeof opts.reuseWindowMs === 'number' ? opts.reuseWindowMs : 3000
+  const latest = latestDraft(root, r.type, r.name)
+  if (latest) {
+    const createdAt = tsToDate(latest.ts)
+    if (createdAt && (Date.now() - createdAt.getTime()) <= windowMs) {
+      return { dir: latest.dir, ts: latest.ts, mainFile: latest.mainFile, mainRel: latest.mainRel, isNewSnapshot: false, reusedInSession: true, formalExists }
+    }
   }
   const s = newSnapshotDir(root, r.type, r.name)
   if (s.error) return { error: s.error }
@@ -664,7 +698,7 @@ module.exports = {
   // 审核
   approveAsset, rejectAsset, restoreAsset, diffAsset, readSnapshot,
   // 读取/编辑目标
-  resolveReadPath, resolveEditTarget,
+  resolveReadPath, resolveEditTarget, resolveSaveTarget,
   // 删除
   commitFormalDeletion, discardSnapshots,
   // 同步
