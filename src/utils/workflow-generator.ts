@@ -4,7 +4,7 @@
  */
 
 
-export const generateWorkflowMdContent = (workflow: any, nodes: any[], edges: any[]): string => {
+export const generateWorkflowMdContent = (workflow: any, nodes: any[], edges: any[], meta?: { reviewStatus?: string; version?: number }): string => {
   // 构建节点和边的映射关系
   const nodeMap = new Map<string, any>()
   const outgoingEdges = new Map<string, any[]>()
@@ -160,10 +160,10 @@ export const generateWorkflowMdContent = (workflow: any, nodes: any[], edges: an
     if (!node) return ''
     if (node.type === 'business') {
       const nodeName = node.data?.nodeDefName || node.data?.label || node.id
-      return `.nodes/${nodeName}.md`
+      return `.ocean/nodes/${nodeName}.md`
     } else if (node.type === 'local') {
       const nodeName = node.data?.localNodeName || node.data?.label || node.id
-      return `.workflows/${workflow.name}/nodes/${nodeName}.md`
+      return `.ocean/workflows/${workflow.name}/nodes/${nodeName}.md`
     } else if (node.type === 'process') {
       return node.data?.content || ''
     }
@@ -185,6 +185,8 @@ export const generateWorkflowMdContent = (workflow: any, nodes: any[], edges: an
   if (workflow.description) {
     lines.push(`description: ${workflow.description}`)
   }
+  lines.push(`reviewStatus: ${meta?.reviewStatus || 'pending'}`)
+  lines.push(`version: ${meta?.version != null ? meta.version : 1}`)
   lines.push('---')
   lines.push('')
 

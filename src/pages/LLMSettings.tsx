@@ -91,12 +91,13 @@ export const LLMSettings: FC = () => {
     setEditingProvider(null)
   }
 
-  // 过滤提供商
+  // 过滤提供商（对可能缺失的字段做空值防护，避免畸形配置导致设置页崩溃）
+  const q = searchQuery.toLowerCase()
   const filteredProviders = llmProviders.filter(
     (provider) =>
-      provider.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      provider.type.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      provider.baseUrl.toLowerCase().includes(searchQuery.toLowerCase())
+      (provider.name || '').toLowerCase().includes(q) ||
+      (provider.type || '').toLowerCase().includes(q) ||
+      (provider.baseUrl || '').toLowerCase().includes(q)
   )
 
   return (

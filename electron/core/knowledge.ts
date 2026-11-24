@@ -1,10 +1,11 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
+import { readReviewStatus, assertOperable } from './reviewStatus'
 
 const EXCLUDED_DIRS = new Set(['.git', '.svn', '.hg', '.DS_Store', 'node_modules'])
 
 export function dir(root: string): string {
-  return path.join(root, '.knowledges')
+  return path.join(root, '.ocean', 'knowledges')
 }
 
 export function list(root: string): string[] {
@@ -12,7 +13,8 @@ export function list(root: string): string[] {
   if (!fs.existsSync(d)) return []
   const result: string[] = []
   scanDir(d, d, result)
-  return result.sort()
+  // 门控（D13）：仅列出审核通过的知识（兼容旧 status 字段）
+  return result.filter(rel => readReviewStatus(path.join(d, rel.endsWith('.md') ? rel : `${rel}.md`), true) === 'validated').sort()
 }
 
 function scanDir(dir: string, baseDir: string, result: string[]): void {
@@ -31,6 +33,7 @@ function scanDir(dir: string, baseDir: string, result: string[]): void {
 
 export function read(root: string, relPath: string): string {
   const filePath = path.join(dir(root), relPath.endsWith('.md') ? relPath : `${relPath}.md`)
+  assertOperable(readReviewStatus(filePath, true), `知识 ${relPath}`)
   return fs.readFileSync(filePath, 'utf-8')
 }
 
@@ -51,7 +54,7 @@ export function create(root: string, relPath: string, content: string, opts?: {
     fm += `tags: [${opts.tags.join(', ')}]\n`
   }
   // 新建知识默认待审核
-  fm += `status: pending\n`
+  fm += `reviewStatus: pending\nversion: 1\n`
   fm += `---\n\n${content}\n`
   fs.mkdirSync(path.dirname(filePath), { recursive: true })
   fs.writeFileSync(filePath, fm, 'utf-8')
@@ -65,6 +68,12 @@ export function update(root: string, relPath: string, content: string, opts?: {
   if (!fs.existsSync(filePath)) throw new Error(`知识不存在: ${relPath}`)
   const raw = fs.readFileSync(filePath, 'utf-8')
   const { fields } = parseFrontmatter(raw)
+  assertOperable(
+    fields.reviewStatus === 'validated' || fields.status === 'validated'
+      ? 'validated'
+      : fields.reviewStatus === 'rejected' ? 'rejected' : 'pending',
+    `知识 ${relPath}`,
+  )
   if (opts?.summary !== undefined) {
     if (opts.summary) {
       fields.summary = opts.summary
@@ -82,7 +91,7 @@ export function update(root: string, relPath: string, content: string, opts?: {
     }
   }
   // 更新后回退为待审核
-  fields.status = 'pending'
+  fields.reviewStatus = 'pending'
   // domain 字段与文件实际位置保持一致（兼容无 domain 字段的历史知识）
   const fileDomain = path.dirname(path.relative(dir(root), filePath))
   if (fileDomain !== '.') {
@@ -96,6 +105,7 @@ export function update(root: string, relPath: string, content: string, opts?: {
 
 export function del(root: string, relPath: string): void {
   const filePath = path.join(dir(root), relPath.endsWith('.md') ? relPath : `${relPath}.md`)
+  assertOperable(readReviewStatus(filePath, true), `知识 ${relPath}`)
   if (fs.existsSync(filePath)) fs.unlinkSync(filePath)
 }
 
@@ -310,7 +320,7 @@ export interface KnowledgeSearchResult {
   matches: KnowledgeSearchMatch[] // 命中上下文
 }
 
-// 全文检索已审核通过（status=validated）的知识，返回标题/元数据/摘要/命中上下文，不返回文档原文。
+// 全文检索已审核通过（reviewStatus=validated）的知识，返回标题/元数据/摘要/命中上下文，不返回文档原文。
 export function search(root: string, keyword: string, opts?: { top?: number; context?: number }): KnowledgeSearchResult[] {
   if (!keyword || keyword.trim() === '') return []
   const top = typeof opts?.top === 'number' && opts.top >= 0 ? opts.top : 5
@@ -329,7 +339,7 @@ export function search(root: string, keyword: string, opts?: { top?: number; con
       continue
     }
     const { fields, body } = parseFrontmatter(raw)
-    if ((fields.status || '').trim() !== 'validated') continue
+    if ((fields.reviewStatus || (fields.status as string | undefined) || '').trim() !== 'validated') continue
 
     const lines = body.split('\n')
     const matches: KnowledgeSearchMatch[] = []

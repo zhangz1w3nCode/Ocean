@@ -1,8 +1,9 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
+import { readReviewStatus, assertOperable } from './reviewStatus'
 
 export function dir(root: string): string {
-  return path.join(root, '.resources')
+  return path.join(root, '.ocean', 'resources')
 }
 
 export function list(root: string): string[] {
@@ -11,11 +12,13 @@ export function list(root: string): string[] {
   return fs.readdirSync(d)
     .filter(f => f.endsWith('.md'))
     .map(f => f.replace(/\.md$/, ''))
+    .filter(name => readReviewStatus(path.join(d, `${name}.md`)) === 'validated')
     .sort()
 }
 
 export function read(root: string, name: string): string {
   const filePath = path.join(dir(root), `${name}.md`)
+  assertOperable(readReviewStatus(filePath), `资源 ${name}`)
   return fs.readFileSync(filePath, 'utf-8')
 }
 
@@ -30,6 +33,7 @@ export function create(root: string, name: string, content: string, opts?: {
   const id = `${name}-${Date.now()}`
   let fm = `---\nid: ${id}\ntype: ${type}\n`
   if (opts?.description) fm += `description: ${opts.description}\n`
+  fm += `reviewStatus: pending\nversion: 1\n`
   fm += `---\n\n${content}\n`
   fs.mkdirSync(d, { recursive: true })
   fs.writeFileSync(filePath, fm, 'utf-8')
@@ -43,14 +47,17 @@ export function update(root: string, name: string, content: string, opts?: {
   if (!fs.existsSync(filePath)) throw new Error(`资源不存在: ${name}`)
   const raw = fs.readFileSync(filePath, 'utf-8')
   const { fields } = parseFrontmatter(raw)
+  assertOperable(fields.reviewStatus === 'validated' ? 'validated' : fields.reviewStatus === 'rejected' ? 'rejected' : 'pending', `资源 ${name}`)
   if (opts?.type) fields.type = opts.type
   if (opts?.description) fields.description = opts.description
+  fields.reviewStatus = 'pending'
   const updated = buildFrontmatter(fields, content)
   fs.writeFileSync(filePath, updated, 'utf-8')
 }
 
 export function del(root: string, name: string): void {
   const filePath = path.join(dir(root), `${name}.md`)
+  assertOperable(readReviewStatus(filePath), `资源 ${name}`)
   if (fs.existsSync(filePath)) fs.unlinkSync(filePath)
 }
 

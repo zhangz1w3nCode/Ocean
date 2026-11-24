@@ -43,7 +43,7 @@ const TaskList: FC<{ onCreateClick: () => void }> = ({ onCreateClick }) => {
     loadTasks()
   }, [loadTasks])
 
-  const filtered = tasks.filter((task) => {
+  const filtered = tasks.filter((task) => task.reviewStatus === 'validated').filter((task) => {
     if (filterStatus && task.status !== filterStatus) return false
     const q = searchQuery.toLowerCase()
     return task.name.toLowerCase().includes(q) ||

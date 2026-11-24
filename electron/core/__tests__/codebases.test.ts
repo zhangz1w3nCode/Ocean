@@ -16,21 +16,28 @@ describe('codebases core', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true })
   })
 
+  // 门控（D13）辅助：把代码库 README 置为审核通过
+  const approve = (name: string) => {
+    const rp = path.join(tmpDir, '.ocean', 'codebases', name, 'README.md')
+    const raw = fs.readFileSync(rp, 'utf-8')
+    fs.writeFileSync(rp, raw.replace(/^reviewStatus:.*$/m, 'reviewStatus: validated'), 'utf-8')
+  }
+
   describe('create (blank)', () => {
     it('creates directory with README (description in body, no meta file)', async () => {
       const r = await codebases.create(tmpDir, 'demo', { type: 'blank', description: '演示库' })
       expect(r.success).toBe(true)
-      const readme = fs.readFileSync(path.join(tmpDir, '.codebases', 'demo', 'README.md'), 'utf-8')
+      const readme = fs.readFileSync(path.join(tmpDir, '.ocean', 'codebases', 'demo', 'README.md'), 'utf-8')
       expect(readme).toContain('# demo')
       expect(readme).toContain('> 演示库')
       // 纯目录结构：不生成任何元数据文件
-      expect(fs.readdirSync(path.join(tmpDir, '.codebases', 'demo'))).toEqual(['README.md'])
+      expect(fs.readdirSync(path.join(tmpDir, '.ocean', 'codebases', 'demo'))).toEqual(['README.md'])
     })
 
     it('writes provided content directly as README when given', async () => {
       const r = await codebases.create(tmpDir, 'with-content', { type: 'blank', content: '# 自定义内容\n\n正文第一段' })
       expect(r.success).toBe(true)
-      const readme = fs.readFileSync(path.join(tmpDir, '.codebases', 'with-content', 'README.md'), 'utf-8')
+      const readme = fs.readFileSync(path.join(tmpDir, '.ocean', 'codebases', 'with-content', 'README.md'), 'utf-8')
       expect(readme).toBe('# 自定义内容\n\n正文第一段')
     })
 
@@ -58,8 +65,8 @@ describe('codebases core', () => {
 
       const r = await codebases.create(tmpDir, 'copied', { type: 'local', sourcePath: src })
       expect(r.success).toBe(true)
-      expect(fs.readFileSync(path.join(tmpDir, '.codebases', 'copied', 'README.md'), 'utf-8')).toBe('# 原项目\n原有内容')
-      expect(fs.readFileSync(path.join(tmpDir, '.codebases', 'copied', 'a.txt'), 'utf-8')).toBe('hello')
+      expect(fs.readFileSync(path.join(tmpDir, '.ocean', 'codebases', 'copied', 'README.md'), 'utf-8')).toBe('# 原项目\n原有内容')
+      expect(fs.readFileSync(path.join(tmpDir, '.ocean', 'codebases', 'copied', 'a.txt'), 'utf-8')).toBe('hello')
     })
 
     it('generates default README when source has none', async () => {
@@ -69,7 +76,7 @@ describe('codebases core', () => {
 
       const r = await codebases.create(tmpDir, 'copied2', { type: 'local', sourcePath: src })
       expect(r.success).toBe(true)
-      const readme = fs.readFileSync(path.join(tmpDir, '.codebases', 'copied2', 'README.md'), 'utf-8')
+      const readme = fs.readFileSync(path.join(tmpDir, '.ocean', 'codebases', 'copied2', 'README.md'), 'utf-8')
       expect(readme).toContain('# copied2')
     })
 
@@ -97,13 +104,13 @@ describe('codebases core', () => {
 
       const r = await codebases.create(tmpDir, 'cloned', { type: 'url', url: srcRepo })
       expect(r.success).toBe(true)
-      expect(fs.readFileSync(path.join(tmpDir, '.codebases', 'cloned', 'README.md'), 'utf-8')).toContain('clone 内容')
+      expect(fs.readFileSync(path.join(tmpDir, '.ocean', 'codebases', 'cloned', 'README.md'), 'utf-8')).toContain('clone 内容')
     })
 
     it('cleans up target directory on clone failure', async () => {
       const r = await codebases.create(tmpDir, 'bad', { type: 'url', url: path.join(tmpDir, 'not-a-repo') })
       expect(r.success).toBe(false)
-      expect(fs.existsSync(path.join(tmpDir, '.codebases', 'bad'))).toBe(false)
+      expect(fs.existsSync(path.join(tmpDir, '.ocean', 'codebases', 'bad'))).toBe(false)
     })
   })
 
@@ -117,6 +124,7 @@ describe('codebases core', () => {
     it('lists codebases with readme preview, sorted by name', async () => {
       await codebases.create(tmpDir, 'beta', { type: 'blank' })
       await codebases.create(tmpDir, 'alpha', { type: 'blank', description: '描述甲' })
+      approve('beta'); approve('alpha')
       const r = await codebases.list(tmpDir)
       expect(r.success).toBe(true)
       if (r.success) {
@@ -128,6 +136,7 @@ describe('codebases core', () => {
 
     it('reads readme content by name', async () => {
       await codebases.create(tmpDir, 'demo', { type: 'blank', description: '描述' })
+      approve('demo')
       const r = await codebases.read(tmpDir, 'demo')
       expect(r.success).toBe(true)
       if (r.success) {
@@ -146,10 +155,11 @@ describe('codebases core', () => {
   describe('update', () => {
     it('overwrites README content only', async () => {
       await codebases.create(tmpDir, 'demo', { type: 'blank' })
+      approve('demo')
       const r = await codebases.update(tmpDir, 'demo', '# 新内容\n完全替换')
       expect(r.success).toBe(true)
-      expect(fs.readFileSync(path.join(tmpDir, '.codebases', 'demo', 'README.md'), 'utf-8')).toBe('# 新内容\n完全替换')
-      expect(fs.readdirSync(path.join(tmpDir, '.codebases', 'demo'))).toEqual(['README.md'])
+      expect(fs.readFileSync(path.join(tmpDir, '.ocean', 'codebases', 'demo', 'README.md'), 'utf-8')).toBe('---\nreviewStatus: pending\nversion: 1\n---\n# 新内容\n完全替换')
+      expect(fs.readdirSync(path.join(tmpDir, '.ocean', 'codebases', 'demo'))).toEqual(['README.md'])
     })
 
     it('rejects update of missing codebase', async () => {
@@ -161,9 +171,10 @@ describe('codebases core', () => {
   describe('delete', () => {
     it('removes the directory', async () => {
       await codebases.create(tmpDir, 'demo', { type: 'blank' })
+      approve('demo')
       const r = await codebases.del(tmpDir, 'demo')
       expect(r.success).toBe(true)
-      expect(fs.existsSync(path.join(tmpDir, '.codebases', 'demo'))).toBe(false)
+      expect(fs.existsSync(path.join(tmpDir, '.ocean', 'codebases', 'demo'))).toBe(false)
     })
 
     it('rejects delete of missing codebase', async () => {
@@ -191,7 +202,7 @@ describe('codebases core', () => {
 
     it('update 收敛只读目录的 IO 异常', async () => {
       await codebases.create(tmpDir, 'demo', { type: 'blank' })
-      const rp = path.join(tmpDir, '.codebases', 'demo', 'README.md')
+      const rp = path.join(tmpDir, '.ocean', 'codebases', 'demo', 'README.md')
       fs.chmodSync(rp, 0o444)
       try {
         const r = await codebases.update(tmpDir, 'demo', 'x')

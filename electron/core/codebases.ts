@@ -1,5 +1,6 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
+import { readReviewStatus, assertOperable } from './reviewStatus'
 import { spawn } from 'node:child_process'
 
 export type CodebaseSource = 'url' | 'blank' | 'local'
@@ -15,6 +16,7 @@ export interface CreateCodebaseOptions {
 export interface CodebaseInfo {
   name: string
   preview: string
+  reviewStatus: 'pending' | 'validated'
 }
 
 export interface SearchHit {
@@ -31,7 +33,7 @@ const README_FILE = 'README.md'
 const PREVIEW_LENGTH = 200
 
 export function dir(root: string): string {
-  return path.join(root, '.codebases')
+  return path.join(root, '.ocean', 'codebases')
 }
 
 function validName(name: string): boolean {
@@ -57,11 +59,33 @@ function ensureDir(root: string): void {
 
 // 空项目或无 README 的克隆/复制目标生成默认 README；描述写入正文
 function defaultReadme(name: string, description?: string): string {
-  const lines = [`# ${name}`, '']
+  const lines = ['---', 'reviewStatus: pending', 'version: 1', '---', '', `# ${name}`, '']
   if (description && description.trim()) {
     lines.push(`> ${description.trim()}`, '')
   }
   return lines.join('\n')
+}
+
+// 解析 README frontmatter 的审核状态（无 frontmatter /无字段视为 pending）
+function readmeReviewStatus(rp: string): 'pending' | 'validated' {
+  try {
+    const raw = fs.readFileSync(rp, 'utf-8')
+    const m = raw.match(/^---\n([\s\S]*?)\n---/)
+    const rs = m ? m[1].match(/^reviewStatus:\s*(\S+)/m) : null
+    return rs && rs[1] === 'validated' ? 'validated' : 'pending'
+  } catch {
+    return 'pending'
+  }
+}
+
+// 更新 README 时确保 frontmatter 带有 reviewStatus: pending（缺失则注入，已有则重置——更新即回未通过）
+function ensureReadmeReviewStatusPending(content: string): string {
+  const m = content.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/)
+  if (m) {
+    const fm = m[1].replace(/^reviewStatus:.*$/m, '').trimEnd()
+    return `---\n${fm ? fm + '\n' : ''}reviewStatus: pending\n---\n${m[2]}`
+  }
+  return `---\nreviewStatus: pending\nversion: 1\n---\n${content}`
 }
 
 // IO 异常收敛统一契约：任何 fs/spawn 异常都转为 { success: false, error }，不向调用方抛出
@@ -102,10 +126,13 @@ export async function list(root: string): Promise<CodebaseResult<{ codebases: Co
     if (!entry.isDirectory()) continue
     const rp = readmePath(root, entry.name)
     let preview = ''
+    let reviewStatus: 'pending' | 'validated' = 'pending'
     if (fs.existsSync(rp)) {
-      preview = fs.readFileSync(rp, 'utf-8').replace(/[#*`>]/g, '').trim().slice(0, PREVIEW_LENGTH)
+      const raw = fs.readFileSync(rp, 'utf-8')
+      reviewStatus = readmeReviewStatus(rp)
+      preview = raw.replace(/^---\n[\s\S]*?\n---\n?/, '').replace(/[#*`>]/g, '').trim().slice(0, PREVIEW_LENGTH)
     }
-    codebases.push({ name: entry.name, preview })
+    if (reviewStatus === 'validated') codebases.push({ name: entry.name, preview, reviewStatus })
   }
   codebases.sort((a, b) => a.name.localeCompare(b.name))
     return { success: true, codebases }
@@ -119,6 +146,11 @@ export async function read(root: string, name: string): Promise<CodebaseResult<{
   if (!fs.existsSync(cd)) return { success: false, error: `代码库不存在: ${name}` }
   const rp = readmePath(root, name)
   if (!fs.existsSync(rp)) return { success: false, error: `代码库缺少 README.md: ${name}` }
+    try {
+      assertOperable(readReviewStatus(rp), `代码库 ${name}`)
+    } catch (e: any) {
+      return { success: false, error: e.message }
+    }
     const content = fs.readFileSync(rp, 'utf-8')
     return { success: true, name, content }
   })
@@ -179,7 +211,8 @@ export async function update(root: string, name: string, content: string): Promi
   const rp = readmePath(root, name)
   if (!fs.existsSync(rp)) return { success: false, error: `代码库不存在: ${name}` }
   if (typeof content !== 'string') return { success: false, error: 'README 内容必须是字符串' }
-  fs.writeFileSync(rp, content, 'utf-8')
+  assertOperable(readReviewStatus(rp), `代码库 ${name}`)
+  fs.writeFileSync(rp, ensureReadmeReviewStatusPending(content), 'utf-8')
   return { success: true, name }
   })
 }
@@ -189,6 +222,7 @@ export async function del(root: string, name: string): Promise<CodebaseResult<{ 
   if (!validName(name)) return { success: false, error: `非法的代码库名称: ${name}` }
   const target = codebaseDir(root, name)
   if (!fs.existsSync(target)) return { success: false, error: `代码库不存在: ${name}` }
+  assertOperable(readReviewStatus(readmePath(root, name)), `代码库 ${name}`)
   fs.rmSync(target, { recursive: true, force: true })
   return { success: true, name }
   })

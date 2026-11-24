@@ -31,9 +31,8 @@ export const NodeModal: FC<NodeModalProps> = ({
   const [description, setDescription] = useState('')
   const [content, setContent] = useState('')
 
-  // 计算排除路径（编辑模式下排除当前节点）
-  // 节点为跨资产来源共享资产，路径为 .nodes/
-  const excludePath = mode === 'edit' && initialData ? `.nodes/${initialData.name}.md` : undefined
+  // 计算排除路径（编辑模式下排除当前节点；节点存储在 .ocean/nodes）
+  const excludePath = mode === 'edit' && initialData ? `.ocean/nodes/${initialData.name}.md` : undefined
 
   // 编辑/预览模式
   const [viewMode, setViewMode] = useState<'edit' | 'preview'>('edit')

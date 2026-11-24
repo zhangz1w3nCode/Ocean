@@ -1,9 +1,9 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
-import { resolveAssetDir } from './executor'
+import { readReviewStatus, assertOperable } from './reviewStatus'
 
 export function baseDir(root: string): string {
-  return path.join(root, resolveAssetDir(root), 'skills')
+  return path.join(root, '.ocean', 'skills')
 }
 
 export function list(root: string): string[] {
@@ -12,11 +12,13 @@ export function list(root: string): string[] {
   return fs.readdirSync(d, { withFileTypes: true })
     .filter(e => e.isDirectory())
     .map(e => e.name)
+    .filter(name => readReviewStatus(path.join(d, name, 'SKILL.md')) === 'validated')
     .sort()
 }
 
 export function read(root: string, name: string): string {
   const filePath = path.join(baseDir(root), name, 'SKILL.md')
+  assertOperable(readReviewStatus(filePath), `技能 ${name}`)
   return fs.readFileSync(filePath, 'utf-8')
 }
 
@@ -33,7 +35,7 @@ export function create(root: string, name: string, content: string, description:
     fs.mkdirSync(path.join(skillDir, subDir), { recursive: true })
   }
 
-  const skillMd = `---\nname: ${name}\ndescription: ${description}\n---\n${content}\n`
+  const skillMd = `---\nname: ${name}\ndescription: ${description}\nreviewStatus: pending\nversion: 1\n---\n${content}\n`
   fs.writeFileSync(path.join(skillDir, 'SKILL.md'), skillMd, 'utf-8')
 }
 
@@ -42,12 +44,15 @@ export function update(root: string, name: string, content: string): void {
   if (!fs.existsSync(filePath)) throw new Error(`技能不存在: ${name}`)
   const raw = fs.readFileSync(filePath, 'utf-8')
   const { fields } = parseFrontmatter(raw)
+  assertOperable(fields.reviewStatus === 'validated' ? 'validated' : fields.reviewStatus === 'rejected' ? 'rejected' : 'pending', `技能 ${name}`)
+  fields.reviewStatus = 'pending'
   const updated = buildFrontmatter(fields, content)
   fs.writeFileSync(filePath, updated, 'utf-8')
 }
 
 export function del(root: string, name: string): void {
   const skillDir = path.join(baseDir(root), name)
+  assertOperable(readReviewStatus(path.join(skillDir, 'SKILL.md')), `技能 ${name}`)
   if (fs.existsSync(skillDir)) fs.rmSync(skillDir, { recursive: true, force: true })
 }
 

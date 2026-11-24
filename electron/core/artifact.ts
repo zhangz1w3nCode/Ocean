@@ -10,7 +10,7 @@ export function artifactDir(
   version?: string,
 ): string {
   const base = path.join(
-    root, '.workflows', workflow, 'instance', instanceId, 'artifacts', nodeName, invoke,
+    root, '.ocean', 'workflows', workflow, 'instance', instanceId, 'artifacts', nodeName, invoke,
   )
   return version ? path.join(base, version) : base
 }

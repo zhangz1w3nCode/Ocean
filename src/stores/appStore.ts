@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import { saveAppConfig } from '../utils/storage'
 import type { AppConfig } from '../types'
 
-export type PageType = 'project' | 'agents' | 'workflows' | 'nodes' | 'resources' | 'knowledges' | 'skills' | 'settings' | 'tasks' | 'codebases'
+export type PageType = 'project' | 'agents' | 'workflows' | 'nodes' | 'resources' | 'knowledges' | 'skills' | 'settings' | 'tasks' | 'codebases' | 'reviews'
 
 // 工作流区域二级导航子页面
 export type WorkflowSubPage = 'nodes' | 'workflows' | 'instances' | 'settings'
@@ -16,8 +16,11 @@ export type TaskSubPage = 'library'
 // 代码库区域二级导航子页面
 export type CodebaseSubPage = 'manage' | 'settings'
 
+// 审核区域二级导航子页面（P3）
+export type ReviewSubPage = 'assets' | 'settings'
+
 // 默认导航顺序
-const DEFAULT_NAV_ORDER: PageType[] = ['agents', 'skills', 'knowledges', 'workflows', 'tasks', 'codebases', 'resources', 'settings']
+const DEFAULT_NAV_ORDER: PageType[] = ['agents', 'skills', 'knowledges', 'workflows', 'tasks', 'codebases', 'resources', 'reviews', 'settings']
 
 interface AppState {
   currentPage: PageType
@@ -51,6 +54,9 @@ interface AppState {
   // 代码库二级导航
   codebaseSubPage: CodebaseSubPage
   setCodebaseSubPage: (page: CodebaseSubPage) => void
+  // 审核二级导航（P3）
+  reviewSubPage: ReviewSubPage
+  setReviewSubPage: (page: ReviewSubPage) => void
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -138,4 +144,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   // 代码库二级导航 - 默认展示管理页
   codebaseSubPage: 'manage',
   setCodebaseSubPage: (page) => set({ codebaseSubPage: page }),
+  // 审核二级导航 - 默认展示资产审核
+  reviewSubPage: 'assets',
+  setReviewSubPage: (page) => set({ reviewSubPage: page }),
 }))

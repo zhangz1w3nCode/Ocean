@@ -46,7 +46,7 @@ export const KnowledgesPage: FC<{ nested?: boolean }> = ({ nested = false }) => 
     // 使用排除 INDEX 且已审核通过（validated）的知识文件列表来生成树形目录
     const nonIndexFiles = knowledgeFiles
       .filter((k) => k.name.toLowerCase() !== 'index')
-      .filter((k) => k.status === 'validated')
+      .filter((k) => k.reviewStatus === 'validated')
     if (nonIndexFiles.length === 0) return null
     return generateIndexContent(nonIndexFiles)
   }, [knowledgeFiles])
@@ -55,7 +55,7 @@ export const KnowledgesPage: FC<{ nested?: boolean }> = ({ nested = false }) => 
   const filteredKnowledges = useMemo(() => {
     return knowledgeFiles
       .filter((k) => k.name.toLowerCase() !== 'index') // 排除全局索引
-      .filter((k) => k.status === 'validated') // 知识库仅展示已审核通过的知识
+      .filter((k) => k.reviewStatus === 'validated') // 知识库仅展示已审核通过的知识
       .filter((knowledge) => {
         const query = searchQuery.toLowerCase()
         const matchesSearch =
@@ -152,7 +152,7 @@ export const KnowledgesPage: FC<{ nested?: boolean }> = ({ nested = false }) => 
   }
 
   // 确认创建/编辑
-  const handleModalConfirm = async (knowledgeData: Omit<KnowledgeFile, 'id' | 'createdAt' | 'updatedAt' | 'type' | 'status'>) => {
+  const handleModalConfirm = async (knowledgeData: Omit<KnowledgeFile, 'id' | 'createdAt' | 'updatedAt' | 'type' | 'reviewStatus'>) => {
     const now = new Date().toISOString()
 
     if (modalMode === 'create') {
@@ -164,7 +164,7 @@ export const KnowledgesPage: FC<{ nested?: boolean }> = ({ nested = false }) => 
         createdAt: now,
         updatedAt: now,
         // 新建知识默认待审核
-        status: 'pending',
+        reviewStatus: 'pending',
       }
       return await addKnowledgeFile(newKnowledge)
     } else if (modalMode === 'edit' && editingKnowledge) {
@@ -173,7 +173,7 @@ export const KnowledgesPage: FC<{ nested?: boolean }> = ({ nested = false }) => 
         ...knowledgeData,
         updatedAt: now,
         // 更新知识后回退为待审核
-        status: 'pending',
+        reviewStatus: 'pending',
       })
     }
     return false
@@ -213,7 +213,7 @@ export const KnowledgesPage: FC<{ nested?: boolean }> = ({ nested = false }) => 
       success = await updateKnowledgeFile(globalIndexKnowledge.id, {
         content: generatedIndexContent || '',
         // INDEX.md 为系统生成的全局索引，始终保持 validated
-        status: 'validated',
+        reviewStatus: 'validated',
         updatedAt: new Date().toISOString(),
       })
     } else {
@@ -226,7 +226,7 @@ export const KnowledgesPage: FC<{ nested?: boolean }> = ({ nested = false }) => 
         summary: '知识库全局索引',
         content: generatedIndexContent || '',
         tags: ['index'],
-        status: 'validated',
+        reviewStatus: 'validated',
         createdAt: now,
         updatedAt: now,
       }
@@ -246,7 +246,7 @@ export const KnowledgesPage: FC<{ nested?: boolean }> = ({ nested = false }) => 
     const latestFiles = useKnowledgeStore.getState().knowledgeFiles
     const nonIndexFiles = latestFiles
       .filter((k) => k.name.toLowerCase() !== 'index')
-      .filter((k) => k.status === 'validated')
+      .filter((k) => k.reviewStatus === 'validated')
     if (nonIndexFiles.length === 0) {
       addToast('刷新成功', 'success')
       return null

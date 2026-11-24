@@ -1,9 +1,10 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
+import { readReviewStatus, assertOperable } from './reviewStatus'
 import { resolveAssetDir } from './executor'
 
 export function dir(root: string): string {
-  return path.join(root, resolveAssetDir(root), 'agents')
+  return path.join(root, '.ocean', 'agents')
 }
 
 export function list(root: string): string[] {
@@ -12,11 +13,13 @@ export function list(root: string): string[] {
   return fs.readdirSync(d)
     .filter(f => f.endsWith('.md'))
     .map(f => f.replace(/\.md$/, ''))
+    .filter(name => readReviewStatus(path.join(d, `${name}.md`)) === 'validated')
     .sort()
 }
 
 export function read(root: string, name: string): string {
   const filePath = path.join(dir(root), `${name}.md`)
+  assertOperable(readReviewStatus(filePath), `智能体 ${name}`)
   return fs.readFileSync(filePath, 'utf-8')
 }
 
@@ -49,6 +52,7 @@ export function create(root: string, name: string, content: string, opts?: {
   fm += `systemPromptMode: ${systemPromptMode}\n`
   if (opts?.inheritProjectContext) fm += `inheritProjectContext: true\n`
   if (opts?.inheritSkills) fm += `inheritSkills: true\n`
+  fm += `reviewStatus: pending\nversion: 1\n`
   fm += `---\n\n${content}\n`
 
   fs.mkdirSync(d, { recursive: true })
@@ -68,6 +72,7 @@ export function update(root: string, name: string, content: string, opts?: {
   if (!fs.existsSync(filePath)) throw new Error(`智能体不存在: ${name}`)
   const raw = fs.readFileSync(filePath, 'utf-8')
   const { fields } = parseFrontmatter(raw)
+  assertOperable(fields.reviewStatus === 'validated' ? 'validated' : fields.reviewStatus === 'rejected' ? 'rejected' : 'pending', `智能体 ${name}`)
   if (opts?.description !== undefined) fields.description = opts.description
   if (opts?.model) fields.model = opts.model
   if (opts?.color) fields.color = opts.color
@@ -75,12 +80,14 @@ export function update(root: string, name: string, content: string, opts?: {
   if (opts?.systemPromptMode) fields.systemPromptMode = opts.systemPromptMode
   if (opts?.inheritProjectContext !== undefined) fields.inheritProjectContext = String(opts.inheritProjectContext)
   if (opts?.inheritSkills !== undefined) fields.inheritSkills = String(opts.inheritSkills)
+  fields.reviewStatus = 'pending'
   const updated = buildFrontmatter(fields, content)
   fs.writeFileSync(filePath, updated, 'utf-8')
 }
 
 export function del(root: string, name: string): void {
   const filePath = path.join(dir(root), `${name}.md`)
+  assertOperable(readReviewStatus(filePath), `智能体 ${name}`)
   if (fs.existsSync(filePath)) fs.unlinkSync(filePath)
 }
 

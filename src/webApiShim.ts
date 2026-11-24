@@ -20,6 +20,7 @@ const CHANNEL_OVERRIDES: Record<string, string> = {
   loadLLMConfig: 'load-llm-config',
   testLLMConnection: 'test-llm-connection',
   loadKnowledgeBaseline: 'get-knowledge-baseline',
+  loadAssetBaseline: 'get-asset-baseline',
 }
 
 export const methodToChannel = (method: string): string =>
@@ -44,6 +45,10 @@ const INVOKE_METHODS = [
   'listKnowledgeFolders', 'loadKnowledgeBaseline',
   'knowledgeGitStatus', 'knowledgeGitInit', 'knowledgeGitLog', 'knowledgeGitShow',
   'knowledgeGitCommit', 'knowledgeGitRollback', 'loadKnowledgeGitConfig', 'saveKnowledgeGitConfig',
+  'loadPendingAssets', 'loadAssetRaw', 'setAssetReviewStatus', 'loadAssetBaseline',
+  'assetGitStatus', 'assetGitInit', 'assetGitLog', 'assetGitShow',
+  'assetGitCommit', 'assetGitRollback', 'loadAssetGitConfig', 'saveAssetGitConfig',
+  'syncApprovedAssets',
   'createSkillDirectory', 'saveSkillFile', 'loadSkillFile', 'deleteSkillDirectory',
   'loadAllSkillDirectories', 'saveSkillResource', 'loadSkillResource', 'deleteSkillResource',
   'listSkillResources',

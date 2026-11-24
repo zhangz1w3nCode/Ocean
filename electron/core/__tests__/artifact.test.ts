@@ -31,12 +31,12 @@ describe('artifact versioning', () => {
   describe('artifactDir', () => {
     it('returns base path without version', () => {
       const dir = artifactDir(tmpDir, workflow, instanceId, node, invoke)
-      expect(dir).toBe(path.join(tmpDir, '.workflows', workflow, 'instance', instanceId, 'artifacts', node, invoke))
+      expect(dir).toBe(path.join(tmpDir, '.ocean', 'workflows', workflow, 'instance', instanceId, 'artifacts', node, invoke))
     })
 
     it('includes version in path when provided', () => {
       const dir = artifactDir(tmpDir, workflow, instanceId, node, invoke, 'v1')
-      expect(dir).toBe(path.join(tmpDir, '.workflows', workflow, 'instance', instanceId, 'artifacts', node, invoke, 'v1'))
+      expect(dir).toBe(path.join(tmpDir, '.ocean', 'workflows', workflow, 'instance', instanceId, 'artifacts', node, invoke, 'v1'))
     })
   })
 

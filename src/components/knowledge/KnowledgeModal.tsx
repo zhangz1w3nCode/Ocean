@@ -17,7 +17,7 @@ type CreateMode = 'select' | 'manual' | 'agentic'
 interface KnowledgeModalProps {
   isOpen: boolean
   onClose: () => void
-  onConfirm: (knowledge: Omit<KnowledgeFile, 'id' | 'createdAt' | 'updatedAt' | 'type' | 'status'>) => Promise<boolean>
+  onConfirm: (knowledge: Omit<KnowledgeFile, 'id' | 'createdAt' | 'updatedAt' | 'type' | 'reviewStatus'>) => Promise<boolean>
   mode: 'create' | 'edit'
   initialData?: KnowledgeFile
   existingNames?: string[]
@@ -57,8 +57,8 @@ export const KnowledgeModal: FC<KnowledgeModalProps> = ({
   const [newTagInput, setNewTagInput] = useState('')
   const tagInputRef = useRef<HTMLInputElement>(null)
 
-  // 计算排除路径（编辑模式下排除当前知识库；知识库跨来源共享，固定在项目根 .knowledges）
-  const excludePath = mode === 'edit' && initialData ? `.knowledges/${initialData.filepath || initialData.name}.md` : undefined
+  // 计算排除路径（编辑模式下排除当前知识；存储在 .ocean/knowledges）
+  const excludePath = mode === 'edit' && initialData ? `.ocean/knowledges/${initialData.filepath || initialData.name}.md` : undefined
 
   // 编辑/预览模式
   const [viewMode, setViewMode] = useState<'edit' | 'preview'>('edit')

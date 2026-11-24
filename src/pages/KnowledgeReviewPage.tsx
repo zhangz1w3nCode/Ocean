@@ -34,7 +34,7 @@ export const KnowledgeReviewPage: FC<{ nested?: boolean }> = ({ nested = false }
   const pendingKnowledges = useMemo(() => {
     return knowledgeFiles
       .filter((k) => k.name.toLowerCase() !== 'index')
-      .filter((k) => k.status === 'pending')
+      .filter((k) => k.reviewStatus === 'pending')
       .filter((knowledge) => {
         const query = searchQuery.toLowerCase()
         return (
@@ -66,7 +66,7 @@ export const KnowledgeReviewPage: FC<{ nested?: boolean }> = ({ nested = false }
 
     // 1) 状态置为 validated 并写盘
     const success = await updateKnowledgeFile(reviewingKnowledge.id, {
-      status: 'validated',
+      reviewStatus: 'validated',
       updatedAt: new Date().toISOString(),
     })
     if (!success) {

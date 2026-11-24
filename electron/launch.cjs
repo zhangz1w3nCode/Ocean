@@ -84,54 +84,54 @@ const setProjectPath = (projectPath) => {
   migrateDataDir(projectPath)
 }
 
-// 工作流数据存储目录（项目根 .workflows，跨资产来源共享，不随 assetRoot 变化）
+// 工作流数据存储目录（.ocean/workflows，资产源区，不随 assetRoot 变化）
 const getWorkflowsDir = () => {
-  const dataDir = path.join(getProjectRoot(), '.workflows')
+  const dataDir = path.join(getProjectRoot(), '.ocean', 'workflows')
   if (!fs.existsSync(dataDir)) {
     fs.mkdirSync(dataDir, { recursive: true })
   }
   return dataDir
 }
 
-// 节点数据存储目录（项目根 .nodes，跨资产来源共享，不随 assetRoot 变化）
+// 节点数据存储目录（.ocean/nodes，资产源区，不随 assetRoot 变化）
 const getNodesDir = () => {
-  const dataDir = path.join(getProjectRoot(), '.nodes')
+  const dataDir = path.join(getProjectRoot(), '.ocean', 'nodes')
   if (!fs.existsSync(dataDir)) {
     fs.mkdirSync(dataDir, { recursive: true })
   }
   return dataDir
 }
 
-// 资源文件存储目录（项目根 .resources，跨资产来源共享，不随 assetRoot 变化）
+// 资源文件存储目录（.ocean/resources，资产源区，不随 assetRoot 变化）
 const getResourcesDir = () => {
-  const dataDir = path.join(getProjectRoot(), '.resources')
+  const dataDir = path.join(getProjectRoot(), '.ocean', 'resources')
   if (!fs.existsSync(dataDir)) {
     fs.mkdirSync(dataDir, { recursive: true })
   }
   return dataDir
 }
 
-// 工具文件存储目录（agents）
+// 智能体文件存储目录（.ocean/agents，资产源区；.pi/.claude 下的 agents 为同步物化目标，只写不读）
 const getAgentsDir = () => {
-  const dataDir = path.join(getProjectRoot(), getAssetDir(), 'agents')
+  const dataDir = path.join(getProjectRoot(), '.ocean', 'agents')
   if (!fs.existsSync(dataDir)) {
     fs.mkdirSync(dataDir, { recursive: true })
   }
   return dataDir
 }
 
-// 知识库文件存储目录（项目根 .knowledges，跨资产来源共享，不随 assetRoot 变化）
+// 知识库文件存储目录（.ocean/knowledges，资产源区，不随 assetRoot 变化）
 const getKnowledgesDir = () => {
-  const dataDir = path.join(getProjectRoot(), '.knowledges')
+  const dataDir = path.join(getProjectRoot(), '.ocean', 'knowledges')
   if (!fs.existsSync(dataDir)) {
     fs.mkdirSync(dataDir, { recursive: true })
   }
   return dataDir
 }
 
-// 技能文件存储目录（skills）
+// 技能文件存储目录（.ocean/skills，资产源区；.pi/.claude 下的 skills 为同步物化目标，只写不读）
 const getSkillsDir = () => {
-  const dataDir = path.join(getProjectRoot(), getAssetDir(), 'skills')
+  const dataDir = path.join(getProjectRoot(), '.ocean', 'skills')
   if (!fs.existsSync(dataDir)) {
     fs.mkdirSync(dataDir, { recursive: true })
   }
@@ -1468,6 +1468,45 @@ ipcMain.handle('get-knowledge-baseline', (_, name) => {
   }
 })
 
+// ===== 资产审核与 .ocean git 托管（实现见 core/review.cjs，CLI `ocean review` 与此处共用） =====
+const review = require('./core/review.cjs')
+
+ipcMain.handle('asset-git-status', () => review.gitStatus(getProjectRoot()))
+ipcMain.handle('asset-git-init', () => review.gitInit(getProjectRoot()))
+ipcMain.handle('asset-git-log', (_, refPath) => review.gitLog(getProjectRoot(), refPath))
+ipcMain.handle('asset-git-show', (_, refPath, rev) => review.gitShow(getProjectRoot(), refPath, rev))
+ipcMain.handle('get-asset-baseline', (_, refPath) => review.gitBaseline(getProjectRoot(), refPath))
+
+// 资产 git 配置（LLM 提交信息，存 .ocean/asset-git.json，进黑名单不入库）
+ipcMain.handle('load-asset-git-config', () => {
+  try {
+    const configPath = path.join(getProjectRoot(), '.ocean', 'asset-git.json')
+    if (!fs.existsSync(configPath)) return { success: true, config: null }
+    return { success: true, config: JSON.parse(fs.readFileSync(configPath, 'utf-8')) }
+  } catch (error) {
+    return { success: false, error: String(error), config: null }
+  }
+})
+
+ipcMain.handle('save-asset-git-config', (_, config) => {
+  try {
+    const dir = review.oceanDir(getProjectRoot())
+    fs.writeFileSync(path.join(dir, 'asset-git.json'), JSON.stringify(config || {}, null, 2), 'utf-8')
+    return { success: true }
+  } catch (error) {
+    return { success: false, error: String(error) }
+  }
+})
+
+ipcMain.handle('asset-git-commit', (_, refPath, message) => review.gitCommit(getProjectRoot(), refPath, message))
+ipcMain.handle('asset-git-rollback', (_, refPath) => review.gitRollback(getProjectRoot(), refPath))
+ipcMain.handle('load-pending-assets', () => review.listReviewAssets(getProjectRoot()))
+ipcMain.handle('load-asset-raw', (_, refPath) => review.readAssetRaw(getProjectRoot(), refPath))
+ipcMain.handle('set-asset-review-status', (_, refPath, reviewStatus, versionBump, reason) =>
+  review.setReviewStatus(getProjectRoot(), refPath, reviewStatus, versionBump, reason))
+// 一键同步；可传 {type, name} 仅物化单个 skill/agent（审核通过自动同步用）
+ipcMain.handle('sync-approved-assets', (_, only) => review.syncApprovedAssets(getProjectRoot(), only))
+
 // 加载所有知识库文件列表（递归扫描子目录，返回相对路径格式的文件名）
 ipcMain.handle('load-all-knowledge-files', () => {
   try {
@@ -1665,44 +1704,14 @@ ipcMain.handle('init-project-dir', (_, projectPath) => {
     // 设置项目路径
     setProjectPath(projectPath)
 
-    // 创建必要的子目录
-    const assetDir = path.join(projectPath, getAssetDir())
-    const subDirs = ['agents']
-    for (const subDir of subDirs) {
-      const dirPath = path.join(assetDir, subDir)
+    // 全部资产存储在 .ocean/ 资产源区（.pi/.claude 仅作为技能/智能体的同步物化目标）
+    const oceanDir = path.join(projectPath, '.ocean')
+    const assetSubDirs = ['agents', 'skills', 'nodes', 'resources', 'workflows', 'knowledges', 'tasks', 'codebases']
+    for (const subDir of assetSubDirs) {
+      const dirPath = path.join(oceanDir, subDir)
       if (!fs.existsSync(dirPath)) {
         fs.mkdirSync(dirPath, { recursive: true })
       }
-    }
-
-    // 知识库为跨资产来源共享资产，存储在项目根 .knowledges 目录
-    const knowledgesDir = path.join(projectPath, '.knowledges')
-    if (!fs.existsSync(knowledgesDir)) {
-      fs.mkdirSync(knowledgesDir, { recursive: true })
-    }
-
-    // 资源文件为跨资产来源共享资产，存储在项目根 .resources 目录
-    const resourcesDir = path.join(projectPath, '.resources')
-    if (!fs.existsSync(resourcesDir)) {
-      fs.mkdirSync(resourcesDir, { recursive: true })
-    }
-
-    // 节点文件为跨资产来源共享资产，存储在项目根 .nodes 目录
-    const nodesDir = path.join(projectPath, '.nodes')
-    if (!fs.existsSync(nodesDir)) {
-      fs.mkdirSync(nodesDir, { recursive: true })
-    }
-
-    // 工作流为跨资产来源共享资产，存储在项目根 .workflows 目录
-    const workflowsDir = path.join(projectPath, '.workflows')
-    if (!fs.existsSync(workflowsDir)) {
-      fs.mkdirSync(workflowsDir, { recursive: true })
-    }
-
-    // 创建 .ocean 目录用于存放项目级配置
-    const oceanDir = path.join(projectPath, '.ocean')
-    if (!fs.existsSync(oceanDir)) {
-      fs.mkdirSync(oceanDir, { recursive: true })
     }
 
     return {

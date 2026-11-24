@@ -57,7 +57,7 @@ export interface ImportPackageResult {
 export class WorkflowPackageError extends Error {}
 
 function workflowDirOf(root: string, workflowName: string): string {
-  return path.join(root, '.workflows', workflowName)
+  return path.join(root, '.ocean', 'workflows', workflowName)
 }
 
 function assertSafeWorkflowName(name: string): string {
@@ -88,7 +88,7 @@ function readJsonFile(filePath: string): any {
   return JSON.parse(raw)
 }
 
-/** 从 flow.json 提取节点引用：全局节点指向 .nodes/，局部节点指向 .workflows/<wf>/nodes/ */
+/** 从 flow.json 提取节点引用：全局节点指向 .ocean/nodes/，局部节点指向 .ocean/workflows/<wf>/nodes/（兼容旧前缀） */
 function collectNodeRefs(flow: any, workflowName: string): { refs: PackageNodeRef[]; warnings: string[] } {
   const refs: PackageNodeRef[] = []
   const warnings: string[] = []
@@ -102,8 +102,11 @@ function collectNodeRefs(flow: any, workflowName: string): { refs: PackageNodeRe
     const label = node?.data?.label ?? node?.id ?? '未命名节点'
 
     let type: 'global' | 'local'
-    if (normalized.startsWith('.nodes/')) type = 'global'
-    else if (normalized.startsWith(`.workflows/${workflowName}/nodes/`)) type = 'local'
+    if (normalized.startsWith('.ocean/nodes/') || normalized.startsWith('.nodes/')) type = 'global'
+    else if (
+      normalized.startsWith(`.ocean/workflows/${workflowName}/nodes/`) ||
+      normalized.startsWith(`.workflows/${workflowName}/nodes/`)
+    ) type = 'local'
     else {
       warnings.push(`节点引用不在支持的目录内，已跳过：${refPath}（节点「${label}」）`)
       continue
@@ -190,7 +193,7 @@ export function buildPackage(
   // 未被 flow.json 引用但存在于 nodes/ 的局部节点也一并导出，避免遗漏
   for (const localName of localNames) {
     if (manifestNodes.some((r) => r.type === 'local' && r.name === localName)) continue
-    manifestNodes.push({ name: localName, type: 'local', refPath: `.workflows/${name}/nodes/${localName}` })
+    manifestNodes.push({ name: localName, type: 'local', refPath: `.ocean/workflows/${name}/nodes/${localName}` })
   }
 
   const manifest: PackageManifest = {
@@ -254,7 +257,7 @@ export function inspectPackage(root: string, buffer: Uint8Array): InspectPackage
   }
 
   const conflictingNodes = [...globalNames]
-    .filter((fileName) => fs.existsSync(path.join(root, '.nodes', fileName)))
+    .filter((fileName) => fs.existsSync(path.join(root, '.ocean', 'nodes', fileName)))
     .sort()
 
   return {
@@ -278,6 +281,16 @@ export function importPackage(root: string, buffer: Uint8Array): ImportPackageRe
   }
   // 包内的 name 可能与目录名不一致（历史重命名），导入时以 manifest 的工作流名为准
   flow.name = workflowName
+
+  // 旧版导出的包内 nodeRefPath 可能是旧路径前缀（.nodes/ / .workflows/），导入时归一到 .ocean 资产源区
+  for (const node of flow.nodes || []) {
+    const ref = node?.data?.nodeRefPath
+    if (typeof ref === 'string' && ref.startsWith('.nodes/')) {
+      node.data.nodeRefPath = `.ocean/${ref.slice(1)}`
+    } else if (typeof ref === 'string' && ref.startsWith('.workflows/')) {
+      node.data.nodeRefPath = `.ocean/${ref.slice(1)}`
+    }
+  }
 
   const writtenFiles: string[] = []
   const overwrittenNodes: string[] = []
@@ -306,8 +319,8 @@ export function importPackage(root: string, buffer: Uint8Array): ImportPackageRe
     if (entry.startsWith(GLOBAL_NODES_PREFIX)) {
       const fileName = entry.slice(GLOBAL_NODES_PREFIX.length)
       if (!fileName) continue
-      if (fs.existsSync(path.join(root, '.nodes', fileName))) overwrittenNodes.push(fileName)
-      writeFile(path.join(root, '.nodes', fileName), strFromU8(data))
+      if (fs.existsSync(path.join(root, '.ocean', 'nodes', fileName))) overwrittenNodes.push(fileName)
+      writeFile(path.join(root, '.ocean', 'nodes', fileName), strFromU8(data))
     }
   }
 

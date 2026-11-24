@@ -7,13 +7,12 @@ import { useResourceStore } from '../stores/resourceStore'
 import { useKnowledgeStore } from '../stores/knowledgeStore'
 import { useSkillStore } from '../stores/skillStore'
 import { useCodebaseStore } from '../stores/codebaseStore'
-import { useSettingsStore } from '../stores/settingsStore'
 
 interface UseReferenceItemsOptions {
-  excludePath?: string  // 排除特定路径（如 ".claude/agents/xxx.md" 或 ".pi/agents/xxx.md"）
+  excludePath?: string  // 排除特定路径（如 ".ocean/agents/xxx.md"）
 }
 
-// 库引用配置（subDir 为资产根目录下的相对子目录）
+// 库引用配置（subDir 为 .ocean 资产源区下的相对子目录）
 const libraryConfig: { category: ReferenceCategory; name: string; subDir: string }[] = [
   { category: 'agents', name: '智能体库', subDir: 'agents/' },
   { category: 'nodes', name: '节点库', subDir: 'nodes/' },
@@ -26,8 +25,6 @@ const libraryConfig: { category: ReferenceCategory; name: string; subDir: string
 
 export function useReferenceItems(options: UseReferenceItemsOptions = {}): ReferenceItem[] {
   const { excludePath } = options
-  const assetRoot = useSettingsStore((state) => state.assetRoot)
-  const assetDir = assetRoot === 'pi' ? '.pi' : '.claude'
 
   const agentFiles = useAgentStore((state) => state.agentFiles)
   const nodeDefinitions = useNodeStore((state) => state.nodeDefinitions)
@@ -42,17 +39,17 @@ export function useReferenceItems(options: UseReferenceItemsOptions = {}): Refer
 
     // 智能体 - 先添加库引用，再添加具体文件
     const agentLibrary = libraryConfig.find(c => c.category === 'agents')!
-    if (`${assetDir}/${agentLibrary.subDir}` !== excludePath) {
+    if (`.ocean/${agentLibrary.subDir}` !== excludePath) {
       items.push({
         id: 'library-agents',
         name: agentLibrary.name,
         category: 'agents',
-        path: `${assetDir}/${agentLibrary.subDir}`,
+        path: `.ocean/${agentLibrary.subDir}`,
         isLibrary: true,
       })
     }
     agentFiles.forEach((agent) => {
-      const path = `${assetDir}/agents/${agent.name}.md`
+      const path = `.ocean/agents/${agent.name}.md`
       if (path !== excludePath) {
         items.push({
           id: agent.id,
@@ -64,20 +61,19 @@ export function useReferenceItems(options: UseReferenceItemsOptions = {}): Refer
       }
     })
 
-    // 节点 - 先添加库引用，再添加具体文件
-    // 节点为跨资产来源共享资产，路径为 .nodes/
+    // 节点 - 先添加库引用，再添加具体文件（节点存储在 .ocean/nodes）
     const nodeLibrary = libraryConfig.find(c => c.category === 'nodes')!
-    if (`.nodes/` !== excludePath) {
+    if (`.ocean/nodes/` !== excludePath) {
       items.push({
         id: 'library-nodes',
         name: nodeLibrary.name,
         category: 'nodes',
-        path: '.nodes/',
+        path: '.ocean/nodes/',
         isLibrary: true,
       })
     }
     nodeDefinitions.forEach((node) => {
-      const path = `.nodes/${node.name}.md`
+      const path = `.ocean/nodes/${node.name}.md`
       if (path !== excludePath) {
         items.push({
           id: node.id,
@@ -90,19 +86,19 @@ export function useReferenceItems(options: UseReferenceItemsOptions = {}): Refer
     })
 
     // 工作流 - 先添加库引用，再添加具体文件
-    // 工作流为跨资产来源共享资产，路径为 .workflows/
+    // 工作流存储在 .ocean/workflows
     const workflowLibrary = libraryConfig.find(c => c.category === 'workflows')!
-    if (`.workflows/` !== excludePath) {
+    if (`.ocean/workflows/` !== excludePath) {
       items.push({
         id: 'library-workflows',
         name: workflowLibrary.name,
         category: 'workflows',
-        path: '.workflows/',
+        path: '.ocean/workflows/',
         isLibrary: true,
       })
     }
     workflows.forEach((workflow) => {
-      // 工作流引用只拼接 workflow 名称，不拼接相对路径（CLI/主进程按名称寻址 .workflows/{name}/）
+      // 工作流引用只拼接 workflow 名称，不拼接相对路径（CLI/主进程按名称寻址 .ocean/workflows/{name}/）
       const path = workflow.name
       if (path !== excludePath) {
         items.push({
@@ -115,19 +111,19 @@ export function useReferenceItems(options: UseReferenceItemsOptions = {}): Refer
       }
     })
 
-    // 资源文件 - 先添加库引用，再添加具体文件（资源文件跨资产来源共享，固定在项目根 .resources）
+    // 资源文件 - 先添加库引用，再添加具体文件（存储在 .ocean/resources）
     const resourceLibrary = libraryConfig.find(c => c.category === 'resources')!
-    if (`.resources/` !== excludePath) {
+    if (`.ocean/resources/` !== excludePath) {
       items.push({
         id: 'library-resources',
         name: resourceLibrary.name,
         category: 'resources',
-        path: '.resources/',
+        path: '.ocean/resources/',
         isLibrary: true,
       })
     }
     resourceFiles.forEach((resource) => {
-      const path = `.resources/${resource.name}.md`
+      const path = `.ocean/resources/${resource.name}.md`
       if (path !== excludePath) {
         items.push({
           id: resource.id,
@@ -139,15 +135,15 @@ export function useReferenceItems(options: UseReferenceItemsOptions = {}): Refer
       }
     })
 
-    // 技能 - 先添加库引用，再添加具体文件
+    // 技能 - 先添加库引用，再添加具体文件（存储在 .ocean/skills）
     // 技能引用只拼接 skill 名称，不拼接相对路径
     const skillLibrary = libraryConfig.find(c => c.category === 'skills')!
-    if (`${assetDir}/${skillLibrary.subDir}` !== excludePath) {
+    if (`.ocean/${skillLibrary.subDir}` !== excludePath) {
       items.push({
         id: 'library-skills',
         name: skillLibrary.name,
         category: 'skills',
-        path: `${assetDir}/${skillLibrary.subDir}`,
+        path: `.ocean/${skillLibrary.subDir}`,
         isLibrary: true,
       })
     }
@@ -164,20 +160,20 @@ export function useReferenceItems(options: UseReferenceItemsOptions = {}): Refer
       }
     })
 
-    // 知识库 - 先添加库引用，再添加具体文件（知识库跨资产来源共享，固定在项目根 .knowledges）
+    // 知识库 - 先添加库引用，再添加具体文件（存储在 .ocean/knowledges）
     const knowledgeLibrary = libraryConfig.find(c => c.category === 'knowledges')!
-    if (`.knowledges/` !== excludePath) {
+    if (`.ocean/knowledges/` !== excludePath) {
       items.push({
         id: 'library-knowledges',
         name: knowledgeLibrary.name,
         category: 'knowledges',
-        path: `.knowledges/`,
+        path: '.ocean/knowledges/',
         isLibrary: true,
       })
     }
-    knowledgeFiles.filter((k) => k.status === 'validated').forEach((knowledge) => {
+    knowledgeFiles.filter((k) => k.reviewStatus === 'validated').forEach((knowledge) => {
       const knowledgePath = knowledge.filepath || (knowledge.category ? `${knowledge.category}/${knowledge.name}` : knowledge.name)
-      const path = `.knowledges/${knowledgePath}.md`
+      const path = `.ocean/knowledges/${knowledgePath}.md`
       if (path !== excludePath) {
         items.push({
           id: knowledge.id,
@@ -189,19 +185,19 @@ export function useReferenceItems(options: UseReferenceItemsOptions = {}): Refer
       }
     })
 
-    // 代码库 - 先添加库引用，再添加具体代码库（跨资产来源共享，固定在项目根 .codebases）
+    // 代码库 - 先添加库引用，再添加具体代码库（存储在 .ocean/codebases）
     const codebaseLibrary = libraryConfig.find(c => c.category === 'codebases')!
-    if (`.codebases/` !== excludePath) {
+    if (`.ocean/codebases/` !== excludePath) {
       items.push({
         id: 'library-codebases',
         name: codebaseLibrary.name,
         category: 'codebases',
-        path: `.codebases/`,
+        path: '.ocean/codebases/',
         isLibrary: true,
       })
     }
     codebases.forEach((codebase) => {
-      const path = `.codebases/${codebase.name}/`
+      const path = `.ocean/codebases/${codebase.name}/`
       if (path !== excludePath) {
         items.push({
           id: `codebase-${codebase.name}`,
@@ -214,5 +210,5 @@ export function useReferenceItems(options: UseReferenceItemsOptions = {}): Refer
     })
 
     return items
-  }, [excludePath, assetRoot, agentFiles, nodeDefinitions, workflows, resourceFiles, skillFiles, knowledgeFiles, codebases])
+  }, [excludePath, agentFiles, nodeDefinitions, workflows, resourceFiles, skillFiles, knowledgeFiles, codebases])
 }

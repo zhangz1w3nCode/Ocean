@@ -73,7 +73,7 @@ describe('instance flow.json snapshot', () => {
   let sourceFlowPath: string
 
   const snapshotPath = () =>
-    path.join(root, '.workflows', workflow, 'instance', instanceId, 'meta-data', 'flow.json')
+    path.join(root, '.ocean', 'workflows', workflow, 'instance', instanceId, 'meta-data', 'flow.json')
 
   const writeSourceFlow = (spec?: FlowSpec) => {
     fs.writeFileSync(sourceFlowPath, flowJson(spec), 'utf-8')
@@ -86,10 +86,16 @@ describe('instance flow.json snapshot', () => {
 
   beforeEach(() => {
     root = fs.mkdtempSync(path.join(os.tmpdir(), 'ocean-instance-snapshot-'))
-    metaDir = path.join(root, '.workflows', workflow, 'meta-data')
+    metaDir = path.join(root, '.ocean', 'workflows', workflow, 'meta-data')
     fs.mkdirSync(metaDir, { recursive: true })
     sourceFlowPath = path.join(metaDir, 'flow.json')
     writeSourceFlow()
+    // 门控（D13）：实例化要求工作流已审核通过——测试种子直接置 validated
+    fs.writeFileSync(
+      path.join(root, '.ocean', 'workflows', workflow, 'WORKFLOW.md'),
+      '---\ntype: workflow\nname: ' + workflow + '\nreviewStatus: validated\n---\n# ' + workflow + '\n',
+      'utf-8',
+    )
   })
 
   afterEach(() => {
@@ -214,7 +220,7 @@ describe('instance flow.json snapshot', () => {
   })
 
   it('没有快照的历史实例回退到源 flow.json', async () => {    create(root, workflow, instanceId, '输入')
-    fs.rmSync(path.join(root, '.workflows', workflow, 'instance', instanceId, 'meta-data'), {
+    fs.rmSync(path.join(root, '.ocean', 'workflows', workflow, 'instance', instanceId, 'meta-data'), {
       recursive: true, force: true,
     })
     writeSourceFlow({ startLabel: '历史实例读的是源' })
@@ -227,15 +233,21 @@ describe('trace.jsonl node_id', () => {
   let root: string
   let sourceFlowPath: string
 
-  const instDir = () => path.join(root, '.workflows', workflow, 'instance', instanceId)
+  const instDir = () => path.join(root, '.ocean', 'workflows', workflow, 'instance', instanceId)
   const traceText = () => fs.readFileSync(traceJsonlPath(instDir()), 'utf-8')
 
   beforeEach(() => {
     root = fs.mkdtempSync(path.join(os.tmpdir(), 'ocean-trace-nodeid-'))
-    const metaDir = path.join(root, '.workflows', workflow, 'meta-data')
+    const metaDir = path.join(root, '.ocean', 'workflows', workflow, 'meta-data')
     fs.mkdirSync(metaDir, { recursive: true })
     sourceFlowPath = path.join(metaDir, 'flow.json')
     fs.writeFileSync(sourceFlowPath, flowJson(), 'utf-8')
+    // 门控（D13）：实例化要求工作流已审核通过
+    fs.writeFileSync(
+      path.join(root, '.ocean', 'workflows', workflow, 'WORKFLOW.md'),
+      '---\ntype: workflow\nname: ' + workflow + '\nreviewStatus: validated\n---\n# ' + workflow + '\n',
+      'utf-8',
+    )
   })
 
   afterEach(() => {

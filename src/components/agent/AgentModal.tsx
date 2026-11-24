@@ -5,7 +5,6 @@ import { Modal, Input, Textarea, Button, ConfirmModal, MarkdownEditor, MarkdownR
 import { useToastStore } from '../../stores/toastStore'
 import { useSettingsStore } from '../../stores/settingsStore'
 import type { AgentFile } from '../../types'
-import { getAssetDirName } from '../../utils/asset-config'
 
 interface AgentModalProps {
   isOpen: boolean
@@ -357,7 +356,7 @@ export const AgentModal: FC<AgentModalProps> = ({
                 rows={12}
                 invalid={invalidFields.has('content')}
                 className="font-mono text-sm"
-                excludePath={mode === 'edit' && initialData ? `${getAssetDirName()}/agents/${initialData.name}.md` : undefined}
+                excludePath={mode === 'edit' && initialData ? `.ocean/agents/${initialData.name}.md` : undefined}
               />
             )}
 

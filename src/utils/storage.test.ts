@@ -70,7 +70,7 @@ describe('generateKnowledgeMarkdown', () => {
       expect(fm).not.toContain('tags:')
     })
 
-    it('无 rawFrontmatter 且 tags 为空时 frontmatter 为 name/summary/status', () => {
+    it('无 rawFrontmatter 且 tags 为空时 frontmatter 为 name/summary/reviewStatus', () => {
       const md = generateKnowledgeMarkdown(
         { name: 'test', summary: 'desc', tags: [] },
         '内容'
@@ -78,43 +78,45 @@ describe('generateKnowledgeMarkdown', () => {
       const fm = parse(md).frontmatter
       expect(fm).toContain('name: test')
       expect(fm).toContain('summary: desc')
-      expect(fm).toContain('status: pending')
-      expect(fm.split('\n').filter(l => l.trim() && !l.startsWith(' ')).length).toBe(3)
+      expect(fm).toContain('reviewStatus: pending')
+      expect(fm).toContain('version: 1')
+      expect(fm.split('\n').filter(l => l.trim() && !l.startsWith(' ')).length).toBe(4)
     })
   })
 
-  describe('status 语义', () => {
-    it('未指定 status 且无 rawFrontmatter 时默认 pending', () => {
+  describe('reviewStatus 语义（D13：旧 status 字段迁移）', () => {
+    it('未指定 reviewStatus 且无 rawFrontmatter 时默认 pending', () => {
       const md = generateKnowledgeMarkdown(
         { name: 'test', summary: 'd', tags: [] },
         '内容'
       )
-      expect(parse(md).frontmatter).toContain('status: pending')
+      expect(parse(md).frontmatter).toContain('reviewStatus: pending')
     })
 
-    it('显式指定 status=validated 时以其为准', () => {
+    it('显式指定 reviewStatus=validated 时以其为准', () => {
       const md = generateKnowledgeMarkdown(
-        { name: 'test', summary: 'd', tags: [], status: 'validated' },
+        { name: 'test', summary: 'd', tags: [], reviewStatus: 'validated' },
         '内容',
         { status: 'pending' }
       )
       const fm = parse(md).frontmatter
-      expect(fm).toContain('status: validated')
-      expect(fm).not.toContain('status: pending')
+      expect(fm).toContain('reviewStatus: validated')
+      expect(fm).not.toContain('reviewStatus: pending')
+      expect(fm).not.toContain('status:')
     })
 
-    it('未指定 status 但 rawFrontmatter 已有 status 时保留原值', () => {
+    it('未指定 reviewStatus 但 rawFrontmatter 已有旧 status 时映射保留原值', () => {
       const md = generateKnowledgeMarkdown(
         { name: 'test', summary: 'd', tags: [] },
         '内容',
         { status: 'validated' }
       )
-      expect(parse(md).frontmatter).toContain('status: validated')
+      expect(parse(md).frontmatter).toContain('reviewStatus: validated')
     })
   })
 
   describe('未知字段保留（rawFrontmatter 合并）', () => {
-    it('保留 rawFrontmatter 中的 domain/status 等未知字段', () => {
+    it('保留 rawFrontmatter 中的 domain 等未知字段，旧 status 迁移为 reviewStatus', () => {
       const md = generateKnowledgeMarkdown(
         { name: 'test', summary: 'd', tags: ['a'] },
         '内容',
@@ -122,7 +124,8 @@ describe('generateKnowledgeMarkdown', () => {
       )
       const fm = parse(md).frontmatter
       expect(fm).toContain('domain: ocean/sub')
-      expect(fm).toContain('status: validated')
+      expect(fm).toContain('reviewStatus: validated')
+      expect(fm).not.toContain('status:')
       expect(fm).toContain('summary: d')
       expect(fm).toContain('name: test')
     })

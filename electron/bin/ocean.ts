@@ -17,6 +17,9 @@ import * as skillCrud from '../core/skill'
 import { handleTask } from '../source/cli/task'
 import * as wfGraph from '../core/workflow'
 import { handleCodebases } from '../source/cli/codebases'
+// 资产审核共享实现（CJS，与主进程 IPC 共用一份逻辑）
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const review = require('../core/review.cjs')
 import { out, rawOut, printDataTable, printList, printJson, printAction, UsageError, readContent, setHelpJsonCapture, getHelpJsonCapture } from '../source/cli/common'
 import { box, treeBox, wrapBlock } from '../source/cli/ui'
 
@@ -202,6 +205,7 @@ function printHelp(namespace?: string, subcommand?: string, json: boolean = fals
   agent       智能体 CRUD
   skill       技能 CRUD
   task        任务库 CRUD
+  review      资产审核（list/show/diff/approve/reject/restore/sync/init）
   config      配置管理
 
 运行 'ocean <namespace> --help' 查看命名空间的详细用法。`)
@@ -698,6 +702,30 @@ flag:
 
 存储: .codebases/{name}/（README.md）`)
       break
+    case 'review':
+      out(`ocean review — 资产审核（与桌面端「审核」页同语义；CLI 侧查看 pending/rejected 资产的唯一通道）
+
+用法: ocean review <subcommand> <type> <name> [--flags...]
+
+资产类型（<type>）: skill | agent | node | resource | workflow | task | knowledge | codebase
+  knowledge 名称可带 domain 子目录，如: ocean review diff knowledge ocean/功能设计
+
+子命令:
+  list [--status pending|rejected] [--type <type>]   列出待审/已驳回资产
+  show <type> <name>                  查看资产全文（含 frontmatter）
+  diff <type> <name>                  待审版本 vs 上次审核通过版本（.ocean git HEAD）的正文 diff
+  approve <type> <name> [--message]   审核通过：version+1、托管时 git 提交；skill/agent 自动物化到运行时目录
+  reject <type> <name> --reason "…"   审核不通过（理由必填），标记 rejected
+  restore <type> <name>               已驳回 → 恢复待审
+  sync                                一键同步：全部 validated 的 skill/agent 物化到运行时目录（含删除对齐）
+  init                                开启 .ocean git 托管（diff/approve 提交的基线来源）
+
+说明:
+  - 输出不包含磁盘路径，资产以 <type> <name> 寻址
+  - 全部类型的 diff 基线统一为 .ocean git HEAD（上次审核通过版本）；未开启托管或从未过审则输出全文并标注无基线
+  - 审核通过后 version 自增 1（新建资产 version 从 1 起）
+  --json                       JSON 格式输出`)
+      break
     case 'config':
       out(`ocean config — 配置管理
 
@@ -709,7 +737,7 @@ flag:
     default:
       out(`未知命名空间: ${namespace}
 
-可用命名空间: workflow | node | knowledge | resource | agent | skill | task | config
+可用命名空间: workflow | node | knowledge | resource | agent | skill | task | review | config
 运行 'ocean --help' 查看详细用法。`)
   }
 }
@@ -781,6 +809,11 @@ async function main(): Promise<void> {
           break
         }
         await handleCodebases(root, args)
+        break
+
+      // === 审核通道（CLI 侧唯一可见 pending/rejected 资产的入口） ===
+      case 'review':
+        handleReview(root, args)
         break
 
       // === config ===
@@ -1545,6 +1578,102 @@ function handleSkill(root: string, args: ReturnType<typeof parseArgs>): void {
 // ---------------------------------------------------------------------------
 // config
 // ---------------------------------------------------------------------------
+
+// 资产审核命令组：实现全部委托 core/review.cjs（与主进程 IPC 同源），输出不含磁盘路径
+function handleReview(root: string, args: ReturnType<typeof parseArgs>): void {
+  const cmd = args.subcommand
+  const flags = args.flags
+  const type = args.positional[0]
+  const name = args.positional[1]
+  const json = !!flags.json
+  const statusLabel = (s: string) => (s === 'rejected' ? '已驳回' : s === 'validated' ? '已通过' : '待审核')
+
+  switch (cmd) {
+    case 'list': {
+      const status = flags.status === 'rejected' ? 'rejected' : flags.status === 'pending' ? 'pending' : undefined
+      const r = review.listReviewAssets(root, status)
+      if (!r.success) throw new Error(r.error || '列举失败')
+      let items = r.items
+      if (typeof flags.type === 'string') items = items.filter((i: any) => i.type === flags.type)
+      const rows = items.map((i: any) => [i.type, i.name, statusLabel(i.reviewStatus), i.version == null ? '-' : String(i.version), (i.rejectReason || i.description || '').slice(0, 40)])
+      if (json) { printJson({ items: items.map((i: any) => ({ type: i.type, name: i.name, reviewStatus: i.reviewStatus, version: i.version, rejectReason: i.rejectReason || undefined, description: i.description || undefined })) }); break }
+      printDataTable(['类型', '名称', '状态', '版本', '理由/描述'], rows)
+      break
+    }
+    case 'show': {
+      if (!type || !name) throw new UsageError('用法: ocean review show <type> <name>')
+      const ref = review.resolveRef(root, type, name)
+      if (ref.error) throw new Error(ref.error)
+      const r = review.readAssetRaw(root, ref.refPath)
+      if (!r.success) throw new Error(r.error || '读取失败')
+      if (r.content == null) throw new Error(`${review.typeLabel(type)} ${name} 不存在`)
+      rawOut(r.content)
+      break
+    }
+    case 'diff': {
+      if (!type || !name) throw new UsageError('用法: ocean review diff <type> <name>')
+      const r = review.diffAgainstHead(root, type, name)
+      if (!r.success) throw new Error(r.error || 'diff 失败')
+      if (json) { printJson({ type: r.type, name: r.name, reviewStatus: r.reviewStatus, version: r.version, hasBaseline: r.hasBaseline, changed: r.hasBaseline ? r.changed : undefined, note: r.note, diff: r.diff, content: r.hasBaseline ? undefined : r.content }); break }
+      out(`${review.typeLabel(r.type)} ${r.name}  状态=${statusLabel(r.reviewStatus)}  版本=${r.version ?? '-'}`)
+      if (!r.hasBaseline) {
+        out(`（${r.note}，以下为全文）`)
+        rawOut(r.content)
+        break
+      }
+      if (!r.changed) { out('与上次审核通过版本无正文差异'); break }
+      rawOut(r.diff)
+      break
+    }
+    case 'approve': {
+      if (!type || !name) throw new UsageError('用法: ocean review approve <type> <name> [--message "…"]')
+      const r = review.approveAsset(root, type, name, typeof flags.message === 'string' ? flags.message : undefined)
+      if (!r.success) throw new Error(r.error || '审核通过失败')
+      if (json) { printJson({ action: 'approved', type: r.type, name: r.name, version: r.version, commit: r.commit && r.commit.success ? r.commit.hash : undefined, sync: r.sync ? r.sync.success : undefined }); break }
+      printAction('approved', { type: r.type, name: r.name, version: String(r.version ?? '-'),
+        commit: r.commit ? (r.commit.success ? '已提交' : `提交失败: ${r.commit.error || ''}`) : '未托管（未提交）',
+        sync: r.sync ? (r.sync.success ? '已物化到运行时目录' : `物化失败: ${r.sync.error || ''}`) : '无物化目标' })
+      break
+    }
+    case 'reject': {
+      if (!type || !name) throw new UsageError('用法: ocean review reject <type> <name> --reason "…"')
+      const reason = typeof flags.reason === 'string' ? flags.reason.trim() : ''
+      if (!reason) throw new UsageError('审核不通过必须填写理由：--reason "…"')
+      const ref = review.resolveRef(root, type, name)
+      if (ref.error) throw new Error(ref.error)
+      const r = review.setReviewStatus(root, ref.refPath, 'rejected', false, reason)
+      if (!r.success) throw new Error(r.error || '操作失败')
+      json ? printJson({ action: 'rejected', type: ref.type, name: ref.name }) : printAction('rejected', { type: ref.type, name: ref.name })
+      break
+    }
+    case 'restore': {
+      if (!type || !name) throw new UsageError('用法: ocean review restore <type> <name>')
+      const ref = review.resolveRef(root, type, name)
+      if (ref.error) throw new Error(ref.error)
+      const r = review.setReviewStatus(root, ref.refPath, 'pending', false)
+      if (!r.success) throw new Error(r.error || '操作失败')
+      json ? printJson({ action: 'restored', type: ref.type, name: ref.name }) : printAction('restored', { type: ref.type, name: ref.name })
+      break
+    }
+    case 'sync': {
+      const r = review.syncApprovedAssets(root)
+      if (!r.success) throw new Error(r.error || '同步失败')
+      const rep = r.report
+      if (json) { printJson({ action: 'synced', ...rep }); break }
+      printAction('synced', { 新增: String(rep.added.length), 更新: String(rep.updated.length), 移除: String(rep.removed.length), 跳过待审: String(rep.skippedPending.length) })
+      break
+    }
+    case 'init': {
+      const r = review.gitInit(root)
+      if (!r.success) throw new Error(r.error || '开启托管失败')
+      json ? printJson({ action: 'git-init', managed: true, branch: r.branch }) : printAction('git-init', { managed: 'true', branch: r.branch || '-' })
+      break
+    }
+    default:
+      if (!cmd) { printHelp('review'); return }
+      throw new UsageError(`未知的 review 子命令: ${cmd}\n运行 'ocean review --help' 查看详细用法。`)
+  }
+}
 
 function handleConfig(root: string, args: ReturnType<typeof parseArgs>): void {
   const cmd = args.subcommand

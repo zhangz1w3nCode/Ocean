@@ -83,6 +83,21 @@ const electronAPI = {
   loadKnowledgeGitConfig: () => ipcRenderer.invoke('load-knowledge-git-config'),
   saveKnowledgeGitConfig: (config) => ipcRenderer.invoke('save-knowledge-git-config', config),
 
+  // 资产审核与 .ocean git 托管（P3/P4）
+  loadPendingAssets: () => ipcRenderer.invoke('load-pending-assets'),
+  loadAssetRaw: (refPath) => ipcRenderer.invoke('load-asset-raw', refPath),
+  setAssetReviewStatus: (refPath, reviewStatus, versionBump, reason) => ipcRenderer.invoke('set-asset-review-status', refPath, reviewStatus, versionBump, reason),
+  loadAssetBaseline: (refPath) => ipcRenderer.invoke('get-asset-baseline', refPath),
+  assetGitStatus: () => ipcRenderer.invoke('asset-git-status'),
+  assetGitInit: () => ipcRenderer.invoke('asset-git-init'),
+  assetGitLog: (refPath) => ipcRenderer.invoke('asset-git-log', refPath),
+  assetGitShow: (refPath, rev) => ipcRenderer.invoke('asset-git-show', refPath, rev),
+  assetGitCommit: (refPath, message) => ipcRenderer.invoke('asset-git-commit', refPath, message),
+  assetGitRollback: (refPath) => ipcRenderer.invoke('asset-git-rollback', refPath),
+  loadAssetGitConfig: () => ipcRenderer.invoke('load-asset-git-config'),
+  saveAssetGitConfig: (config) => ipcRenderer.invoke('save-asset-git-config', config),
+  syncApprovedAssets: (only) => ipcRenderer.invoke('sync-approved-assets', only),
+
   // 技能文件数据持久化（目录结构，存储在 skills 目录）
   createSkillDirectory: (name, input) => ipcRenderer.invoke('create-skill-directory', name, input),
   saveSkillFile: (name, content) => ipcRenderer.invoke('save-skill-file', name, content),

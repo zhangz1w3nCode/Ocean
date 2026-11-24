@@ -10,6 +10,7 @@ import {
   sortedJsonStringifyCompact, serializeProcessStateJson,
 } from './state'
 import { writeDetail, writeError, hasDetail } from './artifact'
+import { readReviewStatus } from './reviewStatus'
 import { checkStepLimit, checkLoopLimit, checkRetryLimit } from './limits'
 import {
   loadLlmReviewConfig, resolveLlmProvider, checkArtifactWithLLM,
@@ -21,7 +22,7 @@ import {
 // ---------------------------------------------------------------------------
 
 function instanceDir(root: string, workflow: string, instanceId: string): string {
-  return path.join(root, '.workflows', workflow, 'instance', instanceId)
+  return path.join(root, '.ocean', 'workflows', workflow, 'instance', instanceId)
 }
 
 // 实例运行期一律读实例目录下的 flow.json 快照（创建实例时冻结），
@@ -36,7 +37,7 @@ function loadFlow(root: string, workflow: string, instanceId: string): Flow {
       console.error(`警告：实例快照不可用，回退源工作流定义（${snapshot}）：${e.message}`)
     }
   }
-  return fromFile(path.join(root, '.workflows', workflow, 'meta-data', 'flow.json'))
+  return fromFile(path.join(root, '.ocean', 'workflows', workflow, 'meta-data', 'flow.json'))
 }
 
 // ---------------------------------------------------------------------------
@@ -317,11 +318,13 @@ export function status(root: string, workflow: string, instanceId: string, json:
 // ---------------------------------------------------------------------------
 
 export function listWorkflows(root: string): string {
-  const base = path.join(root, '.workflows')
+  const base = path.join(root, '.ocean', 'workflows')
   if (!fs.existsSync(base)) return ''
   const names: string[] = []
   for (const entry of fs.readdirSync(base, { withFileTypes: true })) {
     if (entry.isDirectory() && fs.existsSync(path.join(base, entry.name, 'meta-data', 'flow.json'))) {
+      // 门控（D13）：仅列出审核通过的工作流
+      if (readReviewStatus(path.join(base, entry.name, 'WORKFLOW.md')) !== 'validated') continue
       names.push(entry.name)
     }
   }
@@ -339,7 +342,7 @@ function instanceCellText(text: string): string {
 
 export function listInstances(root: string, workflowFilter?: string, keyword?: string): string {
   const rows: string[] = []
-  const base = path.join(root, '.workflows')
+  const base = path.join(root, '.ocean', 'workflows')
   if (!fs.existsSync(base)) return ''
 
   const kws = (keyword || '')
@@ -476,7 +479,7 @@ function stripFrontmatter(content: string): string {
 // ---------------------------------------------------------------------------
 
 export function instanceWorkflow(root: string, instanceId: string): string {
-  const base = path.join(root, '.workflows')
+  const base = path.join(root, '.ocean', 'workflows')
   if (!fs.existsSync(base)) throw new Error(`实例不存在: ${instanceId}`)
 
   function walkDir(dir: string, depth: number): string | undefined {
@@ -506,22 +509,24 @@ export function resolveRoot(explicit?: string): string {
   if (explicit) return explicit
   let cwd = process.cwd()
   while (true) {
+    // 新标志：.ocean 资产源区；兼容旧布局的 .workflows 目录
+    if (fs.existsSync(path.join(cwd, '.ocean'))) return cwd
     if (fs.existsSync(path.join(cwd, '.workflows'))) return cwd
     const parent = path.dirname(cwd)
     if (parent === cwd) break
     cwd = parent
   }
-  // cwd 向上找不到 .workflows/ 时，回退到 ~/.ocean/cli-root（Ocean 当前打开的项目）
+  // cwd 向上找不到项目标志时，回退到 ~/.ocean/cli-root（Ocean 当前打开的项目）
   try {
     const home = process.env.HOME || ''
     if (home) {
       const cliRoot = fs.readFileSync(path.join(home, '.ocean', 'cli-root'), 'utf-8').trim()
-      if (cliRoot && fs.existsSync(path.join(cliRoot, '.workflows'))) return cliRoot
+      if (cliRoot && (fs.existsSync(path.join(cliRoot, '.ocean')) || fs.existsSync(path.join(cliRoot, '.workflows')))) return cliRoot
     }
   } catch {
     // 忽略
   }
-  throw new Error('未找到 .workflows 目录，请用 --root 指定项目根')
+  throw new Error('未找到 .ocean 目录，请用 --root 指定项目根')
 }
 
 // ---------------------------------------------------------------------------

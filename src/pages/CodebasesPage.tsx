@@ -136,7 +136,7 @@ export const CodebasesPage: FC<{ nested?: boolean }> = ({ nested = false }) => {
     setDeletingName(null)
   }
 
-  const filteredCodebases = codebases.filter((c) => {
+  const filteredCodebases = codebases.filter((c) => c.reviewStatus === 'validated').filter((c) => {
     const matchesSearch =
       c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       c.preview?.toLowerCase().includes(searchQuery.toLowerCase())

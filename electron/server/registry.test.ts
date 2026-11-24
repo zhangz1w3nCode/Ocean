@@ -53,7 +53,7 @@ describe('handler 注册表', () => {
     expect(r3.content).toBe('# registry demo\n')
 
     // 落盘证据：真实文件系统
-    expect(existsSync(join(project, '.workflows', 'reg-demo.md'))).toBe(true)
-    expect(readFileSync(join(project, '.workflows', 'reg-demo.md'), 'utf-8')).toBe('# registry demo\n')
+    expect(existsSync(join(project, '.ocean', 'workflows', 'reg-demo.md'))).toBe(true)
+    expect(readFileSync(join(project, '.ocean', 'workflows', 'reg-demo.md'), 'utf-8')).toBe('# registry demo\n')
   })
 })

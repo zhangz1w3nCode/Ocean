@@ -100,7 +100,8 @@ export const useCodebaseStore = create<CodebaseState>((set, get) => ({
       set({ codebases: [], isLoaded: true })
       return false
     }
-    set({ codebases: r.codebases, isLoaded: true })
+    // 门控（D13）：仅加载审核通过的代码库（引用选择器与列表页共用）
+    set({ codebases: r.codebases.filter((c: CodebaseInfo) => c.reviewStatus === 'validated'), isLoaded: true })
     return true
   },
 

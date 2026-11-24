@@ -2,6 +2,7 @@ import * as fs from 'node:fs'
 import * as path from 'node:path'
 
 import { Flow, fromFile, startNode, node as getNode } from './model'
+import { readReviewStatus, assertOperable } from './reviewStatus'
 import {
   Limits, ProcessFile, ProcessState, Status,
   genInvokeId, logTrace, TraceLogEntry, defaultLimits, formatLocalTime,
@@ -14,8 +15,10 @@ export function create(
   input?: string,
   limits: Limits = defaultLimits(),
 ): string {
-  const wfDir = path.join(root, '.workflows', workflow)
+  const wfDir = path.join(root, '.ocean', 'workflows', workflow)
   const flowPath = path.join(wfDir, 'meta-data', 'flow.json')
+  // 门控（D13）：仅可实例化审核通过的工作流
+  assertOperable(readReviewStatus(path.join(wfDir, 'WORKFLOW.md')), `工作流 ${workflow}`)
   const flow = fromFile(flowPath)
 
   const start = startNode(flow)

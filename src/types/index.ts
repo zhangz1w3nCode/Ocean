@@ -48,6 +48,8 @@ export interface Workflow {
   id: string
   name: string
   description?: string
+  reviewStatus?: AssetReviewStatus // 审核状态（WORKFLOW.md frontmatter，缺失视为 pending）
+  version?: number // 版本号（frontmatter，新建为 1，审核通过 +1）
   createdAt: string
   updatedAt: string
   nodes: ReactFlowNode[]
@@ -127,6 +129,8 @@ export interface ResourceFile {
   name: string
   type: ResourceFileType
   description?: string
+  reviewStatus?: AssetReviewStatus // 审核状态（frontmatter，缺失视为 pending）
+  version?: number // 版本号（frontmatter，新建为 1，审核通过 +1）
   content?: string
   createdAt: string
   updatedAt: string
@@ -141,6 +145,8 @@ export interface NodeDefinition {
   name: string // 从 frontmatter 的 name 字段读取
   type: NodeFileType // 从 frontmatter 的 type 字段读取
   description: string // 从 frontmatter 的 description 字段读取
+  reviewStatus?: AssetReviewStatus // 审核状态（frontmatter，缺失视为 pending）
+  version?: number // 版本号（frontmatter，新建为 1，审核通过 +1）
   content: string // frontmatter 后的内容
   createdAt: string
   updatedAt: string // 从文件系统获取
@@ -157,6 +163,8 @@ export interface AgentFile {
   description: string // 从 frontmatter 的 description 字段读取
   model: string // 从 frontmatter 的 model 字段读取
   color: string // 从 frontmatter 的 color 字段读取（Pi 格式无此字段，默认 blue）
+  reviewStatus?: AssetReviewStatus // 审核状态（frontmatter，缺失视为 pending）
+  version?: number // 版本号（frontmatter，新建为 1，审核通过 +1）
   rawFrontmatter?: Record<string, any> // 原始 frontmatter 全量快照（保存时以它为基础只更新编辑过的字段，不覆盖未编辑的 key）
   content: string // frontmatter 后的内容
   createdAt: string
@@ -165,7 +173,10 @@ export interface AgentFile {
 // 知识库文件类型
 export type KnowledgeFileType = 'knowledge'
 
-// 知识审核状态：新建/更新默认 pending，审核通过后 validated
+// 资产审核状态（D13）：新建/更新默认 pending，审核通过后 validated；与任务生命周期 status 相互独立
+export type AssetReviewStatus = 'pending' | 'validated'
+
+/** @deprecated 旧类型，语义由 AssetReviewStatus 取代 */
 export type KnowledgeStatus = 'pending' | 'validated'
 
 // 知识库文件定义
@@ -176,7 +187,8 @@ export interface KnowledgeFile {
   summary: string // 从 frontmatter 的 summary 字段读取（历史 description 字段兼容读取）
   content: string // frontmatter 后的内容
   tags: string[] // 标签数组
-  status: KnowledgeStatus // 审核状态（frontmatter 的 status 字段，缺失时视为 pending）
+  reviewStatus: AssetReviewStatus // 审核状态（frontmatter 的 reviewStatus 字段，缺失时视为 pending）
+  version?: number // 版本号（frontmatter，新建为 1，审核通过 +1）
   category?: string // 分类路径（如 "backend" 或 "backend/v2"），对应子目录结构
   filepath?: string // 完整文件相对路径（如 "backend/api"），用于文件系统操作
   rawFrontmatter?: Record<string, any> // 解析出的完整 frontmatter 快照，保存时用于合并保留未知字段
@@ -392,6 +404,8 @@ export interface SkillFile {
   scripts: string[]         // scripts 目录下的文件列表
   references: string[]      // references 目录下的文件列表
   examples: string[]        // examples 目录下的文件列表
+  reviewStatus?: AssetReviewStatus // 审核状态（SKILL.md frontmatter，缺失视为 pending）
+  version?: number // 版本号（frontmatter，新建为 1，审核通过 +1）
   createdAt: string
   updatedAt: string         // 从文件系统获取
 }
@@ -466,6 +480,9 @@ export interface TaskSummary {
   workflow: string
   /** 绑定的工作流实例 ID（空串 = 未绑定，可选） */
   workflowInstance: string
+  /** 审核状态（D13）：内容变更重置 pending，审核通过 validated；与生命周期 status 独立 */
+  reviewStatus?: AssetReviewStatus
+  version?: number // 版本号（frontmatter，新建为 1，审核通过 +1）
   createdAt: string
   updatedAt: string
 }
@@ -533,6 +550,8 @@ export type CodebaseSource = 'url' | 'blank' | 'local'
 export interface CodebaseInfo {
   name: string
   preview: string
+  reviewStatus?: AssetReviewStatus // 审核状态（README.md frontmatter，缺失视为 pending）
+  version?: number // 版本号（frontmatter，新建为 1，审核通过 +1）
 }
 
 // 代码库创建入参（content 为空项目创建时直接写入 README 的初始内容）

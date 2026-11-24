@@ -51,7 +51,7 @@ export function useKnowledgeGraph() {
   const { knowledgeFiles: allKnowledgeFiles } = useKnowledgeStore()
   // 知识图谱仅包含已审核通过（validated）的知识；pending 不入图，引用也无法解析到 pending
   const knowledgeFiles = useMemo(
-    () => allKnowledgeFiles.filter((k) => k.status === 'validated'),
+    () => allKnowledgeFiles.filter((k) => k.reviewStatus === 'validated'),
     [allKnowledgeFiles],
   )
 

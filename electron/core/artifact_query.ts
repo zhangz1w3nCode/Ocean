@@ -34,7 +34,7 @@ interface ArtifactEntry {
 // ---------------------------------------------------------------------------
 
 function instanceDir(root: string, workflow: string, instanceId: string): string {
-  return path.join(root, '.workflows', workflow, 'instance', instanceId)
+  return path.join(root, '.ocean', 'workflows', workflow, 'instance', instanceId)
 }
 
 function nodeDisplay(node: string, branch?: string): string {

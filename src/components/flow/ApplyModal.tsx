@@ -35,8 +35,8 @@ export const ApplyModal: FC<ApplyModalProps> = ({
   // 技能内容（可编辑）
   const [skillContent, setSkillContent] = useState('')
 
-  // 根据当前工作流名称生成工作流路径
-  const workflowPath = `.workflows/${workflowName}/WORKFLOW.md`
+  // 根据当前工作流名称生成工作流路径（.ocean 资产源区）
+  const workflowPath = `.ocean/workflows/${workflowName}/WORKFLOW.md`
 
   // 生成默认技能内容
   const generateDefaultSkillContent = () => `# 用户需求
@@ -108,10 +108,11 @@ export const ApplyModal: FC<ApplyModalProps> = ({
     setIsCreating(true)
 
     try {
-      // 工作流为跨资产来源共享资产，路径固定为 .workflows/，内容中可能残留任意旧前缀（.pi 或 .claude），统一替换为共享路径，不影响用户其他编辑内容
+      // 工作流存储在 .ocean/workflows，内容中可能残留任意旧前缀（.pi / .claude / 项目根 .workflows），统一替换为资产源区路径，不影响用户其他编辑内容
       let finalContent = skillContent
-      finalContent = finalContent.split(`.pi/workflows/${workflowName}/WORKFLOW.md`).join(`.workflows/${workflowName}/WORKFLOW.md`)
-      finalContent = finalContent.split(`.claude/workflows/${workflowName}/WORKFLOW.md`).join(`.workflows/${workflowName}/WORKFLOW.md`)
+      finalContent = finalContent.split(`.pi/workflows/${workflowName}/WORKFLOW.md`).join(`.ocean/workflows/${workflowName}/WORKFLOW.md`)
+      finalContent = finalContent.split(`.claude/workflows/${workflowName}/WORKFLOW.md`).join(`.ocean/workflows/${workflowName}/WORKFLOW.md`)
+      finalContent = finalContent.split(`.workflows/${workflowName}/WORKFLOW.md`).join(`.ocean/workflows/${workflowName}/WORKFLOW.md`)
       // 创建技能
       const result = await createSkill({
         name: skillName.trim(),

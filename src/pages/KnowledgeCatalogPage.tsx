@@ -77,14 +77,14 @@ function buildTree(folders: KnowledgeFolder[], filePaths: string[]): TreeNode[] 
  * 在 frontmatter 原文字面量中设置 status 字段：
  * 已有 status 行则替换，否则在闭合 --- 之前插入；无 frontmatter 时原样返回。
  */
-function setFrontmatterStatus(frontmatter: string, status: string): string {
+function setFrontmatterStatus(frontmatter: string, reviewStatus: string): string {
   if (!frontmatter) return frontmatter
-  if (/^status:.*$/m.test(frontmatter)) {
-    return frontmatter.replace(/^status:.*$/m, `status: ${status}`)
+  if (/^(status|reviewStatus):.*$/m.test(frontmatter)) {
+    return frontmatter.replace(/^(status|reviewStatus):.*$/m, `reviewStatus: ${reviewStatus}`)
   }
   const close = frontmatter.lastIndexOf('---')
   if (close <= 0) return frontmatter
-  return `${frontmatter.slice(0, close)}status: ${status}\n${frontmatter.slice(close)}`
+  return `${frontmatter.slice(0, close)}reviewStatus: ${reviewStatus}\n${frontmatter.slice(close)}`
 }
 
 /** 「相关知识」栏宽度：默认与拖拽范围，以及拖得足够窄时自动收起的阈值 */
@@ -232,7 +232,7 @@ export const KnowledgeCatalogPage: FC = () => {
     const filePaths = Array.from(
       new Set(
         knowledgeFiles
-          .filter((k) => k.status === 'validated')
+          .filter((k) => k.reviewStatus === 'validated')
           .map((k) => k.filepath)
           .filter((p): p is string => !!p),
       ),

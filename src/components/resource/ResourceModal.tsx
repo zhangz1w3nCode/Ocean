@@ -34,8 +34,8 @@ export const ResourceModal: FC<ResourceModalProps> = ({
   const [description, setDescription] = useState('')
   const [content, setContent] = useState('')
 
-  // 计算排除路径（编辑模式下排除当前资源文件）
-  const excludePath = mode === 'edit' && initialData ? `.resources/${initialData.name}.md` : undefined
+  // 计算排除路径（编辑模式下排除当前资源文件；存储在 .ocean/resources）
+  const excludePath = mode === 'edit' && initialData ? `.ocean/resources/${initialData.name}.md` : undefined
 
   // 编辑/预览模式
   const [viewMode, setViewMode] = useState<'edit' | 'preview'>('edit')

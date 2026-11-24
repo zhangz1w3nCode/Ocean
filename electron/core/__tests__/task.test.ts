@@ -18,13 +18,20 @@ let root: string
 
 beforeEach(() => {
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'ocean-task-'))
-  fs.mkdirSync(path.join(root, '.workflows'), { recursive: true })
+  fs.mkdirSync(path.join(root, '.ocean', 'workflows'), { recursive: true })
 })
 
 afterEach(() => {
   vi.useRealTimers()
   fs.rmSync(root, { recursive: true, force: true })
 })
+
+// 门控（D13）辅助：把任务置为审核通过（绕过审核页，直接改 TASK.md frontmatter）
+function approveTask(root: string, name: string) {
+  const mdPath = path.join(root, '.ocean', 'tasks', name, 'TASK.md')
+  const raw = fs.readFileSync(mdPath, 'utf-8')
+  fs.writeFileSync(mdPath, raw.replace(/^reviewStatus:.*$/m, 'reviewStatus: validated'), 'utf-8')
+}
 
 // core 统一契约：{ success, ...data } | { success: false, error }，全 async，不向调用方抛出。
 // 测试辅助：unwrap 取数据（失败抛错便于定位），fail 断言业务失败契约。
@@ -41,13 +48,36 @@ async function fail<T>(p: Promise<TaskResult<T>>, re: RegExp): Promise<void> {
 
 const mk = async (name: string, content = '正文', extra?: Record<string, unknown>) =>
   (await unwrap(createTask(root, { name, content, ...extra }))).task
-const detail = async (name: string) => (await unwrap(readTaskDetail(root, name))).detail
+const detail = async (name: string) => {
+  const md = path.join(root, '.ocean', 'tasks', name, 'TASK.md')
+  if (fs.existsSync(md)) {
+    const raw = fs.readFileSync(md, 'utf-8')
+    fs.writeFileSync(md, raw.replace(/^reviewStatus:.*$/m, 'reviewStatus: validated'), 'utf-8')
+  }
+  return (await unwrap(readTaskDetail(root, name))).detail
+}
 const upd = async (payload: Record<string, unknown>) => (await unwrap(updateTask(root, payload as any))).task
 const saveCtx = async (payload: { taskName: string; contextName: string; folder: string; content: string }) =>
   (await unwrap(saveTaskContext(root, payload))).isUpdate
 const search = async (kw: string, opts?: { top?: number; context?: number; status?: string }) =>
   (await unwrap(searchTasks(root, kw, opts))).results
-const list = async (r = root) => (await unwrap(listTasks(r))).tasks
+const list = async (r = root) => {
+  // 门控（D13）：list 仅返回审核通过的任务——测试在列举前统一过审
+  const tasksDir = path.join(r, '.ocean', 'tasks')
+  if (fs.existsSync(tasksDir)) {
+    for (const e of fs.readdirSync(tasksDir, { withFileTypes: true })) {
+      if (!e.isDirectory()) continue
+      const md = path.join(tasksDir, e.name, 'TASK.md')
+      if (fs.existsSync(md)) {
+        const raw = fs.readFileSync(md, 'utf-8')
+        if (!/^reviewStatus:\s*validated$/m.test(raw)) {
+          fs.writeFileSync(md, raw.replace(/^reviewStatus:.*$/m, 'reviewStatus: validated'), 'utf-8')
+        }
+      }
+    }
+  }
+  return (await unwrap(listTasks(r))).tasks
+}
 
 describe('core 契约与状态常量', () => {
   it('状态常量四值', () => {
@@ -108,7 +138,7 @@ describe('createTask', () => {
 
   it('TASK.md 落盘为 YAML frontmatter + 流式数组', async () => {
     await mk('甲', '正文内容', { relatedCodebases: ['Ocean'], tags: ['前端'] })
-    const raw = fs.readFileSync(path.join(root, '.tasks', '甲', 'TASK.md'), 'utf-8')
+    const raw = fs.readFileSync(path.join(root, '.ocean', 'tasks', '甲', 'TASK.md'), 'utf-8')
     expect(raw.startsWith('---\nname: 甲\n')).toBe(true)
     expect(raw).toContain('related_codebases: [ Ocean ]')
     expect(raw).toContain('tags: [ 前端 ]')
@@ -119,8 +149,8 @@ describe('createTask', () => {
 describe('listTasks', () => {
   it('只收录直接含 TASK.md 的一级目录，日期目录被排除', async () => {
     await mk('甲')
-    fs.mkdirSync(path.join(root, '.tasks', '2026-10-16', 'TASKS'), { recursive: true })
-    fs.mkdirSync(path.join(root, '.tasks', '空目录'), { recursive: true })
+    fs.mkdirSync(path.join(root, '.ocean', 'tasks', '2026-10-16', 'TASKS'), { recursive: true })
+    fs.mkdirSync(path.join(root, '.ocean', 'tasks', '空目录'), { recursive: true })
     expect((await list()).map(t => t.name)).toEqual(['甲'])
   })
 
@@ -139,7 +169,7 @@ describe('listTasks', () => {
     const r = await listTasks(path.join(root, 'nope'))
     if (r.success !== true) throw new Error(r.error)
     expect(r.tasks).toEqual([])
-    expect(fs.existsSync(path.join(root, 'nope', '.tasks'))).toBe(false)
+    expect(fs.existsSync(path.join(root, 'nope', '.ocean', 'tasks'))).toBe(false)
   })
 })
 
@@ -216,7 +246,7 @@ describe('updateTask 状态机', () => {
 
   it('TASK.md 里未知的 frontmatter 字段被原样保留', async () => {
     await mk('甲', '正文')
-    const p = path.join(root, '.tasks', '甲', 'TASK.md')
+    const p = path.join(root, '.ocean', 'tasks', '甲', 'TASK.md')
     fs.writeFileSync(p, fs.readFileSync(p, 'utf-8').replace('name: 甲\n', 'name: 甲\n自定义: 保留我\n'), 'utf-8')
     await upd({ name: '甲', content: '新正文' })
     expect(fs.readFileSync(p, 'utf-8')).toContain('自定义: 保留我')
@@ -310,8 +340,8 @@ describe('searchTasks（正文维度全文检索）', () => {
 
   it('日期目录不参与检索', async () => {
     await mk('甲', 'kw')
-    fs.mkdirSync(path.join(root, '.tasks', '2026-10-15', 'TASKS'), { recursive: true })
-    fs.writeFileSync(path.join(root, '.tasks', '2026-10-15', 'kw.md'), 'kw\n')
+    fs.mkdirSync(path.join(root, '.ocean', 'tasks', '2026-10-15', 'TASKS'), { recursive: true })
+    fs.writeFileSync(path.join(root, '.ocean', 'tasks', '2026-10-15', 'kw.md'), 'kw\n')
     expect((await search('kw')).map(r => r.name)).toEqual(['甲'])
   })
 
@@ -366,7 +396,7 @@ describe('filterTasks（与桌面端任务库同语义）', () => {
 
 describe('IO 异常收敛（guard，renderer 直连防线）', () => {
   it('listTasks：.tasks 被文件占用时返回 IO 错误而非 rejection', async () => {
-    fs.writeFileSync(path.join(root, '.tasks'), 'not a dir')
+    fs.writeFileSync(path.join(root, '.ocean', 'tasks'), 'not a dir')
     const r = await listTasks(root)
     if (r.success !== false) throw new Error('预期 IO 收敛失败')
     expect(r.error).toContain('IO 错误')
@@ -374,7 +404,7 @@ describe('IO 异常收敛（guard，renderer 直连防线）', () => {
 
   it('readTaskDetail：TASK.md 是目录时收敛 EISDIR', async () => {
     await mk('甲')
-    const md = path.join(root, '.tasks', '甲', 'TASK.md')
+    const md = path.join(root, '.ocean', 'tasks', '甲', 'TASK.md')
     fs.rmSync(md)
     fs.mkdirSync(md)
     const r = await readTaskDetail(root, '甲')
@@ -384,7 +414,7 @@ describe('IO 异常收敛（guard，renderer 直连防线）', () => {
 
   it('saveTaskContext：context 目录被文件占用时收敛 IO 错误', async () => {
     await mk('甲')
-    const ctxDir = path.join(root, '.tasks', '甲', 'context')
+    const ctxDir = path.join(root, '.ocean', 'tasks', '甲', 'context')
     fs.rmSync(ctxDir, { recursive: true, force: true })
     fs.writeFileSync(ctxDir, 'occupied')
     const r = await saveTaskContext(root, { taskName: '甲', contextName: '需求', folder: '默认', content: 'x' })
@@ -393,7 +423,7 @@ describe('IO 异常收敛（guard，renderer 直连防线）', () => {
   })
 
   it('searchTasks：.tasks 被文件占用时同样收敛', async () => {
-    fs.writeFileSync(path.join(root, '.tasks'), 'not a dir')
+    fs.writeFileSync(path.join(root, '.ocean', 'tasks'), 'not a dir')
     const r = await searchTasks(root, 'kw')
     if (r.success !== false) throw new Error('预期 IO 收敛失败')
     expect(r.error).toContain('IO 错误')
@@ -405,12 +435,12 @@ describe('工作流绑定（可选项）', () => {
     const bound = await mk('甲', '正文', { workflow: 'standard-task-pipeline', workflowInstance: '20261123T232512-0283' })
     expect(bound.workflow).toBe('standard-task-pipeline')
     expect(bound.workflowInstance).toBe('20261123T232512-0283')
-    const raw = fs.readFileSync(path.join(root, '.tasks', '甲', 'TASK.md'), 'utf-8')
+    const raw = fs.readFileSync(path.join(root, '.ocean', 'tasks', '甲', 'TASK.md'), 'utf-8')
     expect(raw).toContain('workflow: standard-task-pipeline')
     expect(raw).toContain('workflow_instance: 20261123T232512-0283')
 
     await mk('乙')
-    const rawPlain = fs.readFileSync(path.join(root, '.tasks', '乙', 'TASK.md'), 'utf-8')
+    const rawPlain = fs.readFileSync(path.join(root, '.ocean', 'tasks', '乙', 'TASK.md'), 'utf-8')
     expect(rawPlain).not.toContain('workflow')
     expect((await detail('乙')).task.workflow).toBe('')
     expect((await detail('乙')).task.workflowInstance).toBe('')
@@ -424,7 +454,7 @@ describe('工作流绑定（可选项）', () => {
 
   it('绑定校验先于落盘：被拒绝的创建不留下幽灵目录（不占用任务名）', async () => {
     await fail(createTask(root, { name: '丙', content: 'x', workflowInstance: '20261123T232512-0283' }), /必须同时绑定工作流/)
-    expect(fs.existsSync(path.join(root, '.tasks', '丙'))).toBe(false)
+    expect(fs.existsSync(path.join(root, '.ocean', 'tasks', '丙'))).toBe(false)
     // 同名再次创建（合法绑定）应成功，证明名称未被占用
     const t = await mk('丙', 'x', { workflow: 'wf1' })
     expect(t.workflow).toBe('wf1')
@@ -442,14 +472,14 @@ describe('工作流绑定（可选项）', () => {
     expect(updated.workflow).toBe('wf1')
     expect(updated.workflowInstance).toBe('ins1')
     expect((await detail('甲')).trace.find(e => e.type === 'task-updated')!.fields).toEqual(expect.arrayContaining(['绑定工作流', '绑定实例']))
-    const rawBound = fs.readFileSync(path.join(root, '.tasks', '甲', 'TASK.md'), 'utf-8')
+    const rawBound = fs.readFileSync(path.join(root, '.ocean', 'tasks', '甲', 'TASK.md'), 'utf-8')
     expect(rawBound).toContain('workflow: wf1')
     expect(rawBound).toContain('workflow_instance: ins1')
 
     const cleared = await upd({ name: '甲', content: '正文' })
     expect(cleared.workflow).toBe('')
     expect(cleared.workflowInstance).toBe('')
-    const rawCleared = fs.readFileSync(path.join(root, '.tasks', '甲', 'TASK.md'), 'utf-8')
+    const rawCleared = fs.readFileSync(path.join(root, '.ocean', 'tasks', '甲', 'TASK.md'), 'utf-8')
     expect(rawCleared).not.toContain('workflow')
   })
 
@@ -463,7 +493,7 @@ describe('context 文件夹', () => {
   it('带 folder 落盘 context/{folder}/{topic}.md 并按路径判定新建/更新', async () => {
     await mk('甲')
     expect(await saveCtx({ taskName: '甲', contextName: '基线', folder: '调研', content: '一' })).toBe(false)
-    expect(fs.existsSync(path.join(root, '.tasks', '甲', 'context', '调研', '基线.md'))).toBe(true)
+    expect(fs.existsSync(path.join(root, '.ocean', 'tasks', '甲', 'context', '调研', '基线.md'))).toBe(true)
     expect(await saveCtx({ taskName: '甲', contextName: '基线', folder: '调研', content: '二' })).toBe(true)
     const item = (await detail('甲')).contexts.find(c => c.folder === '调研' && c.name === '基线')!
     expect(item.content.trim()).toBe('二')
@@ -475,12 +505,12 @@ describe('context 文件夹', () => {
     await saveCtx({ taskName: '甲', contextName: '需求', folder: 'B', content: 'inB' })
     const ctxs = (await detail('甲')).contexts
     expect(ctxs.map(c => `${c.folder ?? '-'}/${c.name}`)).toEqual(['A/需求', 'B/需求'])
-    expect(fs.existsSync(path.join(root, '.tasks', '甲', 'context', '需求.md'))).toBe(false)
+    expect(fs.existsSync(path.join(root, '.ocean', 'tasks', '甲', 'context', '需求.md'))).toBe(false)
   })
 
   it('非法 context-folder 的创建在落盘前被拒绝，不残留任务目录', async () => {
     await fail(createTask(root, { name: '丁', content: 'x', context: '背景', contextFolder: 'a/b' }), /必须提供合法文件夹/)
-    expect(fs.existsSync(path.join(root, '.tasks', '丁'))).toBe(false)
+    expect(fs.existsSync(path.join(root, '.ocean', 'tasks', '丁'))).toBe(false)
     // 同名合法创建应成功，证明任务名未被占用
     const ok = await unwrap(createTask(root, { name: '丁', content: 'x', context: '背景', contextFolder: '初始' }))
     expect(ok.task.name).toBe('丁')
@@ -489,7 +519,7 @@ describe('context 文件夹', () => {
   it('文件夹为符号链接时拒绝写入（防止写到任务目录外且读取不可见）', async () => {
     await mk('戊')
     const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'ocean-outside-'))
-    fs.symlinkSync(outside, path.join(root, '.tasks', '戊', 'context', '链接夹'))
+    fs.symlinkSync(outside, path.join(root, '.ocean', 'tasks', '戊', 'context', '链接夹'))
     const r = await saveTaskContext(root, { taskName: '戊', contextName: '主题', folder: '链接夹', content: 'x' })
     if (r.success !== false) throw new Error('预期符号链接写入被拒绝')
     expect(r.error).toContain('符号链接')
@@ -500,7 +530,7 @@ describe('context 文件夹', () => {
 
   it('旧平铺文件不再读取（folder 是唯一合法布局），也不允许写入平铺', async () => {
     await mk('甲')
-    const ctxDir = path.join(root, '.tasks', '甲', 'context')
+    const ctxDir = path.join(root, '.ocean', 'tasks', '甲', 'context')
     fs.writeFileSync(path.join(ctxDir, '历史平铺.md'), '旧数据正文')
     await saveCtx({ taskName: '甲', contextName: '新需求', folder: '调研', content: '新数据' })
     const ctxs = (await detail('甲')).contexts
@@ -537,7 +567,7 @@ describe('context 文件夹', () => {
 
   it('点开头目录不被当作上下文文件夹', async () => {
     await mk('甲')
-    const hiddenDir = path.join(root, '.tasks', '甲', 'context', '.hidden')
+    const hiddenDir = path.join(root, '.ocean', 'tasks', '甲', 'context', '.hidden')
     fs.mkdirSync(hiddenDir, { recursive: true })
     fs.writeFileSync(path.join(hiddenDir, 'x.md'), 'x')
     expect((await detail('甲')).contexts).toHaveLength(0)
@@ -545,7 +575,7 @@ describe('context 文件夹', () => {
 
   it('folder 与同名文件冲突时返回业务错误', async () => {
     await mk('甲')
-    const ctxDir = path.join(root, '.tasks', '甲', 'context')
+    const ctxDir = path.join(root, '.ocean', 'tasks', '甲', 'context')
     fs.writeFileSync(path.join(ctxDir, '调研'), 'occupied')
     const r = await saveTaskContext(root, { taskName: '甲', contextName: 'x', folder: '调研', content: 'y' })
     if (r.success !== false) throw new Error('预期失败')

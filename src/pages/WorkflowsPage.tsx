@@ -32,7 +32,7 @@ export const WorkflowsPage: FC<{ nested?: boolean }> = ({ nested = false }) => {
   }, [isLoaded, loadWorkflows])
 
   // 过滤工作流
-  const filteredWorkflows = workflows.filter(
+  const filteredWorkflows = workflows.filter((wf) => wf.reviewStatus === 'validated').filter(
     (wf) =>
       wf.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       wf.description?.toLowerCase().includes(searchQuery.toLowerCase())

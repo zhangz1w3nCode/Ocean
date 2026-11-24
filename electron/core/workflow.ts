@@ -1,12 +1,13 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
+import { readReviewStatus, assertOperable } from './reviewStatus'
 import dagre from '@dagrejs/dagre'
 import { generateWorkflowMd } from './workflow-md-generator'
 
 // --- path helpers ---
 
 function workflowDir(root: string, name: string): string {
-  return path.join(root, '.workflows', name)
+  return path.join(root, '.ocean', 'workflows', name)
 }
 
 function flowJsonPath(root: string, name: string): string {
@@ -58,6 +59,7 @@ export function create(root: string, name: string): void {
 
 export function del(root: string, name: string): void {
   const dir = workflowDir(root, name)
+  assertOperable(readReviewStatus(workflowMdPath(root, name)), `工作流 ${name}`)
   if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true })
 }
 
@@ -76,6 +78,7 @@ export function rename(root: string, oldName: string, newName: string): void {
 export function readWorkflowMd(root: string, name: string): string {
   const p = workflowMdPath(root, name)
   if (!fs.existsSync(p)) throw new Error(`WORKFLOW.md 不存在: ${name}`)
+  assertOperable(readReviewStatus(p), `工作流 ${name}`)
   return fs.readFileSync(p, 'utf-8')
 }
 
@@ -226,6 +229,7 @@ export function listEdges(root: string, wfName: string): string {
 // --- generate WORKFLOW.md ---
 
 export function generate(root: string, wfName: string): void {
+  assertOperable(readReviewStatus(workflowMdPath(root, wfName)), `工作流 ${wfName}`)
   const flow = readFlowJson(root, wfName)
 
   // dagre auto-layout (dagre bundled by esbuild, see build:electron)
@@ -249,7 +253,7 @@ export function generate(root: string, wfName: string): void {
   // clean flow: regenerate nodeRefPath for business nodes (与 GUI storage.ts:1051-1056 一致)
   for (const node of flow.nodes) {
     if (node.type === 'business' && node.data?.nodeDefName) {
-      node.data.nodeRefPath = `.nodes/${node.data.nodeDefName}.md`
+      node.data.nodeRefPath = `.ocean/nodes/${node.data.nodeDefName}.md`
     }
   }
 
@@ -262,10 +266,17 @@ export function generate(root: string, wfName: string): void {
     }
   }
 
-  // generate WORKFLOW.md
+  // generate WORKFLOW.md（重生成视为更新：reviewStatus 回 pending；version 跨编辑保留，由审核动作递增）
   if (!flow.name) flow.name = wfName
-  const md = generateWorkflowMd(flow, flow.nodes, flow.edges)
-  fs.writeFileSync(workflowMdPath(root, wfName), md, 'utf-8')
+  let existingVersion: number | undefined
+  const mdPath = workflowMdPath(root, wfName)
+  if (fs.existsSync(mdPath)) {
+    const fmMatch = fs.readFileSync(mdPath, 'utf-8').match(/^---\n([\s\S]*?)\n---/)
+    const vm = fmMatch ? fmMatch[1].match(/^version: ?(\d+)/m) : null
+    if (vm) existingVersion = parseInt(vm[1], 10)
+  }
+  const md = generateWorkflowMd(flow, flow.nodes, flow.edges, { version: existingVersion })
+  fs.writeFileSync(mdPath, md, 'utf-8')
 
   // write cleaned flow.json back
   writeFlowJson(root, wfName, flow)

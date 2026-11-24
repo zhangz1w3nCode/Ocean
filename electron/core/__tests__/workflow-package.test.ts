@@ -21,12 +21,12 @@ function flowJson(withMissingNode = false): string {
       {
         id: 'b1',
         type: 'business',
-        data: { label: '节点甲', nodeDefName: '节点甲', nodeRefPath: '.nodes/节点甲.md' },
+        data: { label: '节点甲', nodeDefName: '节点甲', nodeRefPath: '.ocean/nodes/节点甲.md' },
       },
       {
         id: 'b2',
         type: 'business',
-        data: { label: missingNodeLabel(withMissingNode), nodeRefPath: withMissingNode ? '.nodes/不存在.md' : '.nodes/节点乙.md' },
+        data: { label: missingNodeLabel(withMissingNode), nodeRefPath: withMissingNode ? '.ocean/nodes/不存在.md' : '.ocean/nodes/节点乙.md' },
       },
       { id: 'p1', type: 'process', data: { label: '处理', content: '内联内容' } },
       { id: 'end-1', type: 'end', data: { label: '结束' } },
@@ -55,15 +55,15 @@ describe('workflow-package', () => {
   }
 
   const seedProject = (withMissingNode = false) => {
-    write(`.workflows/${workflow}/meta-data/flow.json`, flowJson(withMissingNode))
-    write(`.workflows/${workflow}/WORKFLOW.md`, '# 审批流设计')
-    write('.nodes/节点甲.md', '---\nname: 节点甲\n---\n甲的内容')
-    if (!withMissingNode) write('.nodes/节点乙.md', '乙的内容')
+    write(`.ocean/workflows/${workflow}/meta-data/flow.json`, flowJson(withMissingNode))
+    write(`.ocean/workflows/${workflow}/WORKFLOW.md`, '# 审批流设计')
+    write('.ocean/nodes/节点甲.md', '---\nname: 节点甲\n---\n甲的内容')
+    if (!withMissingNode) write('.ocean/nodes/节点乙.md', '乙的内容')
   }
 
   beforeEach(() => {
     root = fs.mkdtempSync(path.join(os.tmpdir(), 'ocean-pkg-'))
-    wfDir = path.join(root, '.workflows', workflow)
+    wfDir = path.join(root, '.ocean', 'workflows', workflow)
   })
 
   afterEach(() => {
@@ -98,12 +98,12 @@ describe('workflow-package', () => {
     const { buffer, manifest, warnings } = buildPackage(root, workflow)
     expect(Object.keys(unzipSync(buffer))).not.toContain('nodes/不存在.md')
     expect(manifest.counts.globalNodes).toBe(1)
-    expect(warnings.join('\n')).toContain('.nodes/不存在.md')
+    expect(warnings.join('\n')).toContain('.ocean/nodes/不存在.md')
   })
 
   it('局部节点随包导出，放在 workflow/nodes 下', () => {
     seedProject()
-    write(`.workflows/${workflow}/nodes/局部一.md`, '局部内容')
+    write(`.ocean/workflows/${workflow}/nodes/局部一.md`, '局部内容')
     const { buffer, manifest } = buildPackage(root, workflow)
     const entries = unzipSync(buffer)
     expect(Object.keys(entries)).toContain('workflow/nodes/局部一.md')
@@ -122,13 +122,13 @@ describe('workflow-package', () => {
       expect(result.overwrittenNodes).toEqual([])
 
       const targetFlow = JSON.parse(
-        fs.readFileSync(path.join(target, '.workflows', workflow, 'meta-data', 'flow.json'), 'utf-8'),
+        fs.readFileSync(path.join(target, '.ocean', 'workflows', workflow, 'meta-data', 'flow.json'), 'utf-8'),
       )
       expect(targetFlow.name).toBe(workflow)
-      expect(fs.readFileSync(path.join(target, '.nodes', '节点甲.md'), 'utf-8')).toContain('甲的内容')
-      expect(fs.existsSync(path.join(target, '.workflows', workflow, 'WORKFLOW.md'))).toBe(true)
-      expect(result.writtenFiles).toContain(`.workflows/${workflow}/meta-data/flow.json`)
-      expect(result.writtenFiles).toContain('.nodes/节点乙.md')
+      expect(fs.readFileSync(path.join(target, '.ocean', 'nodes', '节点甲.md'), 'utf-8')).toContain('甲的内容')
+      expect(fs.existsSync(path.join(target, '.ocean', 'workflows', workflow, 'WORKFLOW.md'))).toBe(true)
+      expect(result.writtenFiles).toContain(`.ocean/workflows/${workflow}/meta-data/flow.json`)
+      expect(result.writtenFiles).toContain('.ocean/nodes/节点乙.md')
     } finally {
       fs.rmSync(target, { recursive: true, force: true })
     }
@@ -139,8 +139,8 @@ describe('workflow-package', () => {
     const { buffer } = buildPackage(root, workflow)
 
     // 目标环境下预先存在同名工作流与同名全局节点（内容不同）
-    write(`.workflows/${workflow}/meta-data/flow.json`, '{"name":"旧版本","nodes":[]}')
-    write('.nodes/节点甲.md', '旧内容')
+    write(`.ocean/workflows/${workflow}/meta-data/flow.json`, '{"name":"旧版本","nodes":[]}')
+    write('.ocean/nodes/节点甲.md', '旧内容')
 
     const inspection = inspectPackage(root, buffer)
     expect(inspection.workflowExists).toBe(true)
@@ -149,7 +149,7 @@ describe('workflow-package', () => {
     const result = importPackage(root, buffer)
     expect(result.overwrittenWorkflow).toBe(true)
     expect(result.overwrittenNodes).toEqual(['节点甲.md', '节点乙.md'].sort())
-    expect(fs.readFileSync(path.join(root, '.nodes', '节点甲.md'), 'utf-8')).toContain('甲的内容')
+    expect(fs.readFileSync(path.join(root, '.ocean', 'nodes', '节点甲.md'), 'utf-8')).toContain('甲的内容')
     const flow = JSON.parse(fs.readFileSync(path.join(wfDir, 'meta-data', 'flow.json'), 'utf-8'))
     expect(flow.nodes).toHaveLength(5)
   })
