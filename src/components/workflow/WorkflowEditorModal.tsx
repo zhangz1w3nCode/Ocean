@@ -10,7 +10,7 @@ import { useFlowEditorStore } from '../../stores/flowEditorStore'
 import { useWorkflowStore } from '../../stores/workflowStore'
 import { useToastStore } from '../../stores/toastStore'
 import { useProjectStore } from '../../stores/projectStore'
-import { isElectron } from '../../utils/storage'
+import { isElectron, loadWorkflowFromFolder } from '../../utils/storage'
 import { loadWorkflowPackageModule } from '../../utils/workflowPackageBridge'
 import { getLayout, setLayout } from '../ui/Modal'
 import { ConfirmModal } from '../ui/ConfirmModal'
@@ -207,23 +207,33 @@ export const WorkflowEditorModal: FC<WorkflowEditorModalProps> = ({
 
     return null
   }
-  // 初始化工作流
+  // 初始化工作流：有未审核草稿快照时加载草稿（否则加载正式版本），避免编辑器基于旧版导致草稿改动被覆盖
   const initializeWorkflow = useCallback(() => {
     if (!workflowId) return
 
     if (workflowId !== currentId) {
-      const wf = getWorkflowById(workflowId)
-      // 判断是否为新工作流：检查是否有已保存的节点数据，而不是依赖 ID 格式
-      if (wf && wf.nodes && wf.nodes.length > 0) {
-        // 有已保存的节点数据，加载它们
-        loadWorkflow(wf.nodes, wf.edges, wf.name, workflowId)
-      } else {
-        // 没有节点数据，初始化新工作流
-        reset()
-        initNewWorkflow(workflowName, workflowId)
+      const apply = (wf: any, fromDraft: boolean) => {
+        // 判断是否为新工作流：检查是否有已保存的节点数据，而不是依赖 ID 格式
+        if (wf && wf.nodes && wf.nodes.length > 0) {
+          // 有已保存的节点数据，加载它们
+          loadWorkflow(wf.nodes, wf.edges, wf.name, workflowId)
+          if (fromDraft) addToast('正在编辑未审核的草稿版本', 'info')
+        } else {
+          // 没有节点数据，初始化新工作流
+          reset()
+          initNewWorkflow(workflowName, workflowId)
+        }
       }
+      const formal = getWorkflowById(workflowId)
+      if (isElectron() && formal?.name) {
+        loadWorkflowFromFolder(formal.name, { draft: true })
+          .then((draft) => apply(draft || formal, !!draft))
+          .catch(() => apply(formal, false))
+        return
+      }
+      apply(formal, false)
     }
-  }, [workflowId, currentId, workflowName, initNewWorkflow, reset, loadWorkflow, getWorkflowById])
+  }, [workflowId, currentId, workflowName, initNewWorkflow, reset, loadWorkflow, getWorkflowById, addToast])
 
   useEffect(() => {
     if (isOpen && workflowId) {
