@@ -84,6 +84,8 @@ declare global {
       reviewReject: (type: string, name: string, reason: string) => Promise<{ success: boolean; error?: string }>
       reviewRestore: (type: string, name: string) => Promise<{ success: boolean; error?: string }>
       reviewDiff: (type: string, name: string) => Promise<ReviewDiffResult>
+      reviewAdopt: () => Promise<{ success: boolean; adopted?: { type: string; name: string; kind: string }[]; restoredDeletions?: string[]; error?: string }>
+      reviewDiscard: (type: string, name: string) => Promise<{ success: boolean; type?: string; name?: string; ts?: string; error?: string }>
       reviewSnapshot: (type: string, name: string) => Promise<{ success: boolean; content?: string | null; error?: string }>
       loadFormalRaw: (refPath: string) => Promise<{ success: boolean; content?: string | null; mtime?: string | null; error?: string }>
       loadAssetBaseline: (refPath: string) => Promise<{ success: boolean; content?: string | null; error?: string }>
@@ -2589,7 +2591,17 @@ export const reviewList = async (status?: 'pending' | 'rejected'): Promise<Pendi
   }
 }
 
-export const reviewApprove = async (type: string, name: string, message?: string): Promise<{ success: boolean; version?: number; error?: string }> => {
+export const reviewApprove = async (type: string, name: string, message?: string): Promise<{
+  success: boolean
+  version?: number
+  error?: string
+  // 基准漂移自动合并：草稿已并入最新通过版本改动，需审核员再次确认（H3 步骤 4，非错误）
+  needReReview?: boolean
+  autoMerged?: boolean
+  message?: string
+  // 三方合并冲突：需人工处理或丢弃（H5）
+  conflict?: boolean
+}> => {
   if (!isElectron()) return { success: false, error: '网页端不支持' }
   try {
     return await window.electronAPI!.reviewApprove(type, name, message)
@@ -2620,6 +2632,32 @@ export const reviewDiff = async (type: string, name: string): Promise<ReviewDiff
   if (!isElectron()) return { success: false, error: '网页端不支持' }
   try {
     return await window.electronAPI!.reviewDiff(type, name)
+  } catch (e: any) {
+    return { success: false, error: e?.message || String(e) }
+  }
+}
+
+// 直改收编（H7/H8）：审核页加载时调用——正式位置偏离 HEAD 的改动自动转入审核队列
+export const reviewAdopt = async (): Promise<{ success: boolean; adopted: { type: string; name: string; kind: string }[]; restoredDeletions: string[] }> => {
+  const empty = { success: false, adopted: [], restoredDeletions: [] }
+  if (!isElectron()) return empty
+  try {
+    const result = await window.electronAPI!.reviewAdopt()
+    return {
+      success: !!result.success,
+      adopted: result.adopted || [],
+      restoredDeletions: result.restoredDeletions || [],
+    }
+  } catch {
+    return empty
+  }
+}
+
+// 丢弃最早 pending 快照（冲突草稿的出路之一，H5）
+export const reviewDiscard = async (type: string, name: string): Promise<{ success: boolean; error?: string }> => {
+  if (!isElectron()) return { success: false, error: '网页端不支持' }
+  try {
+    return await window.electronAPI!.reviewDiscard(type, name)
   } catch (e: any) {
     return { success: false, error: e?.message || String(e) }
   }
@@ -4273,6 +4311,10 @@ export interface PendingAssetItem {
   pendingCount: number // 该资产 pending 快照数
   isNew: boolean // 正式位置不存在 → 新建资产
   version?: number | null // 兼容旧字段：含义同 baseVersion
+  mergeConflict?: boolean // 三方合并冲突（需人工处理后才能通过）
+  autoMerged?: boolean // 草稿已自动并入正式版本改动（不拦截审核）
+  hasBase?: boolean // 草稿记录了基准 sha（baseCommit）
+  baseStale?: boolean // 草稿基准后正式文件已变化（通过时将自动合并）
 }
 
 // 审核对比结果（review-diff 返回；formal/draft 为双方主文件全文，含 frontmatter）
@@ -4290,6 +4332,10 @@ export interface ReviewDiffResult {
   content?: string
   formal?: string | null
   draft?: string | null
+  mergeConflict?: boolean
+  autoMerged?: boolean
+  hasBase?: boolean
+  baseStale?: boolean
 }
 
 // 资产 git 托管 + LLM 提交信息配置（.ocean/asset-git.json，进 gitignore 黑名单不入库）

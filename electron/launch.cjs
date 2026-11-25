@@ -174,6 +174,26 @@ const editWritePath = (type, name, rel) => {
   fs.mkdirSync(path.dirname(filePath), { recursive: true })
   return filePath
 }
+// 主文件保存时的 frontmatter 规范化（H1/H5/H6）：
+//   有 frontmatter 且 reviewStatus=pending → 注入/刷新 baseCommit（托管时=HEAD sha；未托管移除），清除 mergeConflict/autoMerged（人工保存即视为冲突已处理）
+//   供 7 个主文件保存 handler 写盘前统一调用
+const normalizeDraftFmOnSave = (content) => {
+  if (typeof content !== 'string' || !/^---\n[\s\S]*?\n---/.test(content)) return content
+  if (!/^reviewStatus:\s*pending$/m.test(content.split(/^---$/m)[1] || '')) return content
+  let next = content
+  const baseLine = review.baseCommitField(getProjectRoot())
+  if (baseLine) {
+    next = /^baseCommit:/m.test(next)
+      ? next.replace(/^baseCommit:.*$/m, baseLine)
+      : next.replace(/^(---\n)/, `$1${baseLine}\n`)
+  } else {
+    next = next.replace(/^baseCommit:.*$\n?/m, '')
+  }
+  next = next.replace(/^mergeConflict:.*$\n?/m, '')
+  next = next.replace(/^autoMerged:.*$\n?/m, '')
+  return next
+}
+
 // 主文件保存路径（G3）：每次保存新快照；同一保存会话（3s 内）的多次主文件写入复用同一快照
 const saveWritePath = (type, name, rel) => {
   const target = review.resolveSaveTarget(getProjectRoot(), type, name)
@@ -367,7 +387,7 @@ ipcMain.handle('load-workflow-md', (_, name) => {
 ipcMain.handle('save-workflow-md', (_, name, content) => {
   try {
     const filePath = saveWritePath('workflow', name, 'WORKFLOW.md')
-    fs.writeFileSync(filePath, content, 'utf-8')
+    fs.writeFileSync(filePath, normalizeDraftFmOnSave(content), 'utf-8')
     return { success: true }
   } catch (error) {
     console.error('保存WORKFLOW.md失败:', error)
@@ -814,7 +834,7 @@ ipcMain.handle('unsubscribe-instance-detail', () => {
 ipcMain.handle('save-node-file', (_, name, content) => {
   try {
     const filePath = saveWritePath('node', name, `${name}.md`)
-    fs.writeFileSync(filePath, content, 'utf-8')
+    fs.writeFileSync(filePath, normalizeDraftFmOnSave(content), 'utf-8')
     return { success: true }
   } catch (error) {
     console.error('保存节点文件失败:', error)
@@ -939,7 +959,7 @@ ipcMain.handle('delete-local-node', (_, workflowName, nodeName) => {
 ipcMain.handle('save-resource-file', (_, name, content) => {
   try {
     const filePath = saveWritePath('resource', name, `${name}.md`)
-    fs.writeFileSync(filePath, content, 'utf-8')
+    fs.writeFileSync(filePath, normalizeDraftFmOnSave(content), 'utf-8')
     return { success: true }
   } catch (error) {
     console.error('保存资源文件失败:', error)
@@ -997,7 +1017,7 @@ ipcMain.handle('load-all-resource-files', () => {
 ipcMain.handle('save-agent-file', (_, name, content) => {
   try {
     const filePath = saveWritePath('agent', name, `${name}.md`)
-    fs.writeFileSync(filePath, content, 'utf-8')
+    fs.writeFileSync(filePath, normalizeDraftFmOnSave(content), 'utf-8')
     return { success: true }
   } catch (error) {
     console.error('保存智能体文件失败:', error)
@@ -1077,7 +1097,7 @@ ipcMain.handle('save-knowledge-file', (_, name, content) => {
   try {
     // name 可含 domain 子目录（如 "backend/api"）；主文件取名称末段
     const filePath = saveWritePath('knowledge', name, `${String(name).split('/').pop()}.md`)
-    fs.writeFileSync(filePath, content, 'utf-8')
+    fs.writeFileSync(filePath, normalizeDraftFmOnSave(content), 'utf-8')
     return { success: true }
   } catch (error) {
     console.error('保存知识库文件失败:', error)
@@ -1489,6 +1509,8 @@ ipcMain.handle('review-list', (_, status) => review.listQueue(getProjectRoot(), 
 ipcMain.handle('review-approve', (_, type, name, message) => review.approveAsset(getProjectRoot(), type, name, message))
 ipcMain.handle('review-reject', (_, type, name, reason) => review.rejectAsset(getProjectRoot(), type, name, reason))
 ipcMain.handle('review-restore', (_, type, name) => review.restoreAsset(getProjectRoot(), type, name))
+ipcMain.handle('review-adopt', () => review.adoptStrayEdits(getProjectRoot()))
+ipcMain.handle('review-discard', (_, type, name) => review.discardOldestPending(getProjectRoot(), type, name))
 ipcMain.handle('review-snapshot', (_, type, name) => review.readSnapshot(getProjectRoot(), type, name))
 // diff 附带双方正文（仅主文件，供审核弹窗渲染对比；不含路径信息）
 ipcMain.handle('review-diff', (_, type, name) => {
@@ -3243,7 +3265,7 @@ ${input.content || ''}`
 ipcMain.handle('save-skill-file', (_, name, content) => {
   try {
     const filePath = saveWritePath('skill', name, 'SKILL.md')
-    fs.writeFileSync(filePath, content, 'utf-8')
+    fs.writeFileSync(filePath, normalizeDraftFmOnSave(content), 'utf-8')
     return { success: true }
   } catch (error) {
     console.error('保存技能文件失败:', error)

@@ -1,5 +1,5 @@
 import type { FC } from 'react'
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { Search, ShieldCheck, XCircle, FolderGit2, Bot, Wand2, Box, Folder, ClipboardList, BookOpen, Code } from 'lucide-react'
 import { AssetReviewModal } from '../components/review/AssetReviewModal'
 import { useReviewStore } from '../stores/reviewStore'
@@ -10,6 +10,7 @@ import {
   reviewApprove,
   reviewReject,
   reviewRestore,
+  reviewDiscard,
 } from '../utils/storage'
 
 const typeLabels: Record<string, string> = {
@@ -79,6 +80,21 @@ const AssetCard: FC<{ asset: PendingAssetItem; onClick?: () => void }> = ({ asse
               待审 {asset.pendingCount} 版
             </span>
           )}
+          {!isRejected && asset.mergeConflict && (
+            <span className="inline-flex items-center px-2 py-0.5 bg-red-50 text-red-600 rounded-full text-xs">
+              冲突
+            </span>
+          )}
+          {!isRejected && !asset.mergeConflict && asset.autoMerged && (
+            <span className="inline-flex items-center px-2 py-0.5 bg-gray-100 text-gray-500 rounded-full text-xs">
+              已自动合并
+            </span>
+          )}
+          {!isRejected && !asset.mergeConflict && !asset.autoMerged && asset.baseStale && (
+            <span className="inline-flex items-center px-2 py-0.5 bg-amber-50 text-amber-600 rounded-full text-xs">
+              基准已变
+            </span>
+          )}
         </div>
       </div>
 
@@ -98,7 +114,7 @@ const AssetCard: FC<{ asset: PendingAssetItem; onClick?: () => void }> = ({ asse
 }
 
 export const AssetReviewPage: FC = () => {
-  const { reviewAssets, loading, loadReviewAssets, openReview, closeReview, reviewing, reviewModalOpen } = useReviewStore()
+  const { reviewAssets, loading, loadReviewAssets, openReview, closeReview, reviewing, reviewModalOpen, lastAdopt } = useReviewStore()
   const { addToast } = useToastStore()
   const [searchQuery, setSearchQuery] = useState('')
   const [typeFilter, setTypeFilter] = useState('')
@@ -106,9 +122,22 @@ export const AssetReviewPage: FC = () => {
   const [rejectConfirmOpen, setRejectConfirmOpen] = useState(false)
   const [rejectReason, setRejectReason] = useState('')
 
+  const prevAdoptRef = useRef<{ adopted: { type: string; name: string; kind: string }[]; restoredDeletions: string[] } | null>(null)
   useEffect(() => {
     loadReviewAssets()
   }, [loadReviewAssets])
+  // 直改收编提示（H7/H8）：仅在结果与上一轮不同（且非空）时提示一次，避免每次加载重复弹
+  useEffect(() => {
+    if (!lastAdopt) return
+    if (prevAdoptRef.current && prevAdoptRef.current.adopted === lastAdopt.adopted && prevAdoptRef.current.restoredDeletions === lastAdopt.restoredDeletions) return
+    prevAdoptRef.current = lastAdopt
+    if (lastAdopt.adopted.length > 0) {
+      addToast(`检测到 ${lastAdopt.adopted.length} 处未经审核的直接修改，已转入审核队列`, 'info')
+    }
+    if (lastAdopt.restoredDeletions.length > 0) {
+      addToast(`检测到 ${lastAdopt.restoredDeletions.length} 处正式文件被删除，已还原；如需删除请使用删除操作`, 'warning')
+    }
+  }, [lastAdopt, addToast])
 
   const statusOptions = useMemo(() => {
     const pendingCount = reviewAssets.filter((a) => a.reviewStatus === 'pending').length
@@ -157,12 +186,23 @@ export const AssetReviewPage: FC = () => {
     const result = await reviewApprove(asset.type, asset.name)
     if (result.success) {
       addToast(`审核通过（v${result.version ?? '-'}）`, 'success')
-    } else {
-      addToast(`审核通过失败：${result.error || '未知错误'}`, 'error')
+      closeReview()
+      await refreshAll()
       return
     }
-    closeReview()
-    await refreshAll()
+    // 基准漂移自动合并（H3 步骤 4）：草稿已并入最新改动，需再次确认——非错误，保持弹窗开着看合并结果
+    if (result.needReReview) {
+      addToast(result.message || '基线已变化，草稿已自动合并，请确认合并结果后再次审核通过', 'info')
+      await refreshAll()
+      return
+    }
+    // 合并冲突（H5）：草稿已写回冲突标记，人工处理或丢弃
+    if (result.conflict) {
+      addToast(result.error || '草稿与已通过版本存在合并冲突，请处理冲突标记或丢弃草稿', 'error')
+      await refreshAll()
+      return
+    }
+    addToast(`审核通过失败：${result.error || '未知错误'}`, 'error')
   }
 
   // 审核不通过：必填理由，写入最早 pending 快照（正式位置不动）
@@ -194,6 +234,22 @@ export const AssetReviewPage: FC = () => {
       addToast('已恢复待审核', 'success')
     } else {
       addToast(`操作失败：${result.error || '未知错误'}`, 'error')
+      return
+    }
+    closeReview()
+    await refreshAll()
+  }
+
+  // 丢弃冲突草稿（H5）：删除最早 pending 快照目录
+  const [discardConfirmOpen, setDiscardConfirmOpen] = useState(false)
+  const handleConfirmDiscard = async () => {
+    setDiscardConfirmOpen(false)
+    if (!reviewing) return
+    const result = await reviewDiscard(reviewing.type, reviewing.name)
+    if (result.success) {
+      addToast('已丢弃该草稿', 'success')
+    } else {
+      addToast(`丢弃失败：${result.error || '未知错误'}`, 'error')
       return
     }
     closeReview()
@@ -279,7 +335,34 @@ export const AssetReviewPage: FC = () => {
         onApprove={() => (reviewing ? handleApprove(reviewing) : Promise.resolve())}
         onReject={() => setRejectConfirmOpen(true)}
         onRestore={handleRestore}
+        onDiscard={() => setDiscardConfirmOpen(true)}
       />
+
+      <Modal
+        layoutKey="asset-discard-confirm"
+        isOpen={discardConfirmOpen}
+        onClose={() => setDiscardConfirmOpen(false)}
+        title={`丢弃草稿：${reviewing?.name ?? ''}`}
+        footer={
+          <div className="flex justify-end items-center gap-2">
+            <Button variant="ghost" size="sm" onClick={() => setDiscardConfirmOpen(false)}>
+              取消
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleConfirmDiscard}
+              className="bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 hover:border-gray-400 rounded-lg"
+            >
+              确认丢弃
+            </Button>
+          </div>
+        }
+      >
+        <div className="text-xs text-macos-text-secondary">
+          将删除 {reviewing?.name ?? ''} 最早进入队列的待审快照（不可恢复）；正式位置不受影响。
+        </div>
+      </Modal>
 
       <Modal
         layoutKey="asset-reject-reason"

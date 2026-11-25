@@ -46,6 +46,7 @@ const INVOKE_METHODS = [
   'knowledgeGitStatus', 'knowledgeGitInit', 'knowledgeGitLog', 'knowledgeGitShow',
   'knowledgeGitCommit', 'knowledgeGitRollback', 'loadKnowledgeGitConfig', 'saveKnowledgeGitConfig',
   'reviewList', 'reviewApprove', 'reviewReject', 'reviewRestore', 'reviewDiff', 'reviewSnapshot',
+  'reviewAdopt', 'reviewDiscard',
   'loadFormalRaw', 'loadAssetBaseline',
   'assetGitStatus', 'assetGitInit', 'assetGitLog', 'assetGitShow',
   'assetGitCommit', 'assetGitRollback', 'loadAssetGitConfig', 'saveAssetGitConfig',
