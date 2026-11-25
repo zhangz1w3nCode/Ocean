@@ -2,6 +2,7 @@ import type { FC } from 'react'
 import { useState, useEffect, useRef } from 'react'
 import { Type, Layers, MessageSquare, Eye, Edit3 } from 'lucide-react'
 import { Modal, Input, Textarea, Button, ConfirmModal, MarkdownEditor, MarkdownRenderer } from '../ui'
+import { isElectron, loadSingleNodeFileFromLocal } from '../../utils/storage'
 import { useToastStore } from '../../stores/toastStore'
 import type { NodeDefinition } from '../../types'
 
@@ -69,6 +70,15 @@ export const NodeModal: FC<NodeModalProps> = ({
         setNodeType(initialData.type as NodeType)
         setDescription(initialData.description || '')
         setContent(initialData.content || '')
+        // 暂存队列模型（G3）：编辑以磁盘草稿为准（队列有快照读最新快照，否则正式），initialData 是正式列表数据
+        if (isElectron()) {
+          loadSingleNodeFileFromLocal(initialData.name).then((disk) => {
+            if (disk) {
+              setDescription(disk.description || '')
+              setContent(disk.content || '')
+            }
+          }).catch(() => {})
+        }
       } else {
         // 创建模式：重置为默认值
         setName('')

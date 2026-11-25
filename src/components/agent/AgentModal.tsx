@@ -2,6 +2,7 @@ import type { FC } from 'react'
 import { useState, useEffect, useRef } from 'react'
 import { Type, Bot, Cpu, Palette, Eye, Edit3, MessageSquare } from 'lucide-react'
 import { Modal, Input, Textarea, Button, ConfirmModal, MarkdownEditor, MarkdownRenderer } from '../ui'
+import { isElectron as isElectronRuntime, loadSingleAgentFileFromLocal } from '../../utils/storage'
 import { useToastStore } from '../../stores/toastStore'
 import { useSettingsStore } from '../../stores/settingsStore'
 import type { AgentFile } from '../../types'
@@ -85,6 +86,12 @@ export const AgentModal: FC<AgentModalProps> = ({
         setModel(initialData.model || 'haiku')
         setColor(initialData.color || 'blue')
         setContent(initialData.content || '')
+        // 暂存队列模型（G3）：编辑以磁盘草稿为准
+        if (isElectronRuntime()) {
+          loadSingleAgentFileFromLocal(initialData.name).then((disk) => {
+            if (disk) { setDescription(disk.description || ''); setContent(disk.content || ''); setModel(disk.model || initialData.model) }
+          }).catch(() => {})
+        }
       } else {
         // 创建模式：重置为默认值
         setName('')

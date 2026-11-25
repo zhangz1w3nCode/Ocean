@@ -9,7 +9,7 @@ import { useSettingsStore } from '../../stores/settingsStore'
 import { useProjectStore } from '../../stores/projectStore'
 import { useSkillStore } from '../../stores/skillStore'
 import { generateWithLLM, parseLlmContent } from '../../services/llmService'
-import { getDefaultLLMProvider, isElectron, loadSkillTemplateFile } from '../../utils/storage'
+import { getDefaultLLMProvider, isElectron, loadSkillTemplateFile, loadSingleSkillFileFromLocal } from '../../utils/storage'
 import { useAgentLoop } from '../../hooks/useAgentLoop'
 import { AgentLoopLogger } from '../agent/AgentLoopLogger'
 import type { SkillFile, SkillResource } from '../../types'
@@ -190,6 +190,12 @@ export const SkillModal: FC<SkillModalProps> = ({
         setName(initialData.name)
         setDescription(initialData.description || '')
         setContent(initialData.content || '')
+        // 暂存队列模型（G3）：编辑以磁盘草稿为准
+        if (isElectron()) {
+          loadSingleSkillFileFromLocal(initialData.name).then((disk) => {
+            if (disk) { setDescription(disk.description || ''); setContent(disk.content || '') }
+          }).catch(() => {})
+        }
         setCreateMode('manual') // 编辑模式直接进入手动模式
         // 加载资源文件
         loadAllResources(initialData.name)

@@ -2,6 +2,7 @@ import type { FC } from 'react'
 import { useState, useEffect, useRef } from 'react'
 import { Type, FileText, BookOpen, Wrench, MessageSquare, Eye, Edit3 } from 'lucide-react'
 import { Modal, Input, Textarea, Button, ConfirmModal, MarkdownEditor, MarkdownRenderer } from '../ui'
+import { isElectron, loadSingleResourceFileFromLocal } from '../../utils/storage'
 import { useToastStore } from '../../stores/toastStore'
 import type { ResourceFile, ResourceFileType } from '../../types'
 
@@ -72,6 +73,12 @@ export const ResourceModal: FC<ResourceModalProps> = ({
         setResourceType(initialData.type)
         setDescription(initialData.description || '')
         setContent(initialData.content || '')
+        // 暂存队列模型（G3）：编辑以磁盘草稿为准
+        if (isElectron()) {
+          loadSingleResourceFileFromLocal(initialData.name).then((disk) => {
+            if (disk) { setDescription(disk.description || ''); setContent(disk.content || '') }
+          }).catch(() => {})
+        }
       } else {
         // 创建模式：重置为默认值
         setName('')
