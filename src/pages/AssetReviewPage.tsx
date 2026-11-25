@@ -261,7 +261,7 @@ export const AssetReviewPage: FC = () => {
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       {/* 页面头部：状态筛选 + 类型筛选 + 搜索（结构对齐各资产列表页） */}
-      <div className="h-16 px-6 flex items-center justify-end">
+      <div className="min-h-16 px-6 py-3 flex items-center justify-end flex-wrap gap-2">
         <div className="flex items-center gap-3">
           <Dropdown
             value={statusFilter}
