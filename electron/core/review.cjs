@@ -818,6 +818,13 @@ function dirMainExists(root, m) {
   if (ref.error) return false
   return fs.existsSync(path.join(oceanDir(root), ref.refPath))
 }
+// 正式位置是否已存在该资产（主文件在 HEAD 中已跟踪）——未跟踪的新子文件若属于已存在资产，应归为「修改」
+function formalAssetExists(root, m) {
+  const ref = resolveRef(root, m.type, m.name)
+  if (ref.error) return false
+  if (!fs.existsSync(path.join(oceanDir(root), ref.refPath))) return false
+  return runGitInOcean(root, ['ls-files', '--error-unmatch', '--', ref.refPath]).status === 0
+}
 // 目录型资产快照：newSnapshotDir 基底（skill/workflow 从当前工作区复制）+ 工作区覆盖（codebase/task）+ 主文件规范化
 function adoptAssetTree(root, m) {
   const ref = resolveRef(root, m.type, m.name)
@@ -882,6 +889,9 @@ function adoptStrayEdits(root) {
       if (!m) continue
       // 有效主文件才收编（目录型要求正式位置存在主文件）
       if (m.dirBased ? !dirMainExists(root, m) : !p.endsWith('.md')) continue
+      // 正式位置已有该资产（如 skill 新增了一个子文件）→ 属于「修改」而非「新增」，
+      // 否则会走新增分支把整个正式目录删掉
+      if (formalAssetExists(root, m)) { modAssets.set(`${m.type}/${m.name}`, m); continue }
       addAssets.set(`${m.type}/${m.name}`, m)
       continue
     }
@@ -899,10 +909,11 @@ function adoptStrayEdits(root) {
     const co = runGitInOcean(root, ['checkout', 'HEAD', '--', rel])
     if (co.status === 0) restoredDeletions.push(rel)
   }
-  // 2) 重命名新路径 → 按「新增」收编（staged 内容入队后 git rm -f 移除）
+  // 2) 重命名新路径 → 按「新增」收编（staged 内容入队后 git rm -f 移除）；正式已有则归入修改
   for (const np of renameNew) {
     const m = mapAssetPath(np)
     if (m && (m.dirBased ? dirMainExists(root, m) : np.endsWith('.md'))) {
+      if (formalAssetExists(root, m)) { modAssets.set(`${m.type}/${m.name}`, m); continue }
       addAssets.set(`${m.type}/${m.name}`, { ...m, staged: true, path: np })
     }
   }
@@ -917,7 +928,11 @@ function adoptStrayEdits(root) {
       return writeDraftWithBase(root, m.type, m.name, fs.readFileSync(mainAbs, 'utf-8'))
     })()
     if (snap.error) continue
-    runGitInOcean(root, ['checkout', 'HEAD', '--', m.dirBased ? `${TYPE_TO_DIR[m.type]}/${m.name}` : ref.refPath])
+    const relDir = m.dirBased ? `${TYPE_TO_DIR[m.type]}/${m.name}` : ref.refPath
+    runGitInOcean(root, ['checkout', 'HEAD', '--', relDir])
+    // 目录型资产：工作区里未跟踪的新子文件（如 skill 新增 scripts/x.sh）已被快照收录，
+    // 但 git checkout 不会删除未跟踪文件 → 需清理，否则正式位置残留未过审内容
+    if (m.dirBased) runGitInOcean(root, ['clean', '-fq', '--', relDir])
     adopted.push({ type: m.type, name: m.name, kind: 'modified' })
   }
 

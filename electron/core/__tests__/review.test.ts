@@ -797,3 +797,35 @@ describe('discardOldestPending（H5）', () => {
     expect(review.discardOldestPending(tmpDir, 'node', 'ghost').success).toBe(false)
   })
 })
+
+describe('adoptStrayEdits：已存在资产的新增子文件归为修改（控制器修复）', () => {
+  it('skill 新增未跟踪子文件 → 一份快照、整目录入队、正式目录不被删、幂等', () => {
+    write('.ocean/skills/sk/SKILL.md', '---\nname: sk\ndescription: S\nreviewStatus: validated\nversion: 1\n---\nSK-v1\n')
+    write('.ocean/skills/sk/scripts/a.sh', 'echo v1\n')
+    review.gitInit(tmpDir)
+    write('.ocean/skills/sk/scripts/a.sh', 'echo stray\n')                 // M
+    write('.ocean/skills/sk/scripts/b.sh', 'echo new\n')                    // ??（属于已存在资产）
+    const r1 = review.adoptStrayEdits(tmpDir)
+    expect(r1.success).toBe(true)
+    expect(r1.adopted.map((a: any) => `${a.type}:${a.name}:${a.kind}`)).toEqual(['skill:sk:modified'])
+    expect(fs.readdirSync(path.join(tmpDir, '.ocean/reviewQueue/skills/sk'))).toHaveLength(1)
+    const snapDir = path.join(tmpDir, '.ocean/reviewQueue/skills/sk', fs.readdirSync(path.join(tmpDir, '.ocean/reviewQueue/skills/sk'))[0])
+    expect(fs.readFileSync(path.join(snapDir, 'scripts/a.sh'), 'utf-8')).toBe('echo stray\n')
+    expect(fs.existsSync(path.join(snapDir, 'scripts/b.sh'))).toBe(true)
+    // 正式目录完整还原为 HEAD：主文件仍在、a.sh=v1、b.sh 不在
+    expect(fs.existsSync(path.join(tmpDir, '.ocean/skills/sk/SKILL.md'))).toBe(true)
+    expect(fs.readFileSync(path.join(tmpDir, '.ocean/skills/sk/scripts/a.sh'), 'utf-8')).toBe('echo v1\n')
+    expect(fs.existsSync(path.join(tmpDir, '.ocean/skills/sk/scripts/b.sh'))).toBe(false)
+    const r2 = review.adoptStrayEdits(tmpDir)
+    expect(r2.adopted).toHaveLength(0)
+    expect(r2.restoredDeletions).toHaveLength(0)
+  })
+  it('真正的新 skill（主文件未跟踪）仍按新增收编', () => {
+    write('.ocean/skills/anchor/SKILL.md', '---\nname: anchor\ndescription: A\nreviewStatus: validated\nversion: 1\n---\nA\n')
+    review.gitInit(tmpDir)
+    write('.ocean/skills/brand/SKILL.md', '---\nname: brand\ndescription: B\n---\nNEW\n')
+    const r = review.adoptStrayEdits(tmpDir)
+    expect(r.adopted.map((a: any) => `${a.type}:${a.name}:${a.kind}`)).toEqual(['skill:brand:added'])
+    expect(fs.existsSync(path.join(tmpDir, '.ocean/skills/brand'))).toBe(false)
+  })
+})
