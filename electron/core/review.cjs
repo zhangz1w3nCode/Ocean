@@ -131,6 +131,70 @@ function timestamp() {
 function hasCommits(root) {
   return runGitInOcean(root, ['rev-parse', '--verify', '--quiet', 'HEAD']).status === 0
 }
+// 当前 HEAD sha（H1 基准记录用）；未托管/无提交 → null
+function headSha(root) {
+  try {
+    if (!isGitManaged(root)) return null
+    const r = runGitInOcean(root, ['rev-parse', 'HEAD'])
+    if (r.status !== 0 || typeof r.stdout !== 'string') return null
+    const sha = r.stdout.trim()
+    return /^[0-9a-f]{40}$/.test(sha) ? sha : null
+  } catch { return null }
+}
+// 目标文件在 <baseSha>..HEAD 之间是否变化（H2）：'unchanged' | 'changed' | 'unknown'（未知按有变化处理）
+function fileChangedSince(root, refPath, sha) {
+  const rel = normalizeAssetRel(refPath)
+  if (!rel) return 'unknown'
+  const s = String(sha == null ? '' : sha)
+  if (!/^[0-9a-fA-F]{4,40}$/.test(s)) return 'unknown'
+  if (!isGitManaged(root) || !hasCommits(root)) return 'unknown'
+  if (runGitInOcean(root, ['cat-file', '-e', s]).status !== 0) return 'unknown' // sha 不存在
+  const d = runGitInOcean(root, ['diff', '--quiet', s, 'HEAD', '--', rel])
+  if (d.status === 0) return 'unchanged'
+  if (d.status === 1) return 'changed'
+  return 'unknown'
+}
+// 提取原始 frontmatter 块（含首尾 --- 与换行）；无 frontmatter 返回 ''
+function rawFmBlock(text) {
+  const m = /^---\n([\s\S]*?)\n---\n?/.exec(String(text))
+  return m ? m[0] : ''
+}
+// 三方合并（H4）：**仅合并正文**（frontmatter 是系统管理字段——正式侧 validated/version，草稿侧 pending/baseCommit，
+// 整文件合并会在头部产生系统性伪冲突）；base 取自 git show；git merge-file -p 逐行合并正文，
+// 结果 = 草稿（theirs）的 frontmatter 块（缺失时依次回退 ours/base）+ 合并后的正文，调用方负责重设系统字段
+function threeWayMerge(root, refPath, baseSha, oursText, theirsText) {
+  const rel = normalizeAssetRel(refPath)
+  if (!rel) return { ok: false, text: String(theirsText), conflicts: -1, error: '非法的资产路径' }
+  // base = 基准提交中的内容（路径不存在 → 空字符串）
+  let baseText = ''
+  const show = runGitInOcean(root, ['show', `${String(baseSha)}:${rel}`])
+  if (show.status === 0 && typeof show.stdout === 'string') baseText = show.stdout
+  const os = require('node:os')
+  const tag = `ocean-merge-${Date.now()}-${Math.random().toString(36).slice(2)}`
+  const tmpOurs = path.join(os.tmpdir(), `${tag}.ours`)
+  const tmpBase = path.join(os.tmpdir(), `${tag}.base`)
+  const tmpTheirs = path.join(os.tmpdir(), `${tag}.theirs`)
+  try {
+    // 尾换行归一（git show 的内容带尾换行、调用方输入可能不带；差一个换行即被 merge-file 视为同行不同版本）
+    const nl = (s) => (s === '' ? s : (s.endsWith('\n') ? s : s + '\n'))
+    fs.writeFileSync(tmpOurs, nl(stripFrontmatter(oursText)), 'utf-8')
+    fs.writeFileSync(tmpBase, nl(stripFrontmatter(baseText)), 'utf-8')
+    fs.writeFileSync(tmpTheirs, nl(stripFrontmatter(theirsText)), 'utf-8')
+    const r = child_process.spawnSync('git', [
+      'merge-file', '-p',
+      '-L', '已通过版本', '-L', '基准', '-L', '草稿',
+      tmpOurs, tmpBase, tmpTheirs,
+    ], { encoding: 'utf-8' })
+    const fm = rawFmBlock(theirsText) || rawFmBlock(oursText) || rawFmBlock(baseText)
+    if (r.error) return { ok: false, text: String(theirsText), conflicts: -1, error: String(r.error) }
+    const status = r.status
+    if (status === 0) return { ok: true, text: fm + String(r.stdout || ''), conflicts: 0 }
+    if (status > 0 && r.stdout) return { ok: false, text: fm + String(r.stdout), conflicts: status } // 输出含冲突标记
+    return { ok: false, text: String(theirsText), conflicts: -1, error: r.stderr ? String(r.stderr) : 'git merge-file 失败' }
+  } finally {
+    for (const f of [tmpOurs, tmpBase, tmpTheirs]) { try { fs.unlinkSync(f) } catch {} }
+  }
+}
 // 黑名单 .gitignore：排除运行态、机器绑定配置（含明文 apiKey）与审核队列草稿（G9：HEAD == 正式位置）
 const ASSET_GITIGNORE = [
   '.DS_Store', 'llm-config.json', 'agentic-config.json', 'knowledge-git.json', 'asset-git.json',
@@ -270,6 +334,7 @@ function newSnapshotDir(root, type, name) {
   return { dir, ts }
 }
 // 该资产全部快照（按 ts 升序）；跳过主文件缺失/不可读的无效快照
+// 每份快照解析：status / baseCommit（H1）/ conflicted（H5）/ autoMerged（H6）
 function listSnapshots(root, type, name) {
   const r = resolveRef(root, type, name)
   if (r.error) return []
@@ -282,7 +347,15 @@ function listSnapshots(root, type, name) {
     const mainRel = snapshotMainRel(r.type, r.name)
     const mainFile = path.join(dir, mainRel)
     if (!fs.existsSync(mainFile)) continue
-    out.push({ dir, ts: e.name, status: parseReviewStatus(fs.readFileSync(mainFile, 'utf-8')), mainFile, mainRel })
+    const text = fs.readFileSync(mainFile, 'utf-8')
+    out.push({
+      dir, ts: e.name,
+      status: parseReviewStatus(text),
+      baseCommit: parseFmField(text, 'baseCommit') || null,
+      conflicted: parseFmField(text, 'mergeConflict') === 'true',
+      autoMerged: parseFmField(text, 'autoMerged') === 'true',
+      mainFile, mainRel,
+    })
   }
   out.sort((a, b) => a.ts.localeCompare(b.ts))
   return out
@@ -291,8 +364,8 @@ function latestDraft(root, type, name) {
   const all = listSnapshots(root, type, name)
   return all.length ? all[all.length - 1] : null
 }
-function oldestPending(root, type, name) {
-  return listSnapshots(root, type, name).find((s) => s.status === 'pending') || null
+function oldestPending(root, type, name, opts) {
+  return listSnapshots(root, type, name).find((s) => s.status === 'pending' && !(opts && opts.skipConflicted && s.conflicted)) || null
 }
 function oldestRejected(root, type, name) {
   return listSnapshots(root, type, name).find((s) => s.status === 'rejected') || null
@@ -324,6 +397,9 @@ function listQueue(root, statusFilter) {
       const ref = resolveRef(root, type, name)
       const formalPath = path.join(base, ref.refPath)
       const formalExists = fs.existsSync(formalPath)
+      const baseSha = parseFmField(mainText, 'baseCommit')
+      const hasBase = !!baseSha
+      const baseStale = formalExists && hasBase && fileChangedSince(root, ref.refPath, baseSha) !== 'unchanged'
       items.push({
         type, name, ts: chosen.ts,
         reviewStatus: chosen.status,
@@ -332,6 +408,10 @@ function listQueue(root, statusFilter) {
         baseVersion: formalExists ? parseVersion(fs.readFileSync(formalPath, 'utf-8')) : null,
         pendingCount: pending.length,
         isNew: !formalExists,
+        mergeConflict: parseFmField(mainText, 'mergeConflict') === 'true',
+        autoMerged: parseFmField(mainText, 'autoMerged') === 'true',
+        hasBase,
+        baseStale,
       })
     }
   }
@@ -430,7 +510,11 @@ function promoteSnapshot(root, r, snap) {
   fs.copyFileSync(snap.mainFile, formalMain)
 }
 
-// 审核通过（G5）：正式落盘 + version 递增 + git 提交 + 删该快照 + skill/agent 自动单项物化
+// 审核通过（G5 + H3）：
+//  未托管报错；取最早非冲突 pending 快照；
+//  基准漂移（草稿 baseCommit 后正式变过）→ 三方合并：冲突→写回标记不提升；成功→写回草稿标 autoMerged 并返回 needReReview；
+//  无需合并 → 提升（覆写正式、validated、version+1、提交、删快照、skill/agent 物化）；
+//  提交后对剩余 pending 快照逐个重定基（不删除、不阻断）。
 function approveAsset(root, type, name, message) {
   const r = resolveRef(root, type, name)
   if (r.error) return { success: false, error: r.error }
@@ -438,20 +522,60 @@ function approveAsset(root, type, name, message) {
   if (!isGitManaged(root)) {
     return { success: false, error: '审核通过需先开启 .ocean git 托管（ocean review init 或桌面端审核-设置页开启）' }
   }
-  const snap = oldestPending(root, r.type, r.name)
-  if (!snap) return { success: false, error: `${typeLabel(r.type)} ${r.name} 无待审核快照` }
+  const anyPending = oldestPending(root, r.type, r.name)
+  if (!anyPending) return { success: false, error: `${typeLabel(r.type)} ${r.name} 无待审核快照` }
+  const snap = oldestPending(root, r.type, r.name, { skipConflicted: true })
+  if (!snap) {
+    return { success: false, conflict: true, type: r.type, name: r.name,
+      error: `${typeLabel(r.type)} ${r.name} 待审核快照均存在合并冲突，请先处理（review discard 丢弃，或手动编辑冲突标记后重审）` }
+  }
 
   const formalMain = path.join(oceanDir(root), r.refPath)
-  const baseVersion = fs.existsSync(formalMain) ? parseVersion(fs.readFileSync(formalMain, 'utf-8')) : null
+  const formalExists = fs.existsSync(formalMain)
+
+  // H3 步骤 3/4：基准漂移 → 三方合并
+  if (formalExists && snap.baseCommit) {
+    if (fileChangedSince(root, r.refPath, snap.baseCommit) !== 'unchanged') {
+      const draftText = fs.readFileSync(snap.mainFile, 'utf-8')
+      const formalText = fs.readFileSync(formalMain, 'utf-8')
+      const merge = threeWayMerge(root, r.refPath, snap.baseCommit, formalText, draftText)
+      if (!merge.ok && merge.conflicts >= 0) {
+        // 冲突：合并产物（含标记）写回草稿并标记；正式位置不动
+        let t = setFmField(merge.text, 'reviewStatus', 'pending')
+        t = setFmField(t, 'mergeConflict', 'true')
+        t = setFmField(t, 'autoMerged', null)
+        t = setFmField(t, 'baseCommit', headSha(root))
+        fs.writeFileSync(snap.mainFile, t, 'utf-8')
+        return { success: false, conflict: true, type: r.type, name: r.name, ts: snap.ts,
+          error: `${typeLabel(r.type)} ${r.name} 与已通过版本存在合并冲突（${merge.conflicts} 处），已写回冲突标记；请手动编辑解决后重审，或 review discard 丢弃草稿` }
+      }
+      if (!merge.ok) {
+        return { success: false, type: r.type, name: r.name, ts: snap.ts, error: `三方合并失败：${merge.error || '未知错误'}` }
+      }
+      // 自动合并成功：写回草稿，标 autoMerged，更新基准，需重新审核（H6 标记不拦截，下次点通过即提升）
+      let t = setFmField(merge.text, 'reviewStatus', 'pending')
+      t = setFmField(t, 'autoMerged', 'true')
+      t = setFmField(t, 'mergeConflict', null)
+      t = setFmField(t, 'baseCommit', headSha(root))
+      fs.writeFileSync(snap.mainFile, t, 'utf-8')
+      return { success: false, needReReview: true, autoMerged: true, type: r.type, name: r.name, ts: snap.ts,
+        message: `基线已变化，草稿已自动合并入最新版本改动，请重新确认后再次审核通过` }
+    }
+  }
+
+  const baseVersion = formalExists ? parseVersion(fs.readFileSync(formalMain, 'utf-8')) : null
   const newVersion = (baseVersion ?? 0) + 1
 
   promoteSnapshot(root, r, snap)
 
-  // 正式主文件 frontmatter：validated + 新版本号；清理草稿期可能残留的驳回理由
+  // 正式主文件 frontmatter：validated + 新版本号；清理草稿期字段（理由/冲突/合并标记/基准）
   let formalText = fs.readFileSync(formalMain, 'utf-8')
   formalText = setFmField(formalText, 'reviewStatus', 'validated')
   formalText = setFmField(formalText, 'version', String(newVersion))
   formalText = setFmField(formalText, 'rejectReason', null)
+  formalText = setFmField(formalText, 'mergeConflict', null)
+  formalText = setFmField(formalText, 'autoMerged', null)
+  formalText = setFmField(formalText, 'baseCommit', null)
   fs.writeFileSync(formalMain, formalText, 'utf-8')
 
   // 提交正式路径：目录型资产提交其目录，单文件提交主文件
@@ -464,7 +588,41 @@ function approveAsset(root, type, name, message) {
 
   let sync = null
   if (r.type === 'skill' || r.type === 'agent') sync = syncApprovedAssets(root, { type: r.type, name: r.name })
+
+  // H3 步骤 5：对剩余 pending 快照重定基（不删除、不阻断；已冲突的等人工处理）
+  rebasePendingSnapshots(root, r)
+
   return { success: true, type: r.type, name: r.name, version: newVersion, commit, sync }
+}
+
+// 提交后重定基：对剩余 pending 快照，基准漂移的尝试三方合并；冲突的写回标记（H3 步骤 5）
+function rebasePendingSnapshots(root, r) {
+  const formalMain = path.join(oceanDir(root), r.refPath)
+  if (!fs.existsSync(formalMain)) return
+  const formalText = fs.readFileSync(formalMain, 'utf-8')
+  for (const s of listSnapshots(root, r.type, r.name)) {
+    if (s.status !== 'pending') continue
+    if (s.conflicted) continue // 已标冲突的等人工解决，不重复合并
+    if (!s.baseCommit) continue
+    if (fileChangedSince(root, r.refPath, s.baseCommit) === 'unchanged') continue
+    const draftText = fs.readFileSync(s.mainFile, 'utf-8')
+    const merge = threeWayMerge(root, r.refPath, s.baseCommit, formalText, draftText)
+    let t
+    if (merge.ok) {
+      t = setFmField(merge.text, 'reviewStatus', 'pending')
+      t = setFmField(t, 'autoMerged', 'true')
+      t = setFmField(t, 'mergeConflict', null)
+      t = setFmField(t, 'baseCommit', headSha(root))
+    } else if (merge.conflicts >= 0) {
+      t = setFmField(merge.text, 'reviewStatus', 'pending')
+      t = setFmField(t, 'mergeConflict', 'true')
+      t = setFmField(t, 'autoMerged', null)
+      t = setFmField(t, 'baseCommit', headSha(root))
+    } else {
+      continue // 合并器故障：保留原样，不动
+    }
+    fs.writeFileSync(s.mainFile, t, 'utf-8')
+  }
 }
 
 // ---------- 读取 / 编辑目标解析 ----------
@@ -496,12 +654,6 @@ function resolveEditTarget(root, type, name) {
   return { dir: s.dir, ts: s.ts, mainFile: path.join(s.dir, snapshotMainRel(r.type, r.name)), mainRel: snapshotMainRel(r.type, r.name), isNewSnapshot: true, formalExists }
 }
 
-// 时间戳 → 本地时间（YYYYMMDDHHmmssSSS，可带 -NNNN 冲突后缀）
-function tsToDate(ts) {
-  const m = String(ts).match(/^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})(\d{3})/)
-  if (!m) return null
-  return new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6], +m[7])
-}
 // 主文件保存目标（G3）：每次"保存"产生新快照，不覆盖既有快照。
 // 同一次保存会话内的多次主文件写入（如工作流编辑器一次保存写 WORKFLOW.md + flow.json）应落到同一快照：
 // 最新快照若在 reuseWindowMs（默认 3000ms）内刚创建则复用，否则新建。
@@ -524,6 +676,15 @@ function resolveSaveTarget(root, type, name, opts) {
 }
 
 // ---------- 删除（G8） ----------
+// 丢弃最早 pending 快照（H5 冲突草稿的「丢弃此草稿」；conflicted 或否都取最早 pending）
+function discardOldestPending(root, type, name) {
+  const r = resolveRef(root, type, name)
+  if (r.error) return { success: false, error: r.error }
+  const snap = oldestPending(root, r.type, r.name)
+  if (!snap) return { success: false, error: `${typeLabel(r.type)} ${r.name} 无待审核快照` }
+  fs.rmSync(snap.dir, { recursive: true, force: true })
+  return { success: true, type: r.type, name: r.name, ts: snap.ts }
+}
 // 提交正式路径的删除（调用方先删文件/目录）；未托管直接 success（不提交）
 function commitFormalDeletion(root, refPath) {
   const rel = normalizeAssetRel(refPath)
@@ -580,16 +741,219 @@ function diffAsset(root, type, name) {
   const formalMain = path.join(oceanDir(root), r.refPath)
   const formalExists = fs.existsSync(formalMain)
   const draftText = fs.readFileSync(snap.mainFile, 'utf-8')
+  const hasBase = !!snap.baseCommit
+  const baseStale = formalExists && hasBase && fileChangedSince(root, r.refPath, snap.baseCommit) !== 'unchanged'
+  const mergeState = { mergeConflict: snap.conflicted, autoMerged: snap.autoMerged, hasBase, baseStale }
   if (!formalExists) {
     return { success: true, type: r.type, name: r.name, isNew: true, hasBaseline: false,
-      reviewStatus: 'pending', version: null, content: draftText,
+      reviewStatus: 'pending', version: null, content: draftText, ...mergeState,
       note: '新建资产（正式位置尚无过审版本），以下为快照全文' }
   }
   const formalText = fs.readFileSync(formalMain, 'utf-8')
   const diff = buildUnifiedDiff(stripFrontmatter(formalText), stripFrontmatter(draftText), '已审核通过版本', '待审核快照')
   const changed = diff.split('\n').some((l) => l.startsWith('+ ') || l.startsWith('- '))
   return { success: true, type: r.type, name: r.name, isNew: false, hasBaseline: true,
-    reviewStatus: 'pending', version: parseVersion(formalText), changed, diff }
+    reviewStatus: 'pending', version: parseVersion(formalText), changed, diff, ...mergeState }
+}
+
+// ---------- 直改收编与带基准草稿（H1/H7） ----------
+// 草稿 frontmatter 规范化：pending + baseCommit=HEAD，清除 version/理由/冲突/合并标记
+function normalizeDraftFm(text, root, opts) {
+  let t = String(text)
+  t = setFmField(t, 'reviewStatus', 'pending')
+  t = setFmField(t, 'version', null)
+  t = setFmField(t, 'rejectReason', null)
+  t = setFmField(t, 'mergeConflict', null)
+  if (!(opts && opts.keepAutoMerged)) t = setFmField(t, 'autoMerged', null)
+  t = setFmField(t, 'baseCommit', headSha(root) || null)
+  return t
+}
+// 新建快照并写入规范化主文件（直改收编用；单文件资产）
+function writeDraftWithBase(root, type, name, text, opts) {
+  const s = newSnapshotDir(root, type, name)
+  if (s.error) return { error: s.error }
+  const mainRel = snapshotMainRel(type, name)
+  const mainFile = path.join(s.dir, mainRel)
+  fs.mkdirSync(path.dirname(mainFile), { recursive: true })
+  fs.writeFileSync(mainFile, normalizeDraftFm(text, root, opts), 'utf-8')
+  return { dir: s.dir, ts: s.ts, mainFile, mainRel }
+}
+// 供 GUI/CLI 拼接 frontmatter 的调用方使用：返回 'baseCommit: <sha>' 行或空串（未托管）
+function baseCommitField(root) {
+  const sha = headSha(root)
+  return sha ? `baseCommit: ${sha}` : ''
+}
+// 递归复制目录（可带 filter，参数为 src 绝对路径；跳过 .DS_Store）
+function copyTreeInto(srcDir, dstDir, filter) {
+  for (const e of fs.readdirSync(srcDir, { withFileTypes: true })) {
+    if (e.name === '.DS_Store') continue
+    const s = path.join(srcDir, e.name)
+    if (filter && !filter(s)) continue
+    const d = path.join(dstDir, e.name)
+    if (e.isDirectory()) { fs.mkdirSync(d, { recursive: true }); copyTreeInto(s, d, filter) }
+    else { fs.mkdirSync(path.dirname(d), { recursive: true }); fs.copyFileSync(s, d) }
+  }
+}
+// 相对 .ocean 的路径 → 资产（type/name/是否目录型）；无法映射/非资产路径 → null
+function mapAssetPath(relPath) {
+  if (!relPath || relPath.startsWith('reviewQueue/')) return null
+  const segs = String(relPath).split('/')
+  const dir = segs[0]
+  const type = DIR_TO_TYPE[dir]
+  if (!type) return null
+  if (dir === 'skills' || dir === 'workflows' || dir === 'codebases' || dir === 'tasks') {
+    if (segs.length < 2) return null
+    return { type, name: segs[1], dirBased: true }
+  }
+  // agents/nodes/resources/knowledges：单文件（knowledge 允许 domain 子目录）
+  const fileName = segs[segs.length - 1]
+  if (!fileName.endsWith('.md')) return null
+  const nameSegs = segs.slice(1, -1).concat(fileName.replace(/\.md$/, ''))
+  if (!nameSegs.length || nameSegs.some((s) => !s)) return null
+  return { type, name: nameSegs.join('/'), dirBased: false }
+}
+// 目录型资产的正式位置是否含主文件（未跟踪收编的有效性判定）
+function dirMainExists(root, m) {
+  const ref = resolveRef(root, m.type, m.name)
+  if (ref.error) return false
+  return fs.existsSync(path.join(oceanDir(root), ref.refPath))
+}
+// 目录型资产快照：newSnapshotDir 基底（skill/workflow 从当前工作区复制）+ 工作区覆盖（codebase/task）+ 主文件规范化
+function adoptAssetTree(root, m) {
+  const ref = resolveRef(root, m.type, m.name)
+  if (ref.error) return { error: ref.error }
+  const s = newSnapshotDir(root, m.type, m.name)
+  if (s.error) return s
+  const formalDir = path.dirname(path.join(oceanDir(root), ref.refPath))
+  if (fs.existsSync(formalDir)) {
+    copyTreeInto(formalDir, s.dir, m.type === 'workflow' ? (src) => path.basename(src) !== 'instance' : null)
+  }
+  const mainFile = path.join(s.dir, ref.refPath.split('/').slice(-1)[0])
+  // 目录型主文件固定名（MAIN_FILE）；knowledge 不在此列
+  if (!fs.existsSync(mainFile)) return { error: '主文件不存在' }
+  fs.writeFileSync(mainFile, normalizeDraftFm(fs.readFileSync(mainFile, 'utf-8'), root), 'utf-8')
+  return s
+}
+// 直改收编（H7）：工作区偏离 HEAD 的资产改动 → 新快照入队，正式位置还原/删除；删除→仅还原不入队
+// 触发点（H8）：仅审核页加载时（本模块不主动触发，由 IPC 层调用）
+function adoptStrayEdits(root) {
+  const empty = { adopted: [], restoredDeletions: [] }
+  if (!isGitManaged(root)) {
+    return { success: false, error: '直改编排需 .ocean 开启 git 托管（ocean review init）后才生效', ...empty }
+  }
+  const scanDirs = Object.values(TYPE_TO_DIR)
+  const st = runGitInOcean(root, ['-c', 'core.quotePath=false', 'status', '--porcelain', '-uall', '--', ...scanDirs])
+  if (st.status !== 0 || typeof st.stdout !== 'string') {
+    return { success: false, error: st.stderr ? String(st.stderr) : 'git status 失败', ...empty }
+  }
+
+  const unquote = (s) => {
+    if (s && s.startsWith('"') && s.endsWith('"')) {
+      try { return JSON.parse(s) } catch { return s.slice(1, -1) }
+    }
+    return s
+  }
+  const modAssets = new Map()  // `${type}/${name}` → { type, name, dirBased }
+  const addAssets = new Map()  // 同上（未跟踪新增 / 重命名新路径）
+  const delPaths = []          // 删除/重命名旧路径 → 还原
+  const renameNew = []         // 重命名新路径（staged，移除时用 git rm -f）
+
+  for (const raw of st.stdout.split('\n')) {
+    if (!raw) continue
+    const x = raw[0], y = raw[1]
+    const rest = raw.slice(3)
+    let p = rest, orig = null
+    const arrow = rest.indexOf(' -> ')
+    if (arrow >= 0) { p = rest.slice(0, arrow); orig = rest.slice(arrow + 4) }
+    p = unquote(p); if (orig) orig = unquote(orig)
+    if (!p || p.startsWith('reviewQueue/')) continue
+
+    if (x === 'R' && orig) {
+      // 重命名（实测 porcelain v1：`R  old -> new`；按存在性判定更稳）
+      const newPath = fs.existsSync(path.join(oceanDir(root), p)) ? p : orig
+      const oldPath = newPath === p ? orig : p
+      if (oldPath) delPaths.push(oldPath)
+      if (newPath) renameNew.push(newPath)
+      continue
+    }
+    if (x === 'D' || y === 'D') { delPaths.push(p); continue }
+    if (x === '?') {
+      const m = mapAssetPath(p)
+      if (!m) continue
+      // 有效主文件才收编（目录型要求正式位置存在主文件）
+      if (m.dirBased ? !dirMainExists(root, m) : !p.endsWith('.md')) continue
+      addAssets.set(`${m.type}/${m.name}`, m)
+      continue
+    }
+    // 其余（M/A/C 等）→ 修改（单文件：路径即主文件；目录型：主文件缺失时由 adoptAssetTree 跳过）
+    const m = mapAssetPath(p)
+    if (!m) continue
+    modAssets.set(`${m.type}/${m.name}`, m)
+  }
+
+  const adopted = []
+  const restoredDeletions = []
+
+  // 1) 删除/重命名旧路径 → 还原
+  for (const rel of delPaths) {
+    const co = runGitInOcean(root, ['checkout', 'HEAD', '--', rel])
+    if (co.status === 0) restoredDeletions.push(rel)
+  }
+  // 2) 重命名新路径 → 按「新增」收编（staged 内容入队后 git rm -f 移除）
+  for (const np of renameNew) {
+    const m = mapAssetPath(np)
+    if (m && (m.dirBased ? dirMainExists(root, m) : np.endsWith('.md'))) {
+      addAssets.set(`${m.type}/${m.name}`, { ...m, staged: true, path: np })
+    }
+  }
+
+  // 3) 修改（按资产聚合，一份快照）→ 还原
+  for (const [key, m] of [...modAssets.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+    const ref = resolveRef(root, m.type, m.name)
+    if (ref.error) continue
+    const snap = m.dirBased ? adoptAssetTree(root, m) : (() => {
+      const mainAbs = path.join(oceanDir(root), ref.refPath)
+      if (!fs.existsSync(mainAbs)) return { error: '文件不存在' }
+      return writeDraftWithBase(root, m.type, m.name, fs.readFileSync(mainAbs, 'utf-8'))
+    })()
+    if (snap.error) continue
+    runGitInOcean(root, ['checkout', 'HEAD', '--', m.dirBased ? `${TYPE_TO_DIR[m.type]}/${m.name}` : ref.refPath])
+    adopted.push({ type: m.type, name: m.name, kind: 'modified' })
+  }
+
+  // 4) 未跟踪/重命名新增 → 入队 + 正式位置删除
+  const removeAndClean = (absFile, stopAbs) => {
+    fs.rmSync(absFile, { force: true })
+    let dir = path.dirname(absFile)
+    while (dir.length > stopAbs.length && fs.existsSync(dir) && fs.readdirSync(dir).length === 0) {
+      fs.rmdirSync(dir)
+      dir = path.dirname(dir)
+    }
+  }
+  for (const [key, m] of [...addAssets.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+    const ref = resolveRef(root, m.type, m.name)
+    if (ref.error) continue
+    const formalMainAbs = path.join(oceanDir(root), ref.refPath)
+    const typeDirAbs = path.join(oceanDir(root), TYPE_TO_DIR[m.type])
+    if (m.dirBased) {
+      const snap = adoptAssetTree(root, m)
+      if (snap.error) continue
+      fs.rmSync(path.dirname(formalMainAbs), { recursive: true, force: true })
+    } else {
+      if (!fs.existsSync(formalMainAbs)) continue
+      const snap = writeDraftWithBase(root, m.type, m.name, fs.readFileSync(formalMainAbs, 'utf-8'))
+      if (snap.error) continue
+      if (m.staged) {
+        runGitInOcean(root, ['rm', '-f', '--', ref.refPath])
+        if (fs.existsSync(formalMainAbs)) fs.rmSync(formalMainAbs, { force: true })
+      } else {
+        removeAndClean(formalMainAbs, typeDirAbs)
+      }
+    }
+    adopted.push({ type: m.type, name: m.name, kind: 'added' })
+  }
+
+  return { success: true, adopted, restoredDeletions }
 }
 
 // ---------- 物化同步（skill/agent → {assetDir}/skills|agents，签名不变） ----------
@@ -692,13 +1056,17 @@ module.exports = {
   TYPE_TO_DIR, oceanDir, normalizeAssetRel, resolveRef, typeLabel,
   parseReviewStatus, parseFmField, parseVersion, stripFrontmatter,
   isGitManaged, gitStatus, gitInit, gitLog, gitShow, gitBaseline, gitCommit, gitRollback,
+  // 基准/合并（H1–H4）
+  headSha, fileChangedSince, threeWayMerge,
   // 队列
   queueDir, snapshotMainRel, newSnapshotDir, latestDraft, oldestPending, oldestRejected,
   listQueue, listReviewAssets: listQueue,
   // 审核
-  approveAsset, rejectAsset, restoreAsset, diffAsset, readSnapshot,
+  approveAsset, rejectAsset, restoreAsset, diffAsset, readSnapshot, discardOldestPending,
   // 读取/编辑目标
   resolveReadPath, resolveEditTarget, resolveSaveTarget,
+  // 带基准草稿（H1/H7）
+  writeDraftWithBase, baseCommitField, adoptStrayEdits,
   // 删除
   commitFormalDeletion, discardSnapshots,
   // 同步
