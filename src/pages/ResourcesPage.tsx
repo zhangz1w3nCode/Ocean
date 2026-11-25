@@ -123,7 +123,7 @@ export const ResourcesPage: FC = () => {
   }
 
   // 过滤资源文件
-  const filteredResources = resourceFiles.filter((resource) => resource.reviewStatus === 'validated').filter((resource) => {
+  const filteredResources = resourceFiles.filter((resource) => {
     const matchesSearch =
       resource.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       resource.description?.toLowerCase().includes(searchQuery.toLowerCase()) ||

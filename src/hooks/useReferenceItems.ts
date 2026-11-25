@@ -171,7 +171,7 @@ export function useReferenceItems(options: UseReferenceItemsOptions = {}): Refer
         isLibrary: true,
       })
     }
-    knowledgeFiles.filter((k) => k.reviewStatus === 'validated').forEach((knowledge) => {
+    knowledgeFiles.forEach((knowledge) => {
       const knowledgePath = knowledge.filepath || (knowledge.category ? `${knowledge.category}/${knowledge.name}` : knowledge.name)
       const path = `.ocean/knowledges/${knowledgePath}.md`
       if (path !== excludePath) {

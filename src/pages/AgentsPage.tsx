@@ -124,7 +124,7 @@ export const AgentsPage: FC = () => {
   }
 
   // 过滤智能体文件
-  const filteredAgents = agentFiles.filter((agent) => agent.reviewStatus === 'validated').filter((agent) => {
+  const filteredAgents = agentFiles.filter((agent) => {
     const matchesSearch =
       agent.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       agent.description?.toLowerCase().includes(searchQuery.toLowerCase()) ||

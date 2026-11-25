@@ -120,7 +120,7 @@ export const NodesPage: FC<{ nested?: boolean }> = ({ nested = false }) => {
   }
 
   // 过滤节点
-  const filteredNodes = nodeDefinitions.filter((node) => node.reviewStatus === 'validated').filter((node) => {
+  const filteredNodes = nodeDefinitions.filter((node) => {
     const matchesSearch =
       node.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       node.description?.toLowerCase().includes(searchQuery.toLowerCase()) ||

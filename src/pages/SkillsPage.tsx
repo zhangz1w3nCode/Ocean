@@ -126,7 +126,7 @@ export const SkillsPage: FC = () => {
   }
 
   // 过滤技能文件
-  const filteredSkills = skillFiles.filter((skill) => skill.reviewStatus === 'validated').filter((skill) => {
+  const filteredSkills = skillFiles.filter((skill) => {
     const matchesSearch =
       skill.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       skill.description?.toLowerCase().includes(searchQuery.toLowerCase()) ||

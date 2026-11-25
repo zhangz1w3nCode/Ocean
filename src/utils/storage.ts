@@ -1567,7 +1567,6 @@ const generateNodeMarkdown = (node: any): string => {
     metadata.description = node.description
   }
   metadata.reviewStatus = node.reviewStatus || 'pending'
-  metadata.version = node.version || 1
 
   return generateMarkdownWithFrontmatter(metadata, node.content || '')
 }
@@ -1902,9 +1901,9 @@ const generateSubAgentMarkdown = (
   frontmatter.name = edited.name
   frontmatter.description = edited.description
   frontmatter.model = edited.model
-  // 审核门控（D13）：智能体创建/更新一律回未通过；version 保留原值（新建为 1，审核通过时自增）
+  // 审核门控（D13）：智能体创建/更新一律回未通过；草稿不带 version（审核通过时由正式位置维护）
   frontmatter.reviewStatus = 'pending'
-  if (!frontmatter.version) frontmatter.version = 1
+  delete frontmatter.version
 
   // color：Claude 格式为必有字段（新建默认 blue）；Pi 格式不主动写，仅原有才更新
   if (isPi) {
@@ -2104,8 +2103,8 @@ export const generateKnowledgeMarkdown = (
     frontmatter.reviewStatus = frontmatter.status || 'pending'
   }
   delete frontmatter.status
-  // version 保留原值（新建为 1，审核通过时自增）
-  if (!frontmatter.version) frontmatter.version = 1
+  // 草稿不带 version（审核通过时由正式位置维护）
+  delete frontmatter.version
 
   // category 不写入 frontmatter：分类以文件所在子目录为事实来源
 
@@ -3963,7 +3962,6 @@ const generateSkillMarkdown = (
 name: ${metadata.name}
 description: ${metadata.description}
 reviewStatus: pending
-version: ${metadata.version || 1}
 ---
 ${content}`
 }
@@ -4620,7 +4618,6 @@ export const saveSingleResourceFileToLocal = async (resource: any): Promise<bool
       description: resource.description,
     }
     metadata.reviewStatus = 'pending'
-    metadata.version = resource.version || 1
     const mdContent = generateMarkdownWithFrontmatter(metadata, resource.content || '')
     const saveResult = await window.electronAPI!.saveResourceFile(resource.name, mdContent)
     if (!saveResult.success) {

@@ -232,7 +232,6 @@ export const KnowledgeCatalogPage: FC = () => {
     const filePaths = Array.from(
       new Set(
         knowledgeFiles
-          .filter((k) => k.reviewStatus === 'validated')
           .map((k) => k.filepath)
           .filter((p): p is string => !!p),
       ),

@@ -46,7 +46,6 @@ export const KnowledgesPage: FC<{ nested?: boolean }> = ({ nested = false }) => 
     // 使用排除 INDEX 且已审核通过（validated）的知识文件列表来生成树形目录
     const nonIndexFiles = knowledgeFiles
       .filter((k) => k.name.toLowerCase() !== 'index')
-      .filter((k) => k.reviewStatus === 'validated')
     if (nonIndexFiles.length === 0) return null
     return generateIndexContent(nonIndexFiles)
   }, [knowledgeFiles])
@@ -55,7 +54,6 @@ export const KnowledgesPage: FC<{ nested?: boolean }> = ({ nested = false }) => 
   const filteredKnowledges = useMemo(() => {
     return knowledgeFiles
       .filter((k) => k.name.toLowerCase() !== 'index') // 排除全局索引
-      .filter((k) => k.reviewStatus === 'validated') // 知识库仅展示已审核通过的知识
       .filter((knowledge) => {
         const query = searchQuery.toLowerCase()
         const matchesSearch =
@@ -246,7 +244,6 @@ export const KnowledgesPage: FC<{ nested?: boolean }> = ({ nested = false }) => 
     const latestFiles = useKnowledgeStore.getState().knowledgeFiles
     const nonIndexFiles = latestFiles
       .filter((k) => k.name.toLowerCase() !== 'index')
-      .filter((k) => k.reviewStatus === 'validated')
     if (nonIndexFiles.length === 0) {
       addToast('刷新成功', 'success')
       return null

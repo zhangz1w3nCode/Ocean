@@ -79,8 +79,9 @@ describe('generateKnowledgeMarkdown', () => {
       expect(fm).toContain('name: test')
       expect(fm).toContain('summary: desc')
       expect(fm).toContain('reviewStatus: pending')
-      expect(fm).toContain('version: 1')
-      expect(fm.split('\n').filter(l => l.trim() && !l.startsWith(' ')).length).toBe(4)
+      // 草稿不带 version（暂存队列：version 仅在正式位置由审核通过维护）
+      expect(fm).not.toContain('version:')
+      expect(fm.split('\n').filter(l => l.trim() && !l.startsWith(' ')).length).toBe(3)
     })
   })
 
