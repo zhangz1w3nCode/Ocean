@@ -3,7 +3,6 @@ import type { AgentFile } from '../types'
 import {
   saveAgentFilesToLocal,
   saveSingleAgentFileToLocal,
-  loadSingleAgentFileFromLocal,
   loadAgentFilesFromLocal,
   deleteAgentFileFromLocal,
 } from '../utils/storage'
@@ -31,12 +30,8 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   addAgentFile: async (agent) => {
     const success = await saveSingleAgentFileToLocal(agent)
     if (success) {
-      const diskAgent = await loadSingleAgentFileFromLocal(agent.name)
-      if (diskAgent) {
-        set({ agentFiles: [{ ...diskAgent, id: agent.id }, ...get().agentFiles] })
-      } else {
-        set({ agentFiles: [agent, ...get().agentFiles] })
-      }
+      // 暂存队列模型：保存写快照，列表（store）以正式位置为准 → 重新加载而非回读草稿
+      await get().loadAgentFiles()
     }
     return success
   },
@@ -47,12 +42,8 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     const updatedAgent = { ...agent, ...updates }
     const success = await saveSingleAgentFileToLocal(updatedAgent)
     if (success) {
-      const diskAgent = await loadSingleAgentFileFromLocal(agent.name)
-      if (diskAgent) {
-        set({ agentFiles: get().agentFiles.map(a => a.id === id ? { ...diskAgent, id: a.id, createdAt: a.createdAt } : a) })
-      } else {
-        set({ agentFiles: get().agentFiles.map(a => a.id === id ? updatedAgent : a) })
-      }
+      // 暂存队列模型：更新写快照，列表（store）以正式位置为准 → 重新加载而非回读草稿
+      await get().loadAgentFiles()
     }
     return success
   },

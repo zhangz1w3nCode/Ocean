@@ -3,7 +3,6 @@ import type { ResourceFile } from '../types'
 import {
   saveResourceFilesToLocal,
   saveSingleResourceFileToLocal,
-  loadSingleResourceFileFromLocal,
   loadResourceFilesFromLocal,
   deleteResourceFileFromLocal,
 } from '../utils/storage'
@@ -31,12 +30,8 @@ export const useResourceStore = create<ResourceState>((set, get) => ({
   addResourceFile: async (resource) => {
     const success = await saveSingleResourceFileToLocal(resource)
     if (success) {
-      const diskResource = await loadSingleResourceFileFromLocal(resource.name)
-      if (diskResource) {
-        set({ resourceFiles: [{ ...diskResource, id: resource.id }, ...get().resourceFiles] })
-      } else {
-        set({ resourceFiles: [resource, ...get().resourceFiles] })
-      }
+      // 暂存队列模型：保存写快照，列表（store）以正式位置为准 → 重新加载而非回读草稿
+      await get().loadResourceFiles()
     }
     return success
   },
@@ -47,12 +42,8 @@ export const useResourceStore = create<ResourceState>((set, get) => ({
     const updatedResource = { ...resource, ...updates }
     const success = await saveSingleResourceFileToLocal(updatedResource)
     if (success) {
-      const diskResource = await loadSingleResourceFileFromLocal(resource.name)
-      if (diskResource) {
-        set({ resourceFiles: get().resourceFiles.map(r => r.id === id ? { ...diskResource, id: r.id, createdAt: r.createdAt } : r) })
-      } else {
-        set({ resourceFiles: get().resourceFiles.map(r => r.id === id ? updatedResource : r) })
-      }
+      // 暂存队列模型：更新写快照，列表（store）以正式位置为准 → 重新加载而非回读草稿
+      await get().loadResourceFiles()
     }
     return success
   },

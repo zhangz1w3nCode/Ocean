@@ -3,7 +3,6 @@ import type { SkillFile, CreateSkillInput, SkillResource } from '../types'
 import {
   saveSkillFilesToLocal,
   saveSingleSkillFileToLocal,
-  loadSingleSkillFileFromLocal,
   loadSkillFilesFromLocal,
   deleteSkillFromLocal,
   createSkillDirectory,
@@ -40,12 +39,8 @@ export const useSkillStore = create<SkillState>((set, get) => ({
   addSkillFile: async (skill) => {
     const success = await saveSingleSkillFileToLocal(skill)
     if (success) {
-      const diskSkill = await loadSingleSkillFileFromLocal(skill.name)
-      if (diskSkill) {
-        set({ skillFiles: [{ ...diskSkill, id: skill.id }, ...get().skillFiles] })
-      } else {
-        set({ skillFiles: [skill, ...get().skillFiles] })
-      }
+      // 暂存队列模型：保存写快照，列表（store）以正式位置为准 → 重新加载而非回读草稿
+      await get().loadSkillFiles()
     }
     return success
   },
@@ -56,12 +51,8 @@ export const useSkillStore = create<SkillState>((set, get) => ({
     const updatedSkill = { ...skill, ...updates }
     const success = await saveSingleSkillFileToLocal(updatedSkill)
     if (success) {
-      const diskSkill = await loadSingleSkillFileFromLocal(skill.name)
-      if (diskSkill) {
-        set({ skillFiles: get().skillFiles.map(s => s.id === id ? { ...diskSkill, id: s.id, createdAt: s.createdAt } : s) })
-      } else {
-        set({ skillFiles: get().skillFiles.map(s => s.id === id ? updatedSkill : s) })
-      }
+      // 暂存队列模型：更新写快照，列表（store）以正式位置为准 → 重新加载而非回读草稿
+      await get().loadSkillFiles()
     }
     return success
   },

@@ -3,7 +3,6 @@ import type { NodeDefinition } from '../types'
 import {
   saveNodeFilesToLocal,
   saveSingleNodeFileToLocal,
-  loadSingleNodeFileFromLocal,
   loadNodeFilesFromLocal,
   deleteNodeFileFromLocal,
 } from '../utils/storage'
@@ -31,12 +30,8 @@ export const useNodeStore = create<NodeState>((set, get) => ({
   addNodeDefinition: async (node) => {
     const success = await saveSingleNodeFileToLocal(node)
     if (success) {
-      const diskNode = await loadSingleNodeFileFromLocal(node.name)
-      if (diskNode) {
-        set({ nodeDefinitions: [{ ...diskNode, id: node.id }, ...get().nodeDefinitions] })
-      } else {
-        set({ nodeDefinitions: [node, ...get().nodeDefinitions] })
-      }
+      // 暂存队列模型：保存写快照，列表（store）以正式位置为准 → 重新加载而非回读草稿
+      await get().loadNodeDefinitions()
     }
     return success
   },
@@ -47,12 +42,8 @@ export const useNodeStore = create<NodeState>((set, get) => ({
     const updatedNode = { ...node, ...updates }
     const success = await saveSingleNodeFileToLocal(updatedNode)
     if (success) {
-      const diskNode = await loadSingleNodeFileFromLocal(node.name)
-      if (diskNode) {
-        set({ nodeDefinitions: get().nodeDefinitions.map(n => n.id === id ? { ...diskNode, id: n.id, createdAt: n.createdAt } : n) })
-      } else {
-        set({ nodeDefinitions: get().nodeDefinitions.map(n => n.id === id ? updatedNode : n) })
-      }
+      // 暂存队列模型：更新写快照，列表（store）以正式位置为准 → 重新加载而非回读草稿
+      await get().loadNodeDefinitions()
     }
     return success
   },
