@@ -91,7 +91,7 @@ export function create(root: string, name: string): void {
   const dir = editDir(root, name)
   writeFlowJsonTo(dir, flow)
   // 主文件（WORKFLOW.md）同步生成：快照识别与审核列表都依赖主文件存在
-  fs.writeFileSync(snapMdPath(dir), generateWorkflowMd(flow, flow.nodes, flow.edges), 'utf-8')
+  fs.writeFileSync(snapMdPath(dir), generateWorkflowMd(flow, flow.nodes, flow.edges, { baseCommit: review.baseCommitField(root) || undefined }), 'utf-8')
 }
 
 export function del(root: string, name: string): void {
@@ -325,7 +325,7 @@ export function generate(root: string, wfName: string): void {
 
   // generate WORKFLOW.md（快照 frontmatter 只写 reviewStatus，version 由审核通过时在正式文件维护）
   if (!flow.name) flow.name = wfName
-  const md = generateWorkflowMd(flow, flow.nodes, flow.edges)
+  const md = generateWorkflowMd(flow, flow.nodes, flow.edges, { baseCommit: review.baseCommitField(root) || undefined })
   fs.writeFileSync(snapMdPath(dir.dir), md, 'utf-8')
 
   // write cleaned flow.json back（快照内）

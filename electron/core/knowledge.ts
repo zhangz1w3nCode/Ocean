@@ -55,6 +55,8 @@ export function create(root: string, relPath: string, content: string, opts?: {
   }
   // 新建知识默认待审核（快照不写 version，由审核通过时在正式文件维护）
   fm += `reviewStatus: pending\n`
+  const bc = review.baseCommitField(root)
+  if (bc) fm += bc + '\n'
   fm += `---\n\n${content}\n`
   const nameKey = path.relative(d, filePath).replace(/\.md$/, '')
   const snap = review.newSnapshotDir(root, 'knowledge', nameKey)
@@ -94,6 +96,10 @@ export function update(root: string, relPath: string, content: string, opts?: {
   fields.reviewStatus = 'pending'
   delete fields.rejectReason
   delete fields.version
+  delete fields.mergeConflict
+  delete fields.autoMerged
+  const baseCommit = review.headSha(root)
+  if (baseCommit) fields.baseCommit = baseCommit
   // domain 字段与文件实际位置保持一致（兼容无 domain 字段的历史知识）
   const fileDomain = path.dirname(path.relative(d, filePath))
   if (fileDomain !== '.') {

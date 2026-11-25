@@ -718,6 +718,7 @@ flag:
                                        git 提交，删除该快照；skill/agent 自动物化到运行时目录
   reject <type> <name> --reason "…"   审核不通过（理由必填）：最早待审快照标记 rejected 并留存
   restore <type> <name>               最早已驳回快照 → 恢复待审
+  discard <type> <name>               丢弃最早待审快照（合并冲突草稿的出路之一）
   sync                                一键同步：全部正式 skill/agent 物化到运行时目录（含删除对齐）
   init                                开启 .ocean git 托管（approve 提交所需）
 
@@ -725,6 +726,9 @@ flag:
   - 暂存队列模型：创建/编辑只进 .ocean/reviewQueue 时间戳快照，正式位置永远是最近过审版本
   - 每个资产同时可有多份快照，审核按进入顺序（最早优先，FIFO）逐条处理
   - 审核通过必须已开启 git 托管（review init）
+  - 草稿记录创建时的 git 基准（baseCommit）；审核通过时若正式版本已变：
+    可自动合并 → 草稿合并最新改动并提示重新确认（list 显示「已自动合并」）；
+    有冲突 → 报错并写入冲突标记（list 显示「冲突」），用 discard 丢弃或手动编辑草稿后重试
   - 输出不包含磁盘路径，资产以 <type> <name> 寻址
   --json                       JSON 格式输出`)
       break
@@ -1598,9 +1602,10 @@ function handleReview(root: string, args: ReturnType<typeof parseArgs>): void {
       if (!r.success) throw new Error(r.error || '列举失败')
       let items = r.items
       if (typeof flags.type === 'string') items = items.filter((i: any) => i.type === flags.type)
-      const rows = items.map((i: any) => [i.type, i.name, iLabel(i.isNew), statusLabel(i.reviewStatus), String(i.pendingCount), i.baseVersion == null ? '-' : String(i.baseVersion), (i.rejectReason || i.description || '').slice(0, 40)])
-      if (json) { printJson({ items: items.map((i: any) => ({ type: i.type, name: i.name, isNew: i.isNew, reviewStatus: i.reviewStatus, pendingCount: i.pendingCount, baseVersion: i.baseVersion, rejectReason: i.rejectReason || undefined, description: i.description || undefined })) }); break }
-      printDataTable(['类型', '名称', '资产', '状态', '待审快照', '正式版本', '理由/描述'], rows)
+      const mergeLabel = (i: any) => i.autoMerged ? '已自动合并' : i.mergeConflict ? '冲突' : i.baseStale ? '基准已变' : ''
+      const rows = items.map((i: any) => [i.type, i.name, iLabel(i.isNew), statusLabel(i.reviewStatus), String(i.pendingCount), i.baseVersion == null ? '-' : String(i.baseVersion), mergeLabel(i), (i.rejectReason || i.description || '').slice(0, 40)])
+      if (json) { printJson({ items: items.map((i: any) => ({ type: i.type, name: i.name, isNew: i.isNew, reviewStatus: i.reviewStatus, pendingCount: i.pendingCount, baseVersion: i.baseVersion, hasBase: i.hasBase, baseStale: !!i.baseStale, mergeConflict: !!i.mergeConflict, autoMerged: !!i.autoMerged, rejectReason: i.rejectReason || undefined, description: i.description || undefined })) }); break }
+      printDataTable(['类型', '名称', '资产', '状态', '待审快照', '正式版本', '合并状态', '理由/描述'], rows)
       break
     }
     case 'show': {
@@ -1629,6 +1634,17 @@ function handleReview(root: string, args: ReturnType<typeof parseArgs>): void {
     case 'approve': {
       if (!type || !name) throw new UsageError('用法: ocean review approve <type> <name> [--message "…"]')
       const r = review.approveAsset(root, type, name, typeof flags.message === 'string' ? flags.message : undefined)
+      // 基准漂移自动合并（H6）：需重新确认，非错误（exit 0）
+      if (!r.success && r.needReReview) {
+        if (json) { printJson({ action: 'auto-merged', type: r.type, name: r.name, ts: r.ts, needReReview: true }); break }
+        out(`基准已变化，草稿已自动合并入最新过审版本的改动，请用 'ocean review diff ${r.type} ${r.name}' 确认后再次 approve`)
+        break
+      }
+      // 合并冲突（H5）：exit 1（err 内部 exit），提示两条出路
+      if (!r.success && r.conflict) {
+        if (json) { process.stderr.write(JSON.stringify({ error: r.error || '合并冲突' }) + '\n'); process.exit(1) }
+        err(new Error(`${r.error || '草稿与已通过版本存在合并冲突'}\n  解决方式：ocean review discard ${r.type} ${r.name} 丢弃此草稿，或手动编辑草稿（去掉 <<<<<<< ======= >>>>>>> 标记）后重试`))
+      }
       if (!r.success) throw new Error(r.error || '审核通过失败')
       if (json) { printJson({ action: 'approved', type: r.type, name: r.name, version: r.version, commit: r.commit && r.commit.success ? r.commit.hash : undefined, sync: r.sync ? r.sync.success : undefined }); break }
       printAction('approved', { type: r.type, name: r.name, version: String(r.version ?? '-'),
@@ -1650,6 +1666,13 @@ function handleReview(root: string, args: ReturnType<typeof parseArgs>): void {
       const r = review.restoreAsset(root, type, name)
       if (!r.success) throw new Error(r.error || '操作失败')
       json ? printJson({ action: 'restored', type, name }) : printAction('restored', { type, name })
+      break
+    }
+    case 'discard': {
+      if (!type || !name) throw new UsageError('用法: ocean review discard <type> <name>')
+      const r = review.discardOldestPending(root, type, name)
+      if (!r.success) throw new Error(r.error || '操作失败')
+      json ? printJson({ action: 'discarded', type: r.type, name: r.name, ts: r.ts }) : printAction('discarded', { type: r.type, name: r.name })
       break
     }
     case 'sync': {

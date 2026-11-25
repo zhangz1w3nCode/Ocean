@@ -37,6 +37,8 @@ export function create(root: string, name: string, content: string, opts?: {
   let fm = `---\nid: ${id}\ntype: ${type}\n`
   if (opts?.description) fm += `description: ${opts.description}\n`
   fm += `reviewStatus: pending\n`
+  const bc = review.baseCommitField(root)
+  if (bc) fm += bc + '\n'
   fm += `---\n\n${content}\n`
   const snap = review.newSnapshotDir(root, TYPE, name)
   if (snap.error) throw new Error(snap.error)
@@ -60,6 +62,10 @@ export function update(root: string, name: string, content: string, opts?: {
   fields.reviewStatus = 'pending'
   delete fields.rejectReason
   delete fields.version
+  delete fields.mergeConflict
+  delete fields.autoMerged
+  const baseCommit = review.headSha(root)
+  if (baseCommit) fields.baseCommit = baseCommit
   const updated = buildFrontmatter(fields, content)
   const snap = review.newSnapshotDir(root, TYPE, name)
   if (snap.error) throw new Error(snap.error)

@@ -39,7 +39,8 @@ export function create(root: string, name: string, content: string, description:
   for (const subDir of ['scripts', 'references', 'examples']) {
     fs.mkdirSync(path.join(snap.dir, subDir), { recursive: true })
   }
-  const skillMd = `---\nname: ${name}\ndescription: ${description}\nreviewStatus: pending\n---\n${content}\n`
+  const bcLine = review.baseCommitField(root)
+  const skillMd = `---\nname: ${name}\ndescription: ${description}\nreviewStatus: pending\n${bcLine ? bcLine + '\n' : ''}---\n${content}\n`
   fs.writeFileSync(path.join(snap.dir, 'SKILL.md'), skillMd, 'utf-8')
 }
 
@@ -55,6 +56,10 @@ export function update(root: string, name: string, content: string): void {
   fields.reviewStatus = 'pending'
   delete fields.rejectReason
   delete fields.version
+  delete fields.mergeConflict
+  delete fields.autoMerged
+  const baseCommit = review.headSha(root)
+  if (baseCommit) fields.baseCommit = baseCommit
 
   const snap = review.newSnapshotDir(root, TYPE, name)
   if (snap.error) throw new Error(snap.error)

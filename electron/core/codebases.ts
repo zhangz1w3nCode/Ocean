@@ -59,9 +59,9 @@ function ensureDir(root: string): void {
   fs.mkdirSync(dir(root), { recursive: true })
 }
 
-// 空项目或无 README 的克隆/复制目标生成默认 README；描述写入正文
-function defaultReadme(name: string, description?: string): string {
-  const lines = ['---', 'reviewStatus: pending', '---', '', `# ${name}`, '']
+// 空项目或无 README 的克隆/复制目标生成默认 README；描述写入正文（草稿带 baseCommit，H1）
+function defaultReadme(name: string, description?: string, baseCommitLine = ''): string {
+  const lines = ['---', 'reviewStatus: pending', ...(baseCommitLine ? [baseCommitLine] : []), '---', '', `# ${name}`, '']
   if (description && description.trim()) {
     lines.push(`> ${description.trim()}`, '')
   }
@@ -80,19 +80,22 @@ function readmeReviewStatus(rp: string): 'pending' | 'validated' {
   }
 }
 
-// 更新 README 时确保 frontmatter 带有 reviewStatus: pending（快照不写 version/rejectReason）
-function ensureReadmeReviewStatusPending(content: string): string {
+// 更新 README 时确保 frontmatter 带有 reviewStatus: pending + baseCommit（H1；清 version/理由/冲突/合并标记，H5/H6 手动编辑解除冲突）
+function ensureReadmeReviewStatusPending(content: string, baseCommitLine = ''): string {
   const m = content.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/)
   if (m) {
     let fm = m[1]
       .replace(/^reviewStatus:.*$/m, '')
       .replace(/^rejectReason:.*$/m, '')
       .replace(/^version:.*$/m, '')
+      .replace(/^mergeConflict:.*$/m, '')
+      .replace(/^autoMerged:.*$/m, '')
+      .replace(/^baseCommit:.*$/m, '')
       .replace(/\n{2,}/g, '\n')
       .trim()
-    return `---\n${fm ? fm + '\n' : ''}reviewStatus: pending\n---\n${m[2]}`
+    return `---\n${fm ? fm + '\n' : ''}reviewStatus: pending\n${baseCommitLine ? baseCommitLine + '\n' : ''}---\n${m[2]}`
   }
-  return `---\nreviewStatus: pending\n---\n${content}`
+  return `---\nreviewStatus: pending\n${baseCommitLine ? baseCommitLine + '\n' : ''}---\n${content}`
 }
 
 // IO 异常收敛统一契约：任何 fs/spawn 异常都转为 { success: false, error }，不向调用方抛出
@@ -179,7 +182,7 @@ export async function create(root: string, name: string, opts: CreateCodebaseOpt
       return { success: false, error: `git clone 失败: ${r.message}` }
     }
     if (!fs.existsSync(path.join(target, README_FILE))) {
-      fs.writeFileSync(path.join(target, README_FILE), defaultReadme(name, description), 'utf-8')
+      fs.writeFileSync(path.join(target, README_FILE), defaultReadme(name, description, review.baseCommitField(root)), 'utf-8')
     }
   } else if (opts.type === 'local') {
     const sourcePath = (opts.sourcePath || '').trim()
@@ -198,12 +201,12 @@ export async function create(root: string, name: string, opts: CreateCodebaseOpt
       return { success: false, error: `复制失败: ${e.message}` }
     }
     if (!fs.existsSync(path.join(target, README_FILE))) {
-      fs.writeFileSync(path.join(target, README_FILE), defaultReadme(name, description), 'utf-8')
+      fs.writeFileSync(path.join(target, README_FILE), defaultReadme(name, description, review.baseCommitField(root)), 'utf-8')
     }
   } else {
     fs.mkdirSync(target, { recursive: true })
     // 空项目：content 直接作为 README 内容；未提供则生成默认模板
-    fs.writeFileSync(path.join(target, README_FILE), (opts.content ?? defaultReadme(name, description)), 'utf-8')
+    fs.writeFileSync(path.join(target, README_FILE), (opts.content ?? defaultReadme(name, description, review.baseCommitField(root))), 'utf-8')
   }
 
     return { success: true, name }
@@ -220,7 +223,7 @@ export async function update(root: string, name: string, content: string): Promi
   if (typeof content !== 'string') return { success: false, error: 'README 内容必须是字符串' }
   const snap = review.newSnapshotDir(root, 'codebase', name)
   if (snap.error) return { success: false, error: snap.error }
-  fs.writeFileSync(path.join(snap.dir, README_FILE), ensureReadmeReviewStatusPending(content), 'utf-8')
+  fs.writeFileSync(path.join(snap.dir, README_FILE), ensureReadmeReviewStatusPending(content, review.baseCommitField(root)), 'utf-8')
   return { success: true, name }
   })
 }

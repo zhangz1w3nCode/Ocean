@@ -185,7 +185,8 @@ describe('codebases core', () => {
       const snaps = fs.readdirSync(queueBase('demo'))
       expect(snaps).toHaveLength(1)
       const snapReadme = fs.readFileSync(path.join(queueBase('demo'), snaps[0], 'README.md'), 'utf-8')
-      expect(snapReadme).toBe('---\nreviewStatus: pending\n---\n# 新内容\n完全替换')
+      // 托管后快照带 baseCommit（H1）；仅匹配 frontmatter 其余部分与正文
+      expect(snapReadme).toMatch(/^---\nreviewStatus: pending\nbaseCommit: [0-9a-f]{40}\n---\n# 新内容\n完全替换$/)
     })
 
     it('rejects update of missing codebase', async () => {

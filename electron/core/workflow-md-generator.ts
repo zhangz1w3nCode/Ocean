@@ -5,7 +5,7 @@
  * 输出：WORKFLOW.md 全文字符串
  */
 
-export function generateWorkflowMd(workflow: any, nodes: any[], edges: any[], meta?: { reviewStatus?: string }): string {
+export function generateWorkflowMd(workflow: any, nodes: any[], edges: any[], meta?: { reviewStatus?: string; baseCommit?: string }): string {
   const nodeMap = new Map<string, any>()
   const outgoingEdges = new Map<string, any[]>()
 
@@ -170,6 +170,7 @@ export function generateWorkflowMd(workflow: any, nodes: any[], edges: any[], me
     lines.push(`description: ${workflow.description}`)
   }
   lines.push(`reviewStatus: ${meta?.reviewStatus || 'pending'}`)
+  if (meta?.baseCommit) lines.push(meta.baseCommit)
   lines.push('---')
   lines.push('')
 
