@@ -79,6 +79,25 @@ const list = async (r = root) => {
   return (await unwrap(listTasks(r))).tasks
 }
 
+describe('任务不参与审核队列与版本化', () => {
+  it('新建任务立即可列出、可读取；frontmatter 无 reviewStatus / version', async () => {
+    await mk('t-review', '正文')
+    const md = fs.readFileSync(path.join(root, '.ocean', 'tasks', 't-review', 'TASK.md'), 'utf-8')
+    expect(md).not.toMatch(/^reviewStatus:/m)
+    expect(md).not.toMatch(/^version:/m)
+    expect((await unwrap(listTasks(root))).tasks.map((t) => t.name)).toEqual(['t-review'])
+    const d = await unwrap(readTaskDetail(root, 't-review'))
+    expect(d.detail.task.content.trim()).toBe('正文')
+  })
+
+  it('修改内容后仍可列出、可读取', async () => {
+    await mk('t-review', 'v1')
+    await upd({ name: 't-review', content: 'v2' })
+    expect((await unwrap(listTasks(root))).tasks.map((t) => t.name)).toEqual(['t-review'])
+    expect((await unwrap(readTaskDetail(root, 't-review'))).detail.task.content.trim()).toBe('v2')
+  })
+})
+
 describe('core 契约与状态常量', () => {
   it('状态常量四值', () => {
     expect(TASK_STATUSES).toEqual(['等待处理', '处理中', '已完成', '已取消'])

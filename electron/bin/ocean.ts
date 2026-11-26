@@ -707,7 +707,7 @@ flag:
 
 用法: ocean review <subcommand> <type> <name> [--flags...]
 
-资产类型（<type>）: skill | agent | node | resource | workflow | task | knowledge | codebase
+资产类型（<type>）: skill | agent | node | resource | workflow | knowledge
   knowledge 名称可带 domain 子目录，如: ocean review diff knowledge ocean/功能设计
 
 子命令:
@@ -1601,7 +1601,12 @@ function handleReview(root: string, args: ReturnType<typeof parseArgs>): void {
       const r = review.listQueue(root, status)
       if (!r.success) throw new Error(r.error || '列举失败')
       let items = r.items
-      if (typeof flags.type === 'string') items = items.filter((i: any) => i.type === flags.type)
+      if (typeof flags.type === 'string') {
+        // --type 必须是参与审核的资产类型（task / codebase 不参与审核，不能静默返回「无数据」）
+        const probe = review.resolveRef(root, flags.type, 'x')
+        if (probe.error) throw new UsageError(probe.error)
+        items = items.filter((i: any) => i.type === flags.type)
+      }
       const mergeLabel = (i: any) => i.autoMerged ? '已自动合并' : i.mergeConflict ? '冲突' : i.baseStale ? '基准已变' : ''
       const rows = items.map((i: any) => [i.type, i.name, iLabel(i.isNew), statusLabel(i.reviewStatus), String(i.pendingCount), i.baseVersion == null ? '-' : String(i.baseVersion), mergeLabel(i), (i.rejectReason || i.description || '').slice(0, 40)])
       if (json) { printJson({ items: items.map((i: any) => ({ type: i.type, name: i.name, isNew: i.isNew, reviewStatus: i.reviewStatus, pendingCount: i.pendingCount, baseVersion: i.baseVersion, hasBase: i.hasBase, baseStale: !!i.baseStale, mergeConflict: !!i.mergeConflict, autoMerged: !!i.autoMerged, rejectReason: i.rejectReason || undefined, description: i.description || undefined })) }); break }

@@ -42,13 +42,14 @@ describe('resolveRef（类型+名称寻址，不暴露路径）', () => {
     expect(review.resolveRef(tmpDir, 'agent', 'a1').refPath).toBe('agents/a1.md')
     expect(review.resolveRef(tmpDir, 'node', 'n1').refPath).toBe('nodes/n1.md')
     expect(review.resolveRef(tmpDir, 'workflow', 'wf').refPath).toBe('workflows/wf/WORKFLOW.md')
-    expect(review.resolveRef(tmpDir, 'task', 't1').refPath).toBe('tasks/t1/TASK.md')
-    expect(review.resolveRef(tmpDir, 'codebase', 'c1').refPath).toBe('codebases/c1/README.md')
     expect(review.resolveRef(tmpDir, 'knowledge', 'ocean/功能设计').refPath).toBe('knowledges/ocean/功能设计.md')
   })
-  it('拒绝未知类型与穿越名称', () => {
+  it('拒绝未知类型、穿越名称，以及不参与审核的 task / codebase', () => {
     expect(review.resolveRef(tmpDir, 'nope', 'x').error).toBeTruthy()
     expect(review.resolveRef(tmpDir, 'node', '../etc').error).toBeTruthy()
+    // task 与 codebase 不参与审核队列与版本化
+    expect(review.resolveRef(tmpDir, 'task', 't1').error).toBeTruthy()
+    expect(review.resolveRef(tmpDir, 'codebase', 'c1').error).toBeTruthy()
   })
 })
 
@@ -62,8 +63,6 @@ describe('queueDir / snapshotMainRel', () => {
   it('快照主文件相对路径：目录型取主文件名，单文件型取 basename', () => {
     expect(review.snapshotMainRel('skill', 's1')).toBe('SKILL.md')
     expect(review.snapshotMainRel('workflow', 'wf')).toBe('WORKFLOW.md')
-    expect(review.snapshotMainRel('task', 't1')).toBe('TASK.md')
-    expect(review.snapshotMainRel('codebase', 'c1')).toBe('README.md')
     expect(review.snapshotMainRel('agent', 'a1')).toBe('a1.md')
     expect(review.snapshotMainRel('node', 'n1')).toBe('n1.md')
     expect(review.snapshotMainRel('knowledge', 'ocean/功能设计')).toBe('功能设计.md')
@@ -236,25 +235,13 @@ describe('approveAsset（G5）', () => {
     expect(r2.success).toBe(false)
     expect(r2.error).toContain('待审核快照')
   })
-  it('codebase：覆写快照内存在的文件；新 codebase 整树搬运', () => {
-    // 已有正式：快照只带 README.md → 覆写 README，正式其余文件保留
-    write('.ocean/codebases/c1/README.md', formalNode('c1', '旧说明'))
-    write('.ocean/codebases/c1/src/a.ts', 'export {}')
+  it('task / codebase 不参与审核：approveAsset 报未知类型', () => {
     review.gitInit(tmpDir)
-    const ts = snapshot(tmpDir, 'codebase', 'c1', '新说明')
-    const r = review.approveAsset(tmpDir, 'codebase', 'c1')
-    expect(r.success).toBe(true)
-    expect(read('.ocean/codebases/c1/README.md')).toContain('新说明')
-    expect(exists('.ocean/codebases/c1/src/a.ts')).toBe(true)
-    expect(exists(`.ocean/reviewQueue/codebases/c1/${ts}`)).toBe(false)
-    // 新 codebase：快照整树搬运到正式
-    const ts2 = snapshot(tmpDir, 'codebase', 'c2', '全新')
-    write(`.ocean/reviewQueue/codebases/c2/${ts2}/src/b.ts`, 'export {}')
-    const r2 = review.approveAsset(tmpDir, 'codebase', 'c2')
-    expect(r2.success).toBe(true)
-    expect(r2.version).toBe(1)
-    expect(exists('.ocean/codebases/c2/README.md')).toBe(true)
-    expect(exists('.ocean/codebases/c2/src/b.ts')).toBe(true)
+    for (const type of ['task', 'codebase']) {
+      const r = review.approveAsset(tmpDir, type, 'x')
+      expect(r.success).toBe(false)
+      expect(r.error).toContain('未知的资产类型')
+    }
   })
 })
 

@@ -550,8 +550,6 @@ export type CodebaseSource = 'url' | 'blank' | 'local'
 export interface CodebaseInfo {
   name: string
   preview: string
-  reviewStatus?: AssetReviewStatus // 审核状态（README.md frontmatter，缺失视为 pending）
-  version?: number // 版本号（frontmatter，新建为 1，审核通过 +1）
 }
 
 // 代码库创建入参（content 为空项目创建时直接写入 README 的初始内容）

@@ -27,8 +27,6 @@ export type TaskStatus = (typeof TASK_STATUSES)[number]
 export interface TaskSummary {
   name: string
   status: TaskStatus
-  /** 审核状态（D13）：内容变更重置 pending，审核通过 validated，驳回 rejected；与生命周期 status 独立 */
-  reviewStatus: 'pending' | 'validated' | 'rejected'
   handler: string
   relatedCodebases: string[]
   tags: string[]
@@ -198,7 +196,6 @@ function readTaskArrayField(value: unknown): string[] {
 interface InternalTask {
   name: string
   status: TaskStatus
-  reviewStatus: 'pending' | 'validated' | 'rejected'
   handler: string
   relatedCodebases: string[]
   tags: string[]
@@ -230,7 +227,6 @@ function readTaskFile(root: string, taskName: string): InternalTask | null {
     content: body,
     createdAt: frontmatter.created_at != null ? String(frontmatter.created_at) : '',
     updatedAt: frontmatter.updated_at != null ? String(frontmatter.updated_at) : '',
-    reviewStatus: (frontmatter.reviewStatus === 'validated' ? 'validated' : frontmatter.reviewStatus === 'rejected' ? 'rejected' : 'pending') as 'pending' | 'validated' | 'rejected',
     _raw: frontmatter,
   }
 }
@@ -246,7 +242,6 @@ function taskSummaryOf(task: InternalTask, dirName?: string): TaskSummary {
     relatedTasks: task.relatedTasks,
     workflow: task.workflow,
     workflowInstance: task.workflowInstance,
-    reviewStatus: task.reviewStatus,
     createdAt: task.createdAt,
     updatedAt: task.updatedAt,
   }
@@ -326,8 +321,6 @@ export async function listTasks(root: string): Promise<TaskResult<{ tasks: TaskS
       if (!entry.isDirectory()) continue
       const task = readTaskFile(root, entry.name)
       if (!task) continue
-      // 门控（D13）：仅列出审核通过的任务（任务生命周期流转不受影响，见 updateTask）
-      if (task.reviewStatus !== 'validated') continue
       tasks.push(taskSummaryOf(task, entry.name))
     }
     tasks.sort((a, b) => new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime())
@@ -341,10 +334,6 @@ export async function readTaskDetail(root: string, taskName: string): Promise<Ta
     if (!name) return { success: false, error: '非法任务名称' }
     const task = readTaskFile(root, name)
     if (!task) return { success: false, error: `任务不存在: ${name}` }
-    if (task.reviewStatus !== 'validated') {
-      const stateText = task.reviewStatus === 'rejected' ? '已驳回' : '待审核'
-      return { success: false, error: `任务 ${name} 处于${stateText}状态（reviewStatus: ${task.reviewStatus}），仅审核通过的任务可读取；请先在 Ocean 桌面端「审核」页处理` }
-    }
     return { success: true, detail: { task: { ...taskSummaryOf(task, name), content: task.content }, contexts: readTaskContextItems(root, name), trace: readTaskTraceEvents(root, name) } }
   })
 }
@@ -388,8 +377,6 @@ export async function createTask(root: string, payload: TaskWritePayload): Promi
     const frontmatter: Record<string, unknown> = {
       name,
       status: TASK_STATUS_PENDING,
-      reviewStatus: 'pending',
-      version: 1,
       handler,
       related_codebases: relatedCodebases,
       tags,
@@ -411,7 +398,7 @@ export async function createTask(root: string, payload: TaskWritePayload): Promi
       appendTaskTrace(root, name, { ts: now, type: 'context-created', name: contextName, folder: contextFolder, message: `新增上下文：${contextFolder}/${contextName}` })
     }
 
-    return { success: true, task: { name, status: TASK_STATUS_PENDING, reviewStatus: 'pending', handler, relatedCodebases, tags, relatedTasks, workflow: workflow.value, workflowInstance: workflowInstance.value, createdAt: now, updatedAt: now } }
+    return { success: true, task: { name, status: TASK_STATUS_PENDING, handler, relatedCodebases, tags, relatedTasks, workflow: workflow.value, workflowInstance: workflowInstance.value, createdAt: now, updatedAt: now } }
   })
 }
 
@@ -493,9 +480,6 @@ export async function updateTask(root: string, payload: TaskWritePayload): Promi
     if (workflowInstance.value) frontmatter.workflow_instance = workflowInstance.value
     else delete frontmatter.workflow_instance
     frontmatter.updated_at = now
-    // 任务审核门控（D13）：仅内容变更重置为未通过；纯生命周期流转保留审核状态
-    if (!frontmatter.reviewStatus) frontmatter.reviewStatus = 'pending'
-    if (changedFields.includes('任务内容')) frontmatter.reviewStatus = 'pending'
     fs.writeFileSync(taskMdPath(root, name), serializeTaskMd(frontmatter, content), 'utf-8')
 
     // 事件顺序：先字段变更后状态变更——字段变更（如指定处理人）是因，状态推进是果
@@ -506,7 +490,7 @@ export async function updateTask(root: string, payload: TaskWritePayload): Promi
       appendTaskTrace(root, name, { ts: now, type: 'status-changed', from: existing.status, to: nextStatus, message: `状态变更：${existing.status} → ${nextStatus}` })
     }
 
-    return { success: true, task: { name, status: nextStatus, reviewStatus: frontmatter.reviewStatus === 'validated' ? 'validated' : 'pending', handler, relatedCodebases, tags, relatedTasks, workflow: workflow.value, workflowInstance: workflowInstance.value, createdAt: existing.createdAt, updatedAt: now } }
+    return { success: true, task: { name, status: nextStatus, handler, relatedCodebases, tags, relatedTasks, workflow: workflow.value, workflowInstance: workflowInstance.value, createdAt: existing.createdAt, updatedAt: now } }
   })
 }
 

@@ -10,10 +10,10 @@
 //   3. copy   .pi/skills/* -> .ocean/skills/、.pi/agents/*.md -> .ocean/agents/（运行时目录保留，等首次同步对齐；同名冲突以源区为准跳过）
 //   4. rewrite 所有 flow.json（含实例快照）的 nodeRefPath：.nodes/ .workflows/ 前缀 -> .ocean/...
 //   5. rewrite md 文件（WORKFLOW.md 表格 / wiki-link / 反引号路径）中 .nodes/ .workflows/ .resources/ .knowledges/ 前缀 -> .ocean/...
-//   6. --backfill 存量回填：全部资产补 reviewStatus: validated + version: 1（知识按存量 status 映射）
+//   6. --backfill 存量回填：参与审核的资产补 reviewStatus: validated + version: 1（知识按存量 status 映射；task / codebase 不参与审核与版本化，不回填）
 //   7. --adopt  审核队列收编：把正式位置中 reviewStatus 为 pending/rejected 的资产搬入
 //             .ocean/reviewQueue/<type>/<nameKey>/<ts>/ 快照目录（G1/G2）；正式位置仅保留过审版本。
-//             skill/workflow/codebase 整目录搬迁；task 仅搬 TASK.md（context/trace 留原处）；
+//             skill/workflow 整目录搬迁；task 与 codebase 不参与审核与版本化，不收编；
 //             其余单文件搬迁（knowledge 含 domain 子目录，搬迁后清理空父目录）。
 
 import * as fs from 'node:fs'
@@ -185,9 +185,7 @@ if (backfill) {
   collectFiles(path.join(root, '.ocean', 'nodes'), (f) => f.endsWith('.md'), targets)
   collectFiles(path.join(root, '.ocean', 'resources'), (f) => f.endsWith('.md'), targets)
   collectFiles(path.join(root, '.ocean', 'workflows'), (f) => path.basename(f) === 'WORKFLOW.md', targets)
-  collectFiles(path.join(root, '.ocean', 'tasks'), (f) => path.basename(f) === 'TASK.md', targets)
   collectFiles(path.join(root, '.ocean', 'knowledges'), (f) => f.endsWith('.md'), targets)
-  collectFiles(path.join(root, '.ocean', 'codebases'), (f) => path.basename(f) === 'README.md', targets)
 
   for (const f of targets) {
     const text = fs.readFileSync(f, 'utf-8')
@@ -206,10 +204,11 @@ if (backfill) {
 
 // --- 7: --adopt 审核队列收编（G1/G2）：正式位置 pending/rejected 资产 → reviewQueue 快照 ---
 
-const ADOPT_TYPE_DIRS = ['skills', 'agents', 'nodes', 'resources', 'workflows', 'tasks', 'knowledges', 'codebases']
-const ADOPT_MAIN_FILE = { skills: 'SKILL.md', workflows: 'WORKFLOW.md', tasks: 'TASK.md', codebases: 'README.md' }
-// 整目录搬迁的类型；tasks 仅搬 TASK.md（G10 例外：context/trace 留原处）；其余单文件
-const ADOPT_DIR_MOVE = new Set(['skills', 'workflows', 'codebases'])
+// task 与 codebase 不参与审核与版本化，不在收编范围内
+const ADOPT_TYPE_DIRS = ['skills', 'agents', 'nodes', 'resources', 'workflows', 'knowledges']
+const ADOPT_MAIN_FILE = { skills: 'SKILL.md', workflows: 'WORKFLOW.md' }
+// 整目录搬迁的类型；其余单文件
+const ADOPT_DIR_MOVE = new Set(['skills', 'workflows'])
 
 function parseFmReviewStatus(text) {
   const m = String(text).match(/^---\n([\s\S]*?)\n---/)
@@ -365,12 +364,8 @@ for (const item of adoptPlan) {
 
   fs.mkdirSync(queueBase, { recursive: true })
   if (isDirMove) {
-    // skill/workflow/codebase：整目录搬迁
+    // skill/workflow：整目录搬迁
     fs.renameSync(item.srcDir, snapDir)
-  } else if (item.typeDir === 'tasks') {
-    // task（G10 例外）：仅搬 TASK.md，context/trace 留原处，不删任务目录
-    fs.mkdirSync(snapDir, { recursive: true })
-    fs.renameSync(item.srcAbs, path.join(snapDir, 'TASK.md'))
   } else {
     // 单文件资产（agents/nodes/resources/knowledges）
     fs.mkdirSync(snapDir, { recursive: true })

@@ -7,13 +7,15 @@ const path = require('node:path')
 const child_process = require('node:child_process')
 
 // ---------- 类型映射（CLI 名称 → .ocean 子目录） ----------
+// task 与 codebase 不参与审核队列与版本化：直接读写正式位置，不在本表登记
+// （审核队列枚举、直改收编的扫描目录、review 命令可用的类型都由本表派生）
 const TYPE_TO_DIR = {
   skill: 'skills', agent: 'agents', node: 'nodes', resource: 'resources',
-  workflow: 'workflows', task: 'tasks', knowledge: 'knowledges', codebase: 'codebases',
+  workflow: 'workflows', knowledge: 'knowledges',
 }
 const DIR_TO_TYPE = Object.fromEntries(Object.entries(TYPE_TO_DIR).map(([k, v]) => [v, k]))
 // 目录型资产（正式位置是目录，主文件固定名）；其余为单文件资产（主文件 = <basename>.md）
-const MAIN_FILE = { skills: 'SKILL.md', workflows: 'WORKFLOW.md', tasks: 'TASK.md', codebases: 'README.md' }
+const MAIN_FILE = { skills: 'SKILL.md', workflows: 'WORKFLOW.md' }
 // 快照目录名：毫秒时间戳（G2），同毫秒冲突追加零填充序号（-0001），字典序即时间序
 const TS_RE = /^\d{17}(-\d{4})?$/
 
@@ -43,13 +45,11 @@ function resolveRef(root, type, name) {
   }
   if (dir === 'skills') return { refPath: `skills/${cleanName}/SKILL.md`, type, name: cleanName }
   if (dir === 'workflows') return { refPath: `workflows/${cleanName}/WORKFLOW.md`, type, name: cleanName }
-  if (dir === 'tasks') return { refPath: `tasks/${cleanName}/TASK.md`, type, name: cleanName }
-  if (dir === 'codebases') return { refPath: `codebases/${cleanName}/README.md`, type, name: cleanName }
   return { refPath: `${dir}/${cleanName}.md`, type, name: cleanName }
 }
 
 function typeLabel(type) {
-  return { skill: '技能', agent: '智能体', node: '节点', resource: '资源', workflow: '工作流', task: '任务', knowledge: '知识', codebase: '代码库' }[type] || type
+  return { skill: '技能', agent: '智能体', node: '节点', resource: '资源', workflow: '工作流', knowledge: '知识' }[type] || type
 }
 
 // ---------- frontmatter 解析 ----------
@@ -461,7 +461,7 @@ function promoteSnapshot(root, r, snap) {
   const base = oceanDir(root)
   const formalMain = path.join(base, r.refPath)
   const formalDir = path.dirname(formalMain)
-  const dirBased = r.type === 'skill' || r.type === 'workflow' || r.type === 'codebase'
+  const dirBased = r.type === 'skill' || r.type === 'workflow'
 
   if (r.type === 'workflow') {
     // 保留正式 instance/：先移开，替换后移回
@@ -483,26 +483,6 @@ function promoteSnapshot(root, r, snap) {
   if (r.type === 'skill') {
     if (fs.existsSync(formalDir)) fs.rmSync(formalDir, { recursive: true, force: true })
     fs.cpSync(snap.dir, formalDir, { recursive: true })
-    return
-  }
-  if (r.type === 'codebase') {
-    if (!fs.existsSync(formalDir)) {
-      // 新 codebase：整树搬运
-      fs.mkdirSync(path.dirname(formalDir), { recursive: true })
-      fs.renameSync(snap.dir, formalDir)
-      fs.mkdirSync(snap.dir, { recursive: true }) // 保持调用方「删快照」语义一致（目录已搬空）
-      return
-    }
-    // 已有正式：仅覆写快照内存在的文件
-    const copyTree = (srcDir, dstDir) => {
-      for (const e of fs.readdirSync(srcDir, { withFileTypes: true })) {
-        const s = path.join(srcDir, e.name)
-        const d = path.join(dstDir, e.name)
-        if (e.isDirectory()) { fs.mkdirSync(d, { recursive: true }); copyTree(s, d) }
-        else { fs.mkdirSync(path.dirname(d), { recursive: true }); fs.copyFileSync(s, d) }
-      }
-    }
-    copyTree(snap.dir, formalDir)
     return
   }
   // 单文件资产：覆写主文件
@@ -579,11 +559,11 @@ function approveAsset(root, type, name, message) {
   fs.writeFileSync(formalMain, formalText, 'utf-8')
 
   // 提交正式路径：目录型资产提交其目录，单文件提交主文件
-  const dirBased = r.type === 'skill' || r.type === 'workflow' || r.type === 'codebase'
+  const dirBased = r.type === 'skill' || r.type === 'workflow'
   const commitRel = dirBased ? `${TYPE_TO_DIR[r.type]}/${r.name}` : r.refPath
   const commit = gitCommit(root, commitRel, message)
 
-  // 删除该快照目录（codebase 整树搬运后 snap.dir 已为空目录，同样删除）
+  // 删除该快照目录
   fs.rmSync(snap.dir, { recursive: true, force: true })
 
   let sync = null
@@ -801,7 +781,7 @@ function mapAssetPath(relPath) {
   const dir = segs[0]
   const type = DIR_TO_TYPE[dir]
   if (!type) return null
-  if (dir === 'skills' || dir === 'workflows' || dir === 'codebases' || dir === 'tasks') {
+  if (dir === 'skills' || dir === 'workflows') {
     if (segs.length < 2) return null
     return { type, name: segs[1], dirBased: true }
   }

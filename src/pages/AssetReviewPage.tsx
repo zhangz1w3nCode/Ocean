@@ -1,6 +1,6 @@
 import type { FC } from 'react'
 import { useState, useEffect, useMemo, useRef } from 'react'
-import { Search, ShieldCheck, XCircle, FolderGit2, Bot, Wand2, Box, Folder, ClipboardList, BookOpen, Code } from 'lucide-react'
+import { Search, ShieldCheck, XCircle, FolderGit2, Bot, Wand2, Box, Folder, BookOpen } from 'lucide-react'
 import { AssetReviewModal } from '../components/review/AssetReviewModal'
 import { useReviewStore } from '../stores/reviewStore'
 import { useToastStore } from '../stores/toastStore'
@@ -19,9 +19,7 @@ const typeLabels: Record<string, string> = {
   node: '节点',
   resource: '资源文件',
   workflow: '工作流',
-  task: '任务',
   knowledge: '知识',
-  codebase: '代码库',
 }
 
 const typeIcons: Record<string, typeof Box> = {
@@ -30,9 +28,7 @@ const typeIcons: Record<string, typeof Box> = {
   node: Box,
   resource: Folder,
   workflow: FolderGit2,
-  task: ClipboardList,
   knowledge: BookOpen,
-  codebase: Code,
 }
 
 // 资产卡片：结构与视觉对齐 KnowledgeCard（图标盒 + 17px 粗名 + 灰底信息块；G11：不展示路径）
