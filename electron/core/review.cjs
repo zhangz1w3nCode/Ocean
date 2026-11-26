@@ -1044,7 +1044,7 @@ module.exports = {
   // 读取/编辑目标
   resolveReadPath, resolveEditTarget, resolveSaveTarget,
   // 带基准草稿（H1/H7）
-  writeDraftWithBase, baseCommitField, adoptStrayEdits,
+  writeDraftWithBase, normalizeDraftFm, baseCommitField, adoptStrayEdits,
   // 删除
   commitFormalDeletion, discardSnapshots,
   // 同步

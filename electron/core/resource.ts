@@ -22,7 +22,10 @@ export function list(root: string): string[] {
 export function read(root: string, name: string): string {
   const ref = review.resolveRef(root, TYPE, name)
   if (ref.error) throw new Error(ref.error)
-  return fs.readFileSync(review.resolveReadPath(root, ref.refPath), 'utf-8')
+  // 读取一律正式位置（G7）：正式文件不存在 = 没有已过审版本（仅有草稿或从未创建），提示不存在且不暴露磁盘路径
+  const p = review.resolveReadPath(root, ref.refPath)
+  if (!fs.existsSync(p)) throw new Error(`资源不存在: ${name}（新建或修改后的版本需审核通过后才可读取，待审队列可用 ocean review list 查看）`)
+  return fs.readFileSync(p, 'utf-8')
 }
 
 export function create(root: string, name: string, content: string, opts?: {

@@ -31,6 +31,16 @@ function editDirOfExisting(root: string, name: string): string {
   return t.dir
 }
 
+// 只有已通过审核的节点才能被工作流引用：正式位置即过审版本；仅有草稿（在审核队列）或不存在的节点都拒绝
+function assertNodeReferenceable(root: string, nodeDefName: string): void {
+  if (!nodeDefName) return
+  if (fs.existsSync(path.join(root, '.ocean', 'nodes', `${nodeDefName}.md`))) return
+  if (review.latestDraft(root, 'node', nodeDefName)) {
+    throw new Error(`节点 ${nodeDefName} 尚未通过审核，不能被工作流引用（待审队列可用 ocean review list 查看）`)
+  }
+  throw new Error(`节点不存在或尚未通过审核: ${nodeDefName}`)
+}
+
 // 快照内的 flow.json / WORKFLOW.md / nodes/ 路径
 function snapFlowJsonPath(dir: string): string { return path.join(dir, 'meta-data', 'flow.json') }
 function snapMdPath(dir: string): string { return path.join(dir, 'WORKFLOW.md') }
@@ -66,10 +76,22 @@ function readFormalFlowJson(root: string, name: string): any {
   return JSON.parse(fs.readFileSync(p, 'utf-8'))
 }
 
-function writeFlowJsonTo(dir: string, flow: any): void {
+// 图编辑写入快照后：草稿必须进审核队列。以正式为基底的新快照里 WORKFLOW.md 仍是 validated，
+// 审核队列靠主文件 reviewStatus 识别待审项，因此成功写入后把主文件规范化为 pending（去 version / 理由 / 冲突标记，记录当前基准）。
+// 只在成功路径调用：命令中途失败时不留与正式内容相同的空改动草稿。
+function markSnapshotPending(root: string, dir: string): void {
+  const p = snapMdPath(dir)
+  if (!fs.existsSync(p)) return
+  const text = fs.readFileSync(p, 'utf-8')
+  if (review.parseReviewStatus(text) !== 'validated') return
+  fs.writeFileSync(p, review.normalizeDraftFm(text, root), 'utf-8')
+}
+
+function writeFlowJsonTo(root: string, dir: string, flow: any): void {
   const p = snapFlowJsonPath(dir)
   fs.mkdirSync(path.dirname(p), { recursive: true })
   fs.writeFileSync(p, JSON.stringify(flow, null, 2), 'utf-8')
+  markSnapshotPending(root, dir)
 }
 
 // --- workflow folder CRUD ---
@@ -89,7 +111,7 @@ export function create(root: string, name: string): void {
     edges: [],
   }
   const dir = editDir(root, name)
-  writeFlowJsonTo(dir, flow)
+  writeFlowJsonTo(root, dir, flow)
   // 主文件（WORKFLOW.md）同步生成：快照识别与审核列表都依赖主文件存在
   fs.writeFileSync(snapMdPath(dir), generateWorkflowMd(flow, flow.nodes, flow.edges, { baseCommit: review.baseCommitField(root) || undefined }), 'utf-8')
 }
@@ -138,6 +160,8 @@ export function addNode(root: string, wfName: string, type: string, label: strin
   description?: string
 }): string {
   const flow = readFlowJson(root, wfName)
+  // 只有已通过审核的节点才能被工作流引用（校验放在建快照之前，失败不留空改动草稿）
+  if (type === 'business') assertNodeReferenceable(root, path.basename(opts?.nodeRefPath || '', '.md'))
   const dir = editDirOfExisting(root, wfName)
   const id = `${type}-${Date.now()}`
 
@@ -164,7 +188,7 @@ export function addNode(root: string, wfName: string, type: string, label: strin
   const lastX = flow.nodes.reduce((max: number, n: any) => Math.max(max, n.position?.x || 0), 0)
   const node = { id, type, position: { x: lastX + 280, y: 250 }, data }
   flow.nodes.push(node)
-  writeFlowJsonTo(dir, flow)
+  writeFlowJsonTo(root, dir, flow)
   return id
 }
 
@@ -189,7 +213,7 @@ export function connect(root: string, wfName: string, fromId: string, toId: stri
   }
 
   flow.edges.push(edge)
-  writeFlowJsonTo(dir, flow)
+  writeFlowJsonTo(root, dir, flow)
   return edgeId
 }
 
@@ -222,7 +246,7 @@ export function addBranch(root: string, wfName: string, nodeId: string, name: st
     }
   }
 
-  writeFlowJsonTo(dir, flow)
+  writeFlowJsonTo(root, dir, flow)
   return branchId
 }
 
@@ -232,7 +256,7 @@ export function removeNode(root: string, wfName: string, nodeId: string): void {
   flow.nodes = flow.nodes.filter((n: any) => n.id !== nodeId)
   // delete associated edges (与 GUI flowEditorStore.ts:124-128 一致)
   flow.edges = flow.edges.filter((e: any) => e.source !== nodeId && e.target !== nodeId)
-  writeFlowJsonTo(dir, flow)
+  writeFlowJsonTo(root, dir, flow)
 }
 
 export function disconnect(root: string, wfName: string, fromId: string, toId: string, branchName?: string): void {
@@ -251,13 +275,14 @@ export function disconnect(root: string, wfName: string, fromId: string, toId: s
     }
     return false // delete matching edge
   })
-  writeFlowJsonTo(dir, flow)
+  writeFlowJsonTo(root, dir, flow)
 }
 
 // --- list operations ---
 
 export function listNodes(root: string, wfName: string): string {
-  const flow = readFlowJson(root, wfName)
+  // 读取类命令只反映正式位置（G7），草稿用 ocean review show / diff 查看
+  const flow = readFormalFlowJson(root, wfName)
   const rows = flow.nodes.map((n: any) => {
     const refPath = n.data?.nodeRefPath || n.data?.content || ''
     return `| ${n.id} | ${n.type} | ${n.data?.label || ''} | ${refPath} |`
@@ -266,7 +291,7 @@ export function listNodes(root: string, wfName: string): string {
 }
 
 export function listEdges(root: string, wfName: string): string {
-  const flow = readFlowJson(root, wfName)
+  const flow = readFormalFlowJson(root, wfName)
   const rows = flow.edges.map((e: any) => {
     const branch = e.branchId || ''
     return `| ${e.source} | ${e.target} | ${branch} |`
@@ -329,7 +354,7 @@ export function generate(root: string, wfName: string): void {
   fs.writeFileSync(snapMdPath(dir.dir), md, 'utf-8')
 
   // write cleaned flow.json back（快照内）
-  writeFlowJsonTo(dir.dir, flow)
+  writeFlowJsonTo(root, dir.dir, flow)
 }
 
 // --- doctor (11 checks, ported from GUI validateWorkflow + CLI extensions) ---
@@ -341,7 +366,7 @@ interface CheckResult {
 }
 
 export function doctor(root: string, wfName: string, json: boolean = false): string {
-  const flow = readFlowJson(root, wfName)
+  const flow = readFormalFlowJson(root, wfName)
   const nodes: any[] = flow.nodes || []
   const edges: any[] = flow.edges || []
   const results: CheckResult[] = []
@@ -518,11 +543,13 @@ export function createLocalNode(root: string, wfName: string, nodeName: string, 
   if (fs.existsSync(p)) throw new Error(`局部节点已存在: ${nodeName}`)
   fs.mkdirSync(d, { recursive: true })
   fs.writeFileSync(p, content, 'utf-8')
+  markSnapshotPending(root, path.dirname(d))
 }
 
 export function delLocalNode(root: string, wfName: string, nodeName: string): void {
   const p = path.join(snapNodesDir(editDirOfExisting(root, wfName)), `${nodeName}.md`)
   if (fs.existsSync(p)) fs.unlinkSync(p)
+  markSnapshotPending(root, path.dirname(path.dirname(p)))
 }
 
 // --- auto layout (ported from GUI flowEditorStore.ts:431-625) ---

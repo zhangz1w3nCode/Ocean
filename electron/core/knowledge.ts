@@ -34,6 +34,8 @@ function scanDir(dir: string, baseDir: string, result: string[]): void {
 
 export function read(root: string, relPath: string): string {
   const filePath = path.join(dir(root), relPath.endsWith('.md') ? relPath : `${relPath}.md`)
+  // 读取一律正式位置（G7）：正式文件不存在 = 没有已过审版本（仅有草稿或从未创建），提示不存在且不暴露磁盘路径
+  if (!fs.existsSync(filePath)) throw new Error(`知识不存在: ${relPath}（新建或修改后的版本需审核通过后才可读取，待审队列可用 ocean review list 查看）`)
   return fs.readFileSync(filePath, 'utf-8')
 }
 
