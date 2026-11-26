@@ -145,7 +145,7 @@ export const ReviewSettingsPage: FC = () => {
         addToast('同步失败', 'error')
         return
       }
-      const summary = `同步完成：新增 ${report.added.length} / 更新 ${report.updated.length} / 移除 ${report.removed.length}（入回收站）/ 跳过待审 ${report.skippedPending.length}`
+      const summary = `同步完成：新增 ${report.added.length} / 更新 ${report.updated.length} / 跳过待审 ${report.skippedPending.length}；运行时目录中的其他内容保持不变`
       addToast(summary, 'success')
       console.log('[sync-approved-assets] 明细:', report)
     } finally {
@@ -308,7 +308,7 @@ export const ReviewSettingsPage: FC = () => {
             <div className="text-sm font-medium text-macos-text">一键同步</div>
           </div>
           <div className="text-xs text-macos-text-tertiary mb-3">
-            把审核通过（validated）的技能/智能体物化到运行时目录（.pi 或 .claude 下的 skills/agents，由资产来源设置决定），全量幂等对齐：运行时存在但源区缺失或未过审的项移入 .ocean/.trashbox 回收站缓冲
+            把审核通过（validated）的技能/智能体物化到运行时目录（.pi 或 .claude 下的 skills/agents，由资产来源设置决定）：运行时没有的新增，已有的覆盖；运行时目录里不在同步范围内的内容（未纳管或未过审）保持原样，不会被删除
           </div>
           <Button
             variant="outline"

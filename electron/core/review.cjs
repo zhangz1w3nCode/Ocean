@@ -959,13 +959,14 @@ function runtimeAssetDir(root) {
   } catch {}
   return '.claude'
 }
-// only: {type, name} 仅物化该资产（新增/覆盖，不做删除对齐）；省略则全量幂等对齐
+// 同步语义（2026-11-27 用户口径）：只做新增 / 覆盖。运行时目录里不在同步范围内的资产（非 Ocean 管理、未过审、已删除资产的遗留副本）一律保持原样。
+// only: {type, name} 仅同步该资产；省略则全量
 function syncApprovedAssets(root, only) {
   const base = oceanDir(root)
   const runtimeBase = path.join(root, runtimeAssetDir(root))
+  // removed / trashed 仅为兼容旧调用方保留，始终为空（同步不再删除任何运行时资产）
   const report = { added: [], updated: [], removed: [], skippedPending: [], trashed: [] }
   const rs = (p) => { try { return parseReviewStatus(fs.readFileSync(p, 'utf-8')) } catch { return 'pending' } }
-  const trashDir = path.join(base, '.trashbox', 'sync', timestamp())
 
   const syncOne = (kind, name) => {
     if (kind === 'skill') {
@@ -1014,15 +1015,6 @@ function syncApprovedAssets(root, only) {
       syncOne('skill', e.name)
     }
   }
-  for (const e of fs.readdirSync(dstSkills, { withFileTypes: true })) {
-    if (!e.isDirectory() || e.name === '.DS_Store') continue
-    if (!validatedSkills.has(e.name)) {
-      fs.mkdirSync(trashDir, { recursive: true })
-      fs.renameSync(path.join(dstSkills, e.name), path.join(trashDir, e.name))
-      report.removed.push(`skills/${e.name}`)
-      report.trashed.push(path.relative(root, path.join(trashDir, e.name)))
-    }
-  }
   const dstAgents = path.join(runtimeBase, 'agents')
   fs.mkdirSync(dstAgents, { recursive: true })
   const validatedAgents = new Set()
@@ -1033,15 +1025,6 @@ function syncApprovedAssets(root, only) {
       if (rs(path.join(srcAgents, e.name)) !== 'validated') { report.skippedPending.push(`agents/${e.name}`); continue }
       validatedAgents.add(e.name)
       syncOne('agent', e.name.replace(/\.md$/, ''))
-    }
-  }
-  for (const e of fs.readdirSync(dstAgents, { withFileTypes: true })) {
-    if (!e.isFile() || !e.name.endsWith('.md')) continue
-    if (!validatedAgents.has(e.name)) {
-      fs.mkdirSync(trashDir, { recursive: true })
-      fs.renameSync(path.join(dstAgents, e.name), path.join(trashDir, e.name))
-      report.removed.push(`agents/${e.name}`)
-      report.trashed.push(path.relative(root, path.join(trashDir, e.name)))
     }
   }
   return { success: true, report }

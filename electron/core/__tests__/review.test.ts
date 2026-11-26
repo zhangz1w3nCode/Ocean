@@ -373,22 +373,26 @@ describe('commitFormalDeletion / discardSnapshots（G8）', () => {
   })
 })
 
-describe('syncApprovedAssets（全量幂等 / 单项不做删除对齐）', () => {
+describe('syncApprovedAssets（只新增 / 覆盖，不删除运行时目录里的其他内容）', () => {
   beforeEach(() => write('.ocean/asset-root.json', JSON.stringify({ assetRoot: 'pi' })))
-  it('全量：validated 物化、pending 跳过、孤儿移入回收站；二跑幂等', () => {
+  it('全量：validated 物化、pending 跳过、非 Ocean 管理的存量运行时资产保持原样；二跑幂等', () => {
     write('.ocean/skills/ok/SKILL.md', '---\nname: ok\nreviewStatus: validated\nversion: 1\n---\nx')
     write('.ocean/skills/no/SKILL.md', '---\nname: no\nreviewStatus: pending\n---\nx')
     write('.ocean/agents/a.md', '---\nname: a\nreviewStatus: validated\nversion: 1\n---\nx')
     write('.pi/skills/orphan/SKILL.md', '---\nname: orphan\nreviewStatus: validated\n---\nx')
+    write('.pi/agents/orphan.md', '---\nname: orphan\n---\nx')
     const r1 = review.syncApprovedAssets(tmpDir)
     expect(r1.report.added.sort()).toEqual(['agents/a.md', 'skills/ok'])
     expect(r1.report.skippedPending).toEqual(['skills/no'])
-    expect(r1.report.removed).toEqual(['skills/orphan'])
-    expect(exists('.pi/skills/orphan')).toBe(false)
-    expect(exists('.ocean/.trashbox/sync')).toBe(true)
+    // 一键同步只做新增 / 覆盖：运行时目录里不在同步范围内的资产不删除、不入回收站
+    expect(r1.report.removed).toEqual([])
+    expect(exists('.pi/skills/orphan')).toBe(true)
+    expect(exists('.pi/agents/orphan.md')).toBe(true)
+    expect(exists('.ocean/.trashbox/sync')).toBe(false)
     const r2 = review.syncApprovedAssets(tmpDir)
     expect(r2.report.added).toHaveLength(0)
     expect(r2.report.removed).toHaveLength(0)
+    expect(exists('.pi/skills/orphan')).toBe(true)
   })
   it('单项：只物化指定资产，不触碰运行时目录其他项', () => {
     write('.ocean/skills/ok/SKILL.md', '---\nname: ok\nreviewStatus: validated\n---\nx')

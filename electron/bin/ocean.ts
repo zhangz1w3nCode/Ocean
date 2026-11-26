@@ -719,7 +719,7 @@ flag:
   reject <type> <name> --reason "…"   审核不通过（理由必填）：最早待审快照标记 rejected 并留存
   restore <type> <name>               最早已驳回快照 → 恢复待审
   discard <type> <name>               丢弃最早待审快照（合并冲突草稿的出路之一）
-  sync                                一键同步：全部正式 skill/agent 物化到运行时目录（含删除对齐）
+  sync                                一键同步：全部正式 skill/agent 物化到运行时目录（只新增 / 覆盖，不删除运行时目录里的其他内容）
   init                                开启 .ocean git 托管（approve 提交所需）
 
 说明:
@@ -1685,7 +1685,7 @@ function handleReview(root: string, args: ReturnType<typeof parseArgs>): void {
       if (!r.success) throw new Error(r.error || '同步失败')
       const rep = r.report
       if (json) { printJson({ action: 'synced', ...rep }); break }
-      printAction('synced', { 新增: String(rep.added.length), 更新: String(rep.updated.length), 移除: String(rep.removed.length), 跳过待审: String(rep.skippedPending.length) })
+      printAction('synced', { 新增: String(rep.added.length), 更新: String(rep.updated.length), 跳过待审: String(rep.skippedPending.length) })
       break
     }
     case 'init': {
